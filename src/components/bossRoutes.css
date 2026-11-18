@@ -1,0 +1,10 @@
+.boss-routes{min-width:0;font-size:12px;line-height:1.6;color:#dce6e5}
+.boss-route-controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.boss-route-controls label{display:flex;flex:1;flex-direction:column;gap:3px;color:#a6b8c4;min-width:110px}
+.boss-route-controls select{width:100%;min-width:0;min-height:32px;background:#172630;border:1px solid #405765;border-radius:5px;color:#ecf5ef;padding:4px;font-size:12px}
+.boss-route-sequence{display:flex;flex-wrap:wrap;gap:3px 16px;margin:6px 0!important;font-size:11px}
+.boss-route-sequence span:first-child{color:#8bddd6}.boss-route-sequence span:last-child{color:#e3c889}
+.boss-route-image{display:block;width:100%;padding:0;border:1px solid #3a4c50;background:#191a1e;border-radius:6px;overflow:hidden;cursor:zoom-in}
+.boss-route-image img{display:block;width:100%;height:auto}
+.boss-route-original{min-height:32px;padding:4px 10px;margin:5px 0;color:#facc15;background:#facc1514;border:1px solid #facc1540;border-radius:6px;font-size:12px}
+.boss-routes>small{display:block;color:#95a7b5;font-size:11px;line-height:1.5}

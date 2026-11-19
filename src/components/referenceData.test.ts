@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { META_COMPS, SUB_COVENANT_GUIDES } from '../data/strongholdData';
+import { META_COMPS, SUB_COVENANT_GUIDES, TACTICAL_MAPS } from '../data/strongholdData';
+import { AEGIR_REFERENCES, AEGIR_SOURCES, aegirMapReferences, aegirImageUrl } from '../data/aegirReferences';
+import { AEGIR_HUNTERS_ID, AEGIR_PITH_ID } from '../data/aegirErosion';
+import { recommendedSkill } from './guidePresentation';
 import { evaluateCompUnderBans, getRecommendedPaceForRound, isCovenantRecommendedForComp } from '../utils/tacticalLogic';
 import { baseTalentsFor, covenantEffects, modeOperators, operatorAbilities, reference, referenceNames, strategiesFor, trainingState } from './referenceData';
 
@@ -76,4 +79,39 @@ test('New strategies stay separate with viable eight-slot main phases and Ban de
     assert.equal(getRecommendedPaceForRound(comp,15).activePhaseName,comp.phases[2].phaseName);
   }
   assert(!suzuran.covenants.some(c=>/炎|投资人|迅捷/.test(c)));
+});
+
+test('Aegir guide has all five sources offline; current-map results exclude other stages and case studies', () => {
+  assert.equal(AEGIR_REFERENCES.length, 39);
+  assert.equal(new Set(AEGIR_REFERENCES.map(item => item.id)).size, AEGIR_REFERENCES.length);
+  assert.deepEqual(new Set(AEGIR_REFERENCES.map(item => item.source)), new Set(Object.keys(AEGIR_SOURCES)));
+  for (const item of AEGIR_REFERENCES) {
+    assert(existsSync(new URL(`../../public${aegirImageUrl(item.id)}`, import.meta.url)), item.id);
+    assert(item.location && item.note, item.id);
+    if (item.mapId) assert(TACTICAL_MAPS.some(map => map.id === item.mapId), item.id);
+  }
+  assert.deepEqual(aegirMapReferences('desert-1', '道中').map(item => item.round), [5, 6, 6, 7, 10, 11]);
+  assert.deepEqual(aegirMapReferences('desert-1', 'Boss战').map(item => item.id), ['m21', 'm22']);
+  assert.deepEqual(aegirMapReferences('desert-3', 'Boss战').map(item => item.id), ['s03', 's12']);
+  assert.deepEqual(aegirMapReferences('desert-2', 'Boss战'), []);
+  assert.equal(AEGIR_REFERENCES.find(item => item.id === 's09')?.purpose, '纠偏');
+});
+
+test('Aegir strategies have separate operating plans and manual terminal phases', () => {
+  const pith = META_COMPS.find(comp => comp.id === AEGIR_PITH_ID)!;
+  const gladiia = META_COMPS.find(comp => comp.id === AEGIR_HUNTERS_ID)!;
+  assert.deepEqual(strategiesFor(pith.strategist).map(s => s.name), ['Pith']);
+  assert.deepEqual(strategiesFor(gladiia.strategist).map(s => s.name), ['歌蕾蒂娅']);
+  assert.deepEqual([2, 4, 6, 8, 10].map(round => getRecommendedPaceForRound(gladiia, round).recommendedTier), [2, 3, 4, 5, 6]);
+  assert.match(gladiia.roundPace[5].action, /四本开调度/);
+  assert(!pith.roundPace.some(item => /四本开调度/.test(item.action)));
+  for (const comp of [pith, gladiia]) {
+    assert.deepEqual(comp.roundPace.map(item => item.round), Array.from({ length: 15 }, (_, i) => i + 1));
+    assert.equal(getRecommendedPaceForRound(comp, 15).activePhaseName, comp.phases[1].phaseName);
+    assert.equal(recommendedSkill(comp.id, '克莱门莎'), 2);
+    assert.equal(recommendedSkill(comp.id, '魔王'), 2);
+    assert.equal(evaluateCompUnderBans(comp, { bannedCovenants: ['阿戈尔'], bannedOperators: [] }).status, 'blocked');
+    assert.equal(evaluateCompUnderBans(comp, { bannedCovenants: ['精准', '奥术'], bannedOperators: [] }).score, 100);
+    assert.equal(evaluateCompUnderBans(comp, { bannedCovenants: ['灵巧', '突袭'], bannedOperators: [] }).status, 'viable');
+  }
 });

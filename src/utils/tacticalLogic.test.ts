@@ -130,9 +130,8 @@ test('extractConciseEffectBadges extracts scannable trigger and stack badges', (
 
 test('rankCompsByBanState retains viable pivots and blocks banned main factions under Image 3 bans', () => {
   assert.equal(SUB_COVENANT_GUIDES.length, 14);
-  assert.equal(META_COMPS.length, 34);
-
   const ranked = rankCompsByBanState(META_COMPS, IMAGE3_DEFAULT_BAN_STATE);
+  assert.equal(ranked.length, META_COMPS.length);
   for (const id of ['victoria-bastion-jessica', 'harmony-yan-victoria-chen', 'yan-bastion-chen-wang', 'sargon-pozy-pepe-swift']) {
     assert.notEqual(ranked.find((r) => r.comp.id === id)!.status, 'blocked');
   }

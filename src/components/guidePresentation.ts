@@ -1,7 +1,10 @@
 import type { MetaCompGuide } from '../data/strongholdData';
+import { AEGIR_HUNTERS_ID, AEGIR_PITH_ID } from '../data/aegirErosion';
 
 // 仅记录当前路线已明确给出的技能；条件变体与存在分歧的选项不标主推。
 const routeSkills: Record<string, Record<string, number>> = {
+  [AEGIR_PITH_ID]: { '克莱门莎': 2, '魔王': 2 },
+  [AEGIR_HUNTERS_ID]: { '克莱门莎': 2, '魔王': 2 },
   'ursus-gravel-machine': { '砾': 1 },
   'fuzou-tier1-leithanien': { '霍尔海雅': 1 },
   'faith-mixer-fast-four': { '灰喉': 1, '空弦': 1, '霍尔海雅': 2 },
@@ -52,7 +55,8 @@ export function loadoutSummary(comp: MetaCompGuide) {
 
 // 对原 equipmentTips 的首屏提炼，完整分支与获取条件仍在“装备与技能”。
 const routeLoadouts: Record<string, string> = {
-  'aegir-clemencia-erosion': '先保前排。克莱门莎到手再给输出与回转装，灵巧或突袭补攻速。',
+  [AEGIR_PITH_ID]: '先把装备给当前输出；克莱门莎到手转输出装，魔王 2 技能补支援。',
+  [AEGIR_HUNTERS_ID]: '克莱门莎 2 技能；有双进阶精准狙击镜可用，装未齐就先保当轮火力。',
   'kjerag-mechanist-greyy': '承曦格雷伊【灵巧涡轮手套】＋【谢拉格不融冰】；Boss另补直伤与生存。',
   'ursus-gravel-machine': '砾【红色注射器】＋【不屈弹射器】；二本对讲机给铁皮，其余战力装给大丑。',
   'fuzou-tier1-leithanien': '艾雅法拉拿【精准狙击镜】；承曦格雷伊可用时通过他取得，不直接买镜子。',

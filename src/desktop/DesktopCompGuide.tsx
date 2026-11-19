@@ -11,6 +11,8 @@ import { DesktopRouteOverview } from './DesktopRouteOverview';
 import { loadoutSummary } from '../components/guidePresentation';
 import { DerivedText } from '../components/DerivedText';
 import { TacticalOperatorCard } from '../components/TacticalOperatorCard';
+import { AegirReferenceButton } from '../components/AegirReferenceGallery';
+import { isAegirGuide } from '../data/aegirErosion';
 
 function EquipmentText({ text }: { text: string }) {
   const pattern = new RegExp(`(${equipmentNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
@@ -52,7 +54,9 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSe
       <select aria-label="快速切换当前跟打阵容" value={comp.id} onChange={e => onSelectComp(e.target.value)}><option value={comp.id}>切换阵容…</option>{evaluations.filter(ev => ev.comp.id !== comp.id).map(ev => <option key={ev.comp.id} value={ev.comp.id}>{ev.comp.title} · {ev.statusLabel}</option>)}</select>
       <div className="d-tags d-header-covenants">{comp.covenants.map(cov => <span key={cov} className={bans.bannedCovenants.some(name => cov.includes(name)) ? 'is-hit' : ''}>{cov}</span>)}</div>
       <button className="d-button d-overview-button" onClick={() => setDialog('overview')}><Radar size={15} />阵容总览</button>
-      <button className="d-button" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><Maximize2 size={14} />看原图</button>
+      {isAegirGuide(comp.id)
+        ? <AegirReferenceButton key={comp.id} className="d-button" round={round} stage={round >= 14 ? 'Boss战' : '道中'} />
+        : <button className="d-button" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><Maximize2 size={14} />看原图</button>}
     </header>
     <div className="d-guide-grid">
         <section className="d-panel d-phase-panel" aria-label="当前阶段阵容" data-phase-name={phase.phaseName}>

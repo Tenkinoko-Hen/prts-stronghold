@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { DesktopDialog } from '../desktop/DesktopDialog';
 import { BossRoutes } from './BossRoutes';
+import { AegirReferenceButton } from './AegirReferenceGallery';
 import {
   OperatorPlacement,
   TACTICAL_MAPS,
@@ -130,7 +131,10 @@ export const Tactical2DMapView: React.FC<Tactical2DMapViewProps> = ({
       <div className="d-tabs"><button aria-pressed={displayMode === 'split'} onClick={() => setDisplayMode('split')}><Grid size={13} />同屏</button><button aria-pressed={displayMode === 'original'} onClick={() => setDisplayMode('original')}><ImageIcon size={13} />原图</button></div>
     </div>
     <div className={`d-map-body ${displayMode === 'original' ? 'is-original' : ''}`}>
-      <section className="d-panel d-map-reference"><div className="d-section-head"><h2><Eye size={15} />道中 / Boss 战原图</h2><button className="d-icon" aria-label="放大战术原图" onClick={() => onOpenImage(activeMap.imageUrl, activeMap.name)}><Maximize2 size={15} /></button></div>
+      <section className="d-panel d-map-reference"><div className="d-section-head"><h2><Eye size={15} />道中 / Boss 战原图</h2><div className="d-inline">
+        <AegirReferenceButton className="d-button d-small" mapId={activeMap.id} stage={stageMode} />
+        <button className="d-icon" aria-label="放大战术原图" onClick={() => onOpenImage(activeMap.imageUrl, activeMap.name)}><Maximize2 size={15} /></button>
+      </div></div>
         <button className="d-reference-image" onClick={() => onOpenImage(activeMap.imageUrl, activeMap.name)} aria-label="查看完整站位原图"><img src={activeMap.imageUrl} alt={`${activeMap.name} 道中与Boss战完整原图`} /></button>
         <button className="d-map-note" onClick={() => setNotesOpen(true)}><span>{currentLayout.description}</span><span className="d-gold">全部站位要点 ›</span></button>
       </section>

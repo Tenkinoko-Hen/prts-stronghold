@@ -6,6 +6,7 @@ import {
   StageLayout,
   UNIVERSAL_STACKERS,
 } from '../data/strongholdData';
+import { AEGIR_HUNTERS_ID, AEGIR_PITH_ID, isAegirGuide } from '../data/aegirErosion';
 
 /**
  * Converts Arknights operator facing arrows into Three.js / 2D rotation radians.
@@ -289,7 +290,8 @@ export function filterUniversalStackers(query: string, benchOnly: boolean) {
 // Explicit mapping of each MetaCompGuide ID to its recommended priority CovenantGuide IDs (both Core and Sub)
 const COMP_PRIORITY_COVENANT_MAP: Record<string, string[]> = {
   'kjerag-mechanist-greyy': ['kjerag', 'sub-dexterous', 'sub-bastion', 'sub-convergence'],
-  'aegir-clemencia-erosion': ['aegir', 'sub-dexterous', 'sub-assault'],
+  [AEGIR_PITH_ID]: ['aegir', 'sub-harmony', 'sub-dexterous', 'sub-assault'],
+  [AEGIR_HUNTERS_ID]: ['aegir', 'sub-dexterous', 'sub-assault'],
   'yan-slow-six-convergence': ['yan', 'sub-convergence', 'sub-dexterous', 'sub-miracle'],
   'yan-bison-shop-four': ['yan', 'sub-bastion', 'sub-dexterous', 'sub-convergence'],
   'suzuran-low-tier-acquisition': ['sub-precision', 'sub-bastion', 'sub-dexterous', 'kjerag'],
@@ -483,10 +485,15 @@ const COMP_BAN_PROFILES: Record<string, CompBanRuleProfile> = {
     criticalOperators: ['承曦格雷伊'], importantOperators: ['耶拉', '初雪'],
     pivotTipWhenSoftBanned: '先选机械师策略，再确认格雷伊、手套和冰的来源。缺耶拉须实际拿到不融冰；灵巧受限或控场覆盖不够时，少追叠层，先补对空和输出。',
   },
-  'aegir-clemencia-erosion': {
+  [AEGIR_PITH_ID]: {
+    hardRequiredCovenants: ['阿戈尔'], softSupportCovenants: ['调和'],
+    criticalOperators: ['克莱门莎'], importantOperators: ['安哲拉'],
+    pivotTipWhenSoftBanned: 'Pith 先核对调和能否开出，再补阿戈尔人数。缺灵巧看有效突袭或装备；克莱门莎没来就保当前输出。',
+  },
+  [AEGIR_HUNTERS_ID]: {
     hardRequiredCovenants: ['阿戈尔'], softSupportCovenants: [],
     criticalOperators: ['克莱门莎'], importantOperators: ['安哲拉'],
-    pivotTipWhenSoftBanned: '精奥受限可走水月灵巧；缺灵巧看突袭攻速。克莱门莎没到就保现有输出，不为凑六阿戈尔提前拆阵。',
+    pivotTipWhenSoftBanned: '需选歌蕾蒂娅策略。精奥受限可走水月灵巧；克莱门莎没到先保当前输出，不为凑六阿戈尔提前拆阵。',
   },
   'yan-bison-shop-four': {
     hardRequiredCovenants: ['炎', '坚守', '灵巧', '聚合'], softSupportCovenants: ['投资人'],
@@ -699,7 +706,7 @@ export function evaluateCompUnderBans(
   const safeHighlights: string[] = [];
   let coreUnavailable = false;
 
-  if (comp.id === 'aegir-clemencia-erosion' && bannedCovSet.has('灵巧') && bannedCovSet.has('突袭')) {
+  if (isAegirGuide(comp.id) && bannedCovSet.has('灵巧') && bannedCovSet.has('突袭')) {
     score -= 25;
     blockedReasons.push('灵巧与突袭均受限，需另找攻速来源');
   }

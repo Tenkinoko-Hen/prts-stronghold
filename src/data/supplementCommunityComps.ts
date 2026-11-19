@@ -1,5 +1,5 @@
 import type { MetaCompGuide } from './strongholdData';
-import { AEGIR_EROSION } from './aegirErosion';
+import { AEGIR_EROSION, AEGIR_HUNTERS } from './aegirErosion';
 import { MECHANIST_KJERAG } from './mechanistKjerag';
 
 export const SUPPLEMENT_COMMUNITY_COMPS: MetaCompGuide[] = [
@@ -553,5 +553,6 @@ export const SUPPLEMENT_COMMUNITY_COMPS: MetaCompGuide[] = [
     ]
   },
   AEGIR_EROSION,
+  AEGIR_HUNTERS,
   MECHANIST_KJERAG
 ];

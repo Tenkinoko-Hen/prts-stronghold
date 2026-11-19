@@ -2,6 +2,8 @@
 
 《明日方舟》卫戍协议的非官方阵容与对局助手。支持本地识别盟约限制、推荐阵容、R1–R15 逐回合跟进，以及战术站位和 Boss 路线查询。
 
+1.4.10 新增「阿戈尔 · 歌蕾蒂娅二队」，更新「阿戈尔 · Pith 稳场」。进入任一攻略的「阿戈尔站位」、桌面「2D 战术站位」或手机「资料 → 阿戈尔」，可按用途查看 39 张离线配图及出处；可确认的地图站位按道中与 Boss 战区分。
+
 ## 下载
 
 从 [GitHub Releases](https://github.com/Tenkinoko-Hen/prts-stronghold/releases) 下载对应版本。每个版本附 Windows EXE、Android APK 及对应的 SHA-256 校验文件。

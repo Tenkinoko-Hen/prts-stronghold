@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { COVENANT_GUIDES, SUB_COVENANT_GUIDES, TACTICAL_MAPS, TRANSFER_ITEM_RECIPES, UNIVERSAL_STACKERS, UPLOADED_GALLERY_ITEMS } from '../data/strongholdData';
 import { calculateStackingProjection } from '../utils/tacticalLogic';
 import { BossRoutes } from '../components/BossRoutes';
+import { AegirReferenceButton, AegirReferenceGallery } from '../components/AegirReferenceGallery';
 
 export function MobileReference({ onOpenImage }: { onOpenImage: (url: string, title: string) => void }) {
   const [tab, setTab] = useState('原图');
@@ -24,14 +25,18 @@ export function MobileReference({ onOpenImage }: { onOpenImage: (url: string, ti
 
   return <div className={`m-reference ${tab === 'Boss路线' ? 'is-boss-routes' : ''}`}>
     <div className="m-section-heading"><div><span className="m-eyebrow">REFERENCE / 随时查阅</span><h1>资料手册</h1></div></div>
-    <div className="m-chips">{['原图', 'Boss路线', '盟约', '转职', '站位', '叠层'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => { setTab(label); setQuery(''); }}>{label}</button>)}</div>
+    <div className="m-chips">{['原图', 'Boss路线', '盟约', '转职', '站位', '阿戈尔', '叠层'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => { setTab(label); setQuery(''); }}>{label}</button>)}</div>
     {tab === 'Boss路线' && <BossRoutes onOpenImage={onOpenImage} />}
+    {tab === '阿戈尔' && <AegirReferenceGallery />}
     {['原图', '盟约', '转职'].includes(tab) && <input className="m-input" aria-label="搜索资料" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称或关键词" />}
     {tab === '原图' && <><p className="m-muted">{UPLOADED_GALLERY_ITEMS.length} 张原始资料，点击查看与放大。</p><div className="m-gallery">{UPLOADED_GALLERY_ITEMS.filter(item => JSON.stringify(item).includes(query.trim())).map(item => <button key={item.id} onClick={() => onOpenImage(item.url, item.title)}><img loading="lazy" src={item.url} alt="" /><strong>{item.title}</strong></button>)}</div></>}
     {tab === '盟约' && [...COVENANT_GUIDES, ...SUB_COVENANT_GUIDES].filter(item => JSON.stringify(item).includes(query.trim())).map(item => <details className="m-card" key={item.id}><summary>{item.name}<span>{item.difficulty}</span></summary><p>{item.subtitle}</p><h3>盟约效果</h3><p>{item.pactSummary}</p><h3>叠层核心</h3><p>{item.stackCore}</p><div className="m-tags">{item.synergySubPacts.map((tag, i) => <span key={i}>{tag}</span>)}</div>{item.operators.map((op, i) => <div className="m-reference-row" key={i}><h3>{op.name} · {op.tier}</h3><small>{op.category}</small><p>{op.effect}</p></div>)}<ul>{item.proTips.map((tip, i) => <li key={i}>{tip}</li>)}</ul>{item.imageUrl && <button className="m-secondary" onClick={() => onOpenImage(item.imageUrl, item.name)}>查看原图</button>}</details>)}
     {tab === '转职' && <><p className="m-muted">变形同构体 [VI] ＋ 催化装备 → 目标转职</p>{TRANSFER_ITEM_RECIPES.filter(item => JSON.stringify(item).includes(query.trim())).map(item => <details className="m-card" key={item.id}><summary>{item.targetCovenant}<span>{item.category}</span></summary><p className="m-highlight">变形同构体 [VI] ＋ {item.baseEquipmentName} [{item.equipmentTier}]</p><p>{item.tacticalNote}</p><p>免费来源：{item.freeSourceOperators.join('、') || '无固定来源'}</p><p>推荐携带：{item.bestRecipients.join('、')}</p></details>)}</>}
     {tab === '站位' && <>
-      <button className="m-action-pill" onClick={() => setTab('Boss路线')}>查看 Boss 行进路线</button>
+      <div className="m-two-buttons">
+        <button className="m-action-pill" onClick={() => setTab('Boss路线')}>查看 Boss 行进路线</button>
+        <AegirReferenceButton className="m-action-pill m-aegir-button" mapId={map.id} stage={boss ? 'Boss战' : '道中'} />
+      </div>
       <details className="m-card"><summary>选择地图<span>{map.shortName}</span></summary><div className="m-map-picker">{TACTICAL_MAPS.map(item => <button className="m-secondary" key={item.id} aria-pressed={mapId === item.id} onClick={() => { setMapId(item.id); setPlacement(null); }}>{item.name}</button>)}</div></details>
       <div className="m-chips">{[false, true].map(isBoss => <button key={String(isBoss)} aria-pressed={boss === isBoss} onClick={() => { setBoss(isBoss); setPlacement(null); }}>{isBoss ? 'Boss 战' : '道中'}</button>)}</div>
       <section className="m-card"><h2>{map.shortName} · {layout.stageName}</h2><p>{map.summary}</p><p>{layout.description}</p>

@@ -11,6 +11,7 @@ import android.content.res.Configuration;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
@@ -43,10 +44,10 @@ public class OverlayService extends Service {
     private int usableHeight;
 
     static void stopActive() { if (active != null) { active.dispose(); active.stopSelf(); active = null; } }
-    static void hideForScan() { if (active != null) { active.collapse(); if (active.ball != null) active.ball.setText("识别中"); } }
+    static void hideForScan() { if (active != null) { active.collapse(); if (active.ball != null) active.setBallScanning(true); } }
     static void showAfterScan() { if (active != null && active.ball != null) active.expand(); }
     static boolean isExpanded() { return active != null && active.expanded; }
-    static void hideForRound() { if (active != null) { active.collapse(); if (active.ball != null) active.ball.setText("PRTS"); } }
+    static void hideForRound() { if (active != null) { active.collapse(); if (active.ball != null) active.setBallScanning(false); } }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private GradientDrawable background(int color, int radius) {
         GradientDrawable shape = new GradientDrawable();
@@ -98,13 +99,14 @@ public class OverlayService extends Service {
     private void createBall() {
         measureScreen();
         ball = new TextView(this);
-        ball.setText("PRTS");
         ball.setTextSize(12);
         ball.setTypeface(null, 1);
-        ball.setTextColor(0xffc5f2d6);
+        ball.setTextColor(0xffffe600);
         ball.setGravity(Gravity.CENTER);
-        ball.setBackground(background(0xff183428, 28));
-        ball.setContentDescription("PRTS 悬浮球，点击展开攻略，可拖动");
+        GradientDrawable surface = background(0xff101215, 28);
+        surface.setStroke(dp(1), 0xff4b515a);
+        ball.setBackground(surface);
+        setBallScanning(false);
         ball.setElevation(dp(8));
         ballParams = params(dp(52), dp(52), false);
         ballParams.x = Math.max(0, usableWidth - dp(60));
@@ -113,6 +115,12 @@ public class OverlayService extends Service {
         makeDraggable(ball, ball, ballParams, true);
         try { manager.addView(ball, ballParams); }
         catch (RuntimeException error) { fail(); }
+    }
+
+    private void setBallScanning(boolean scanning) {
+        ball.setText(scanning ? "识别中" : "");
+        ball.setForeground(scanning ? null : new InsetDrawable(getDrawable(R.drawable.ic_prts), dp(7)));
+        ball.setContentDescription(scanning ? "正在识别盟约，点击展开攻略" : "PRTS 悬浮球，点击展开攻略，可拖动");
     }
 
     private void createPanel() {
@@ -207,8 +215,7 @@ public class OverlayService extends Service {
             web.onPause();
             clamp(ballParams);
             expanded = false;
-            ball.setText("PRTS");
-            ball.setContentDescription("PRTS 悬浮球，点击展开攻略，可拖动");
+            setBallScanning(false);
             if (!ball.isAttachedToWindow()) manager.addView(ball, ballParams);
         } catch (RuntimeException error) { fail(); }
     }

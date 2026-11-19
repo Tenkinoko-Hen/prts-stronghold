@@ -91,7 +91,7 @@ export function MobileGuide({ comp, round, bans, roundSyncProgress, onRound, onB
     <div className="m-guide-layout">
     <section className="m-guide-action m-round-card" aria-label="本回合指令">
       <div className="m-action-heading"><strong>本回合指令</strong><span className="m-tier">参考 {pace.recommendedTier} 本</span><button aria-label="展开本回合完整指令" title="放大指令" onClick={() => setFullAction(true)}><Expand size={13} /></button></div>
-      <p className="m-action-text"><DerivedText text={action} /></p>
+      <p className="m-action-text round-signal" key={round}><DerivedText text={action} /></p>
       <div className="hazard-stripe" aria-hidden="true" />
       <div className="m-turn-operators" aria-label={named.length ? '本回合相关干员' : '当前阶段干员'}>
         {operators.map((op, index) => <TacticalOperatorCard key={`${op.name}-${index}`} compId={comp.id} operator={op} className="m-turn-operator" onClick={() => setOperator(op)} />)}

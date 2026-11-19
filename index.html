@@ -9,9 +9,53 @@
     <meta property="og:description" content="明日方舟《卫戍协议：盟约》3D战术站位沙盘、公式化运营一图流、十大盟约叠层图鉴与实时回合运营助手。" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%app-icon.svg" />
+    <style>
+      html { color-scheme: dark; background: #0b0c0e; }
+      body { margin: 0; }
+      #app-startup {
+        position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px;
+        background: radial-gradient(#adbac615 1px, transparent 1px) center / 24px 24px,
+          radial-gradient(ellipse at center, #1a1d23 0, #0b0c0e 72%);
+        color: #f3f4f6; font: 600 14px/1.5 system-ui, "Microsoft YaHei UI", sans-serif;
+      }
+      .startup-mark {
+        position: relative; display: grid; place-items: center; width: 88px; height: 88px; overflow: hidden;
+        background: linear-gradient(#9aa5b0, #9aa5b0) top left / 10px 1px,
+          linear-gradient(#9aa5b0, #9aa5b0) top left / 1px 10px,
+          linear-gradient(#9aa5b0, #9aa5b0) bottom right / 10px 1px,
+          linear-gradient(#9aa5b0, #9aa5b0) bottom right / 1px 10px;
+        background-repeat: no-repeat;
+      }
+      #app-startup strong { font: 700 16px/1.4 system-ui, sans-serif; letter-spacing: .16em; }
+      #app-startup small { color: #a6adb8; }
+      .startup-signal { width: 128px; height: 2px; overflow: hidden; background: #343840; }
+      .startup-signal::before { content: ""; display: block; width: 34%; height: 100%; background: linear-gradient(90deg, transparent, #e8ebee 80%, #ffe600); }
+      @media (prefers-reduced-motion: no-preference) {
+        .startup-mark::after {
+          content: ""; position: absolute; top: 10px; left: 4px; right: 4px; height: 1px;
+          pointer-events: none; background: linear-gradient(90deg, transparent, #f0f3f5ae, transparent);
+          animation: startup-lock 780ms ease-out 1 both;
+        }
+        .startup-signal::before { animation: startup-sweep 1.35s cubic-bezier(.45,0,.55,1) infinite alternate; }
+      }
+      @keyframes startup-lock {
+        0% { opacity: 0; }
+        25% { opacity: .7; }
+        100% { opacity: 0; transform: translateY(68px); }
+      }
+      @keyframes startup-sweep { to { transform: translateX(194%); } }
+    </style>
   </head>
   <body class="bg-[#0B0E14] text-[#F1F5F9] antialiased selection:bg-[#F59E0B]/30 selection:text-[#FDE68A] overflow-hidden">
-    <div id="root"></div>
+    <div id="root">
+      <div id="app-startup" role="status">
+        <div class="startup-mark"><img src="%BASE_URL%app-icon.svg" width="72" height="72" alt="" fetchpriority="high" /></div>
+        <strong>PRTS STRONGHOLD</strong>
+        <small>正在启动…</small>
+        <span class="startup-signal" aria-hidden="true"></span>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -2,6 +2,8 @@
 
 《明日方舟》卫戍协议的非官方阵容与对局助手。支持本地识别盟约限制、推荐阵容、R1–R15 逐回合跟进，以及战术站位和 Boss 路线查询。
 
+1.4.11 统一 Windows、安卓和悬浮球的 PRTS 黑白菱形图标。Windows 在解包期间显示启动画面，主窗口出现后自动收起。回合切换与详情弹窗加入短动效，并遵循系统的减弱动态效果设置。
+
 1.4.10 新增「阿戈尔 · 歌蕾蒂娅二队」，更新「阿戈尔 · Pith 稳场」。进入任一攻略的「阿戈尔站位」、桌面「2D 战术站位」或手机「资料 → 阿戈尔」，可按用途查看 39 张离线配图及出处；可确认的地图站位按道中与 Boss 战区分。
 
 ## 下载
@@ -15,7 +17,7 @@
 
 使用 Node.js 22.12 或更新的受支持版本。运行 `npm ci` 安装依赖，再用 `npm run dev` 打开网页预览。`npm run lint` 检查类型，`npm run build` 生成前端产物。
 
-Windows 用 `scripts/build-windows-ocr.ps1` 准备 Python 3.12 x64 OCR 运行库，再用 Electron Builder 的 `--win portable --x64` 目标构建。通过 `--config.extraMetadata.version` 指定发布版本。
+Windows 用 `scripts/build-windows-ocr.ps1` 准备 Python 3.12 x64 OCR 运行库。执行 `npm run build` 后运行 `pwsh -File scripts/build-windows.ps1 -Version 1.4.11`，在 `work/windows-1.4.11` 生成带图标和启动画面的便携 EXE。
 
 Android 使用 JDK 17、Android SDK Platform 36 和 Build Tools 35.0.0。运行 `scripts/build-android.ps1`，可用 `-SdkRoot`、`-JavaHome` 指定工具路径。版本取自 `android/AndroidManifest.xml`。
 

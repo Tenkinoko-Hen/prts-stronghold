@@ -106,6 +106,28 @@
 .badge-derived.ak-skew-tag { --tag-bg:#ff950024; color:#ffba61; background:none; border:0; border-radius:0; padding:1px 5px; }
 .reference-skill-badge.ak-skew-tag { --tag-bg:#ffe60028; color:var(--accent-endfield); background:none; border:0; border-radius:0; white-space:nowrap; }
 
+@media (prefers-reduced-motion: no-preference) {
+  .round-signal { position: relative; animation: prts-round-signal 190ms ease-out; }
+  .round-signal::after {
+    content: ""; position: absolute; bottom: 0; left: 0; width: min(50%, 112px); height: 1px;
+    background: linear-gradient(90deg, var(--accent-endfield), transparent);
+    pointer-events: none; transform-origin: left; animation: prts-command-scan 240ms ease-out both;
+  }
+  .desktop-dialog[open], .m-modal-backdrop > .m-confirm { animation: prts-dialog-in 180ms cubic-bezier(.2,.8,.3,1); }
+  .desktop-dialog::backdrop, .m-modal-backdrop { animation: prts-backdrop-in 120ms ease-out; }
+  :is(.d-round-track, .d-phase-tabs, .d-guide-tabs, .m-guide-tabs, .m-hud-tabs, .m-bottom-nav) button {
+    transition: color 120ms, background-color 120ms, box-shadow 120ms, border-color 120ms;
+  }
+  :is(.d-comp-card, .ak-operator-card, .d-primary, .m-primary):active:not(:disabled) { opacity: .84; }
+}
+@keyframes prts-round-signal { from { opacity: .82; transform: translateX(-3px); } }
+@keyframes prts-command-scan {
+  from { opacity: .7; transform: scaleX(.12); }
+  to { opacity: 0; transform: scaleX(1); }
+}
+@keyframes prts-dialog-in { from { opacity: .68; transform: translateY(5px); } }
+@keyframes prts-backdrop-in { from { opacity: 0; } }
+
 /* Custom subtle scrollbars for drawers and modals */
 ::-webkit-scrollbar {
   width: 6px;

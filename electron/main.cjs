@@ -25,7 +25,8 @@ app.whenReady().then(() => {
     title: '卫戍协议战术终端 · PRTS Stronghold',
     width: 1440, height: 900, minWidth: 1024, minHeight: 700,
     center: true, fullscreen: false, show: false, autoHideMenuBar: true,
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#0B0C0E',
+    icon: path.join(__dirname, 'branding', 'app.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false, sandbox: true,

@@ -82,7 +82,7 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSe
         <section className="d-panel d-round-panel" aria-label="本回合指令">
           <div className="d-round-head"><div className="chamfer-box"><small>回合 / ROUND</small><strong>{String(round).padStart(2, '0')} <span>/ 15</span></strong></div><span className="d-tier">推荐 {pace.recommendedTier} 本</span></div>
           <div className="hazard-stripe" aria-hidden="true" />
-          <div className="d-round-action prts-reticle" data-testid="round-action"><strong>R{round} · 本回合指令</strong><p><DerivedText text={action} /></p></div>
+          <div className="d-round-action prts-reticle" data-testid="round-action"><strong>R{round} · 本回合指令</strong><p className="round-signal" key={round}><DerivedText text={action} /></p></div>
           <div className="d-inline d-round-controls">
             <button className="d-icon" aria-label="上一回合" disabled={round <= 1} onClick={() => selectRound(round - 1)}><ChevronLeft size={16} /></button><button className="d-button d-primary d-small" disabled={round >= 15} onClick={() => selectRound(round + 1)}>下一回合<ChevronRight size={14} /></button>
           </div>

@@ -43,6 +43,9 @@
 .d-scan-actions button { padding:10px 6px; }
 .d-scan-status { background:#091419; border-radius:6px; padding:8px 10px; color:#aebfc7; font-size:12px; line-height:1.5; }
 .d-scan-status p + p, .d-scan-status button { margin-top:5px; }
+.d-scan-float { position:fixed; bottom:16px; right:16px; z-index:35; width:min(340px, calc(100% - 32px)); border:1px solid var(--border-hairline); box-shadow:0 8px 24px #0007; }
+.d-scan-float > .d-icon { float:right; margin:0 0 4px 8px; }
+.desktop-app:has(.d-picker) > .d-scan-float { display:none; }
 .d-shortcut { font-size:11px; }
 .d-corrections { border-top:1px solid #21453f; padding-top:12px; }
 .d-corrections h3 { margin:12px 0 7px; color:#a6bbbc; font-size:12px; font-weight:600; }

@@ -2,6 +2,7 @@ const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { windowsWorkerPath } = require('./windows-runtime.cjs');
 
 const SHORTCUT = 'CommandOrControl+Shift+F8';
 const EMPTY = { complete: false, bannedCovenants: [], seenCovenants: [], missingCovenants: [] };
@@ -33,12 +34,9 @@ function installCovenantOcr({ app, mainWindow, ipcMain, desktopCapturer, clipboa
 
   function ensureWorker() {
     if (worker) return worker;
-    const directory = app.isPackaged
-      ? path.join(process.resourcesPath, 'ocr')
-      : path.join(app.getAppPath(), 'work', 'windows-ocr', 'runtime', 'PRTS-OCR');
-    const executable = path.join(directory, 'PRTS-OCR.exe');
+    const executable = windowsWorkerPath(app);
     if (!existsSync(executable)) throw new Error('缺少离线识别组件，请使用完整的 Windows OCR 版。');
-    const child = spawn(executable, [], { cwd: directory, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(executable, [], { cwd: path.dirname(executable), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     worker = child;
     let output = '';
     child.stdout.setEncoding('utf8');
@@ -146,10 +144,7 @@ function installCovenantOcr({ app, mainWindow, ipcMain, desktopCapturer, clipboa
       if (state.id !== id || disposed) return state;
       publish({ status: 'error', message: error.message || '识别失败，请重试。' });
     }
-    if (!disposed && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.webContents.send('covenant-ocr-open');
-    }
+    if (!disposed && !mainWindow.isDestroyed()) mainWindow.show();
     return state;
   }
 

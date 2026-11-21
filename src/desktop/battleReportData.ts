@@ -1,0 +1,253 @@
+import { BOSS_ENCOUNTERS } from '../data/bossEncounterData';
+
+export const REPORT_SEATS = [1, 2, 3, 4] as const;
+export const REPORT_ROUNDS = Array.from({ length: 15 }, (_, i) => i + 1);
+
+const modes: Readonly<Record<string, string>> = {
+  mode_multi_funny: '标准模拟', mode_multi_normal: '险境模拟', mode_multi_hard: '绝境模拟', mode_multi_abyss: '终极模拟',
+};
+const bossIds = [
+  'enemy_9013_acstmk', 'enemy_9017_achunt', 'enemy_9021_acduml', 'enemy_1521_dslily', 'enemy_2016_csphtm',
+  'enemy_9032_aclionk', 'enemy_9033_acdeer', 'enemy_9013_acstmk_2', 'enemy_9017_achunt_2', 'enemy_9021_acduml_2',
+  'enemy_9029_acfnc', 'enemy_9035_acspider', 'enemy_9037_aceel', 'enemy_9029_acfnc_2', 'enemy_9035_acspider_2',
+  'enemy_9037_aceel_2', 'enemy_2124_dyjsfg',
+];
+const bossToken = (id: string) => {
+  const match = /^boss_([1-9]\d?)$/.exec(id);
+  return match ? bossIds[Number(match[1]) - 1] ?? '' : id;
+};
+const bossEncounter = (id: string, round: 14 | 15) => BOSS_ENCOUNTERS.find(encounter =>
+  encounter.rounds[round] && (round === 15 ? `${encounter.id}_2` : encounter.id) === bossToken(id));
+const spawnKey = (round: number, action: number | null, id: string, count: number | null) =>
+  `${round}:${action}:${id}:${count}`;
+
+type ObjectData = Record<string, unknown>;
+const object = (value: unknown): ObjectData | null =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectData : null;
+const array = (value: unknown) => Array.isArray(value) ? value as unknown[] : [];
+const text = (value: unknown) => typeof value === 'string' ? value.slice(0, 200) : '';
+const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+const round = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 15 ? value : null;
+const seat = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4 ? value : null;
+const action = (value: unknown) => value === -1 ? -1 : number(value);
+const numberTable = (value: unknown) => Object.fromEntries(REPORT_SEATS.flatMap(id => {
+  const data = number(object(value)?.[id]);
+  return data === null ? [] : [[id, data]];
+}));
+
+interface Enemy {
+  id: string;
+  name: string;
+  count: number | null;
+  leaked: number | null;
+  power: number | null;
+}
+interface WaveRow {
+  seat: number | null;
+  action: number | null;
+  planned: number | null;
+  leaked: number | null;
+  power: number | null;
+  unpriced: number;
+  enemies: Enemy[];
+}
+interface Spawn extends Omit<Enemy, 'leaked'> {
+  round: number;
+  action: number | null;
+  owner: string;
+  kind: 'plan' | 'battle';
+  source: string;
+  seenRound: number | null;
+}
+interface BossHit { seat: number; identifier: number; source: number | null; damage: number }
+export interface BattleRound {
+  number: number;
+  phase: string;
+  leaks: Record<number, number>;
+  leaksStatus: string;
+  unassignedSelfLeaks: number | null;
+  skippedCosts: Record<number, number>;
+  assists: Record<number, number>;
+  assistsStatus: string;
+  assistsPartial: boolean;
+  assistPairs: { killer: number; owner: number; count: number }[];
+  unattributedAssists: number;
+  hpCosts: Record<number, number>;
+  allPlayersLeaked: boolean;
+  bossDamage: Record<number, number>;
+  bossPercent: Record<number, number>;
+  bossUplink: Record<number, number>;
+  bossUplinkRows: BossHit[];
+  bossOfficial: BossHit[];
+  bossStatus: string;
+  bossHp: number | null;
+  bossPlanId: string;
+  bossGroups: boolean;
+  waveConfirmed: number[];
+  rows: WaveRow[];
+}
+export interface BattleReport {
+  match: number | null;
+  current: number | null;
+  self: number | null;
+  mode: string;
+  difficulty: string;
+  boss: string;
+  hiddenBoss: string;
+  names: Record<number, string>;
+  hp: Record<number, number>;
+  eliminated: Record<number, number>;
+  rounds: BattleRound[];
+  preview: Spawn[];
+}
+
+function readEnemy(value: unknown): Enemy | null {
+  const row = object(value);
+  if (!row) return null;
+  const id = text(row.id);
+  return { id, name: text(row.name) || id || '未识别敌人', count: number(row.planned),
+    leaked: number(row.leaked), power: number(row.unit_power) };
+}
+
+function bossHits(value: unknown, official: boolean): BossHit[] {
+  return array(value).flatMap(value => {
+    const row = object(value);
+    const player = seat(row?.player);
+    const identifier = number(row?.[official ? 'identifier' : 'attacker']);
+    const damage = number(row?.damage);
+    if (player === null || identifier === null || damage === null) return [];
+    return [{ seat: player, identifier, source: official ? null : number(row?.source), damage }];
+  });
+}
+
+export function readBattleReport(input: unknown): BattleReport {
+  const root = object(input);
+  const players = object(root?.players);
+  const rounds = object(root?.rounds);
+  if (!root || !players || !rounds) throw new Error('这不是有效的 ArkLogs JSON 战报。');
+  const capture = object(root.capture);
+  const config = object(root.battle_config);
+  const mode = text(config?.mode_id);
+  const preview: Spawn[] = array(root.spawn_plan).flatMap(value => {
+    const row = object(value);
+    const index = round(row?.round);
+    const id = text(row?.enemy_id);
+    if (index === null || !id) return [];
+    const sources = array(row?.sources).map(text).filter(Boolean).join('、');
+    return [{ id, name: text(row?.name) || id, round: index, action: action(row?.action), count: number(row?.count),
+      power: number(row?.unit_power), owner: '公共编排', kind: 'plan', source: sources || '对局预告', seenRound: number(row?.seen_round) }];
+  });
+  const knownBatches = new Set(preview.map(item => spawnKey(item.round, item.action, item.id, item.count)));
+  const enemyNames = new Map(preview.map(item => [item.id, item.name]));
+  const result: BattleRound[] = [];
+  for (const index of REPORT_ROUNDS) {
+    const row = object(rounds[index]);
+    if (!row) continue;
+    const waveReport = object(row.wave_power);
+    const bossGroups = waveReport?.boss_groups === true;
+    const lines = array(waveReport?.rows).flatMap(value => {
+      const wave = object(value);
+      if (!wave) return [];
+      return [{ seat: bossGroups ? number(wave.player) : seat(wave.player), action: action(wave.action),
+        planned: number(wave.planned), leaked: number(wave.leaked), power: number(wave.power),
+        unpriced: number(wave.unpriced) ?? 0, enemies: array(wave.enemies).flatMap(value => readEnemy(value) ?? []) }];
+    });
+    const bossPlanId = text(object(row.boss_plan)?.id);
+    const encounter = index === 14 || index === 15 ? bossEncounter(bossPlanId, index) : undefined;
+    if (encounter) {
+      const id = bossToken(bossPlanId);
+      if (!preview.some(item => item.round === index && item.id === id)) {
+        preview.push({ id, name: encounter.name, round: index, action: null, count: 1, power: null, owner: 'Boss',
+          kind: 'plan', source: 'Boss 预告', seenRound: index });
+      }
+    }
+    for (const wave of lines) {
+      for (const enemy of wave.enemies) {
+        if (!enemy.count) continue;
+        const publicPlan = wave.seat === null;
+        if (publicPlan && knownBatches.has(spawnKey(index, wave.action, enemy.id, enemy.count))) continue;
+        preview.push({ ...enemy, round: index, action: wave.action, owner: waveOwner(wave.seat, bossGroups),
+          kind: publicPlan ? 'plan' : 'battle', source: publicPlan ? '对局预告' : '战斗编排', seenRound: null });
+      }
+    }
+    for (const extra of array(row.prep_extras)) {
+      const item = object(extra);
+      const player = seat(item?.player);
+      const id = text(item?.enemy_id);
+      const count = number(item?.count);
+      if (!id || !count || player === null || (!bossGroups && lines.some(wave => wave.seat === player
+          && wave.action === -1 && wave.enemies.some(enemy => enemy.id === id && enemy.count)))) continue;
+      preview.push({ id, name: enemyNames.get(id) ?? id, count, power: null, round: index,
+        action: -1, owner: waveOwner(player, false), kind: 'plan', source: '准备词条', seenRound: index });
+    }
+    const skippedCosts = numberTable(row.skipped_hp_costs);
+    const hpCosts = numberTable(row.hp_costs);
+    const assistsStatus = text(row.assists_others_status ?? row.assists_status);
+    result.push({
+      number: index, phase: text(row.phase), leaks: numberTable(row.leaks), leaksStatus: text(row.leaks_status), skippedCosts,
+      unassignedSelfLeaks: number(row.unassigned_self_leaks),
+      assists: numberTable(row.assists_others ?? row.assists), assistsStatus: text(row.assists_status),
+      assistsPartial: assistsStatus !== 'reported' && assistsStatus !== 'skipped',
+      assistPairs: array(row.assist_pairs).flatMap(value => {
+        const pair = object(value);
+        const killer = seat(pair?.killer), owner = seat(pair?.owner), count = number(pair?.count);
+        return killer === null || owner === null || count === null ? [] : [{ killer, owner, count }];
+      }),
+      unattributedAssists: number(row.unattributed_assists) ?? 0,
+      hpCosts: Object.keys(hpCosts).length ? hpCosts : skippedCosts, allPlayersLeaked: row.all_players_leaked === true,
+      bossDamage: numberTable(row.boss_damage), bossPercent: numberTable(row.boss_percent), bossUplink: numberTable(row.boss_uplink),
+      bossUplinkRows: bossHits(row.boss_uplink_rows, false), bossOfficial: bossHits(row.boss_official, true),
+      bossStatus: text(row.boss_status), bossHp: number(row.boss_hp), bossPlanId, bossGroups,
+      waveConfirmed: array(waveReport?.confirmed_players).flatMap(value => seat(value) ?? []), rows: lines,
+    });
+  }
+  if (!result.length && !preview.length && !mode) throw new Error('战报里没有对局数据。');
+  const single = /^mode_single_(\d+)$/.exec(mode);
+  return { match: number(capture?.match), current: round(capture?.round), self: seat(capture?.self), mode,
+    difficulty: single ? `规程等级 ${single[1]}` : Object.hasOwn(modes, mode) ? modes[mode] : '',
+    boss: text(config?.boss_id), hiddenBoss: text(config?.hidden_boss_id),
+    names: Object.fromEntries(REPORT_SEATS.map(id => [id, text(players[id])])),
+    hp: numberTable(root.hp), eliminated: numberTable(root.eliminated), rounds: result,
+    preview: preview.sort((a, b) => a.round - b.round),
+  };
+}
+
+interface Metric { value: number; quality?: 'partial' | 'estimated' | 'minimum' }
+export function roundMetrics(data: BattleRound | undefined, id: number): (Metric | undefined)[] {
+  if (!data) return [undefined, undefined, undefined, undefined];
+  const leaks = data.leaks[id], skipped = data.skippedCosts[id], assists = data.assists[id], hp = data.hpCosts[id];
+  const rows = data.bossGroups ? [] : data.rows.filter(row => row.seat === id);
+  const confirmed = data.waveConfirmed.includes(id);
+  const missingLeaks = leaks !== undefined && leaks > rows.reduce((sum, row) => sum + (row.leaked ?? 0), 0);
+  const unpriced = missingLeaks || rows.some(row => row.unpriced > 0 || (row.leaked && row.power === null));
+  const priced = rows.filter(row => row.power !== null);
+  const power = priced.length ? priced.reduce((sum, row) => sum + (row.power ?? 0), 0) : confirmed || leaks === 0 ? 0 : null;
+  return [
+    leaks !== undefined ? { value: leaks, quality: data.leaksStatus === 'reported' ? undefined : 'partial' }
+      : skipped !== undefined ? { value: Math.min(skipped, 10), quality: skipped >= 10 ? 'minimum' : 'estimated' } : undefined,
+    assists === undefined ? undefined : { value: assists, quality: data.assistsPartial ? 'partial' : undefined },
+    hp === undefined ? undefined : { value: hp },
+    data.bossGroups || power === null || (power === 0 && unpriced) ? undefined
+      : { value: power, quality: unpriced || (power > 0 && !confirmed) ? 'partial' : undefined },
+  ];
+}
+
+export function waveOwner(player: number | null, bossGroups: boolean) {
+  return player === null ? '公共编排' : bossGroups ? `战区 ${player}` : `${player} 号`;
+}
+
+export function reportLeader(report: BattleReport, round: 14 | 15) {
+  const data = report.rounds.find(row => row.number === round);
+  const known = (id: string) => bossEncounter(id, round);
+  // R15 的计划有时沿用 R14 普通领袖。只认该回合有效的模板。
+  const plan = known(data?.bossPlanId ?? '');
+  if (plan) return plan;
+  const configured = known(round === 15 ? report.hiddenBoss : report.boss);
+  const candidatesFor = (ids: string[]) => [...new Set(ids.flatMap(id => known(id) ?? []))];
+  const recorded = candidatesFor((data?.rows ?? []).filter(row => row.seat !== null)
+    .flatMap(row => row.enemies.map(enemy => enemy.id)));
+  const candidates = recorded.length ? recorded
+    : candidatesFor(report.preview.filter(row => row.round === round && row.kind === 'plan').map(row => row.id));
+  return candidates.find(item => item === configured)
+    ?? (candidates.length === 1 ? candidates[0] : candidates.length === 0 ? configured ?? null : null);
+}

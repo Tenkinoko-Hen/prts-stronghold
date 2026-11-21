@@ -26,7 +26,7 @@ Push-Location $projectRoot
 try {
     if (!$SkipWebBuild) {
         Invoke-BuildTool 'npm.cmd' @('run', 'lint')
-        Invoke-BuildTool '.\node_modules\.bin\vite.cmd' @('build', '--outDir', $WebRoot)
+        Invoke-BuildTool '.\node_modules\.bin\vite.cmd' @('build', '--mode', 'android', '--outDir', $WebRoot)
     }
     if (!(Test-Path -LiteralPath "$webRoot\index.html")) { throw '缺少手机网页构建产物。' }
     foreach ($directory in @($buildRoot, "$buildRoot\generated", "$buildRoot\classes", "$buildRoot\dex", $releaseRoot)) {

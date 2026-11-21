@@ -31,7 +31,7 @@ export function trainingState(mode: ModeOperator | undefined, elite: boolean) {
 }
 
 export function baseTalentsFor(name: string, promotion?: number) {
-  const rows = operatorAbilities[name]?.talents.filter(row => !/模组|级|ISW|RA-|SO-/.test(row[1]) && (promotion === undefined || !/精英\d/.test(row[1]) || Number(row[1].match(/精英(\d)/)?.[1]) <= promotion)) || [];
+  const rows = operatorAbilities[name]?.talents.filter(row => !/模组|潜能|级|ISW|RA-|SO-/.test(row[1]) && (promotion === undefined || !/精英\d/.test(row[1]) || Number(row[1].match(/精英(\d)/)?.[1]) <= promotion)) || [];
   // 这两项在精二改名升级；瑕光、魔王等未升级的精一天赋仍须保留。
   const renamed: Record<string, string> = { '体力上限提升': '深海再生力', '快速部署': '小个子支援' };
   return rows.filter((row, i) => !rows.slice(i + 1).some(next => next[0] === row[0] || next[0] === renamed[row[0]]));

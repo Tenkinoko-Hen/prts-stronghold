@@ -129,6 +129,7 @@ export const Tactical2DMapView: React.FC<Tactical2DMapViewProps> = ({
       <div className="d-tabs">{(['道中', 'Boss战'] as const).map(mode => <button key={mode} aria-pressed={stageMode === mode} onClick={() => onChangeStageMode(mode)}>{mode}</button>)}</div>
       {currentLayout.bossDangerZone && <button className={`d-button d-small ${showDangerZone ? 'd-warning' : ''}`} aria-pressed={showDangerZone} onClick={() => setShowDangerZone(value => !value)}>Boss 红框 {showDangerZone ? '开' : '关'}</button>}
       <div className="d-tabs"><button aria-pressed={displayMode === 'split'} onClick={() => setDisplayMode('split')}><Grid size={13} />同屏</button><button aria-pressed={displayMode === 'original'} onClick={() => setDisplayMode('original')}><ImageIcon size={13} />原图</button></div>
+      <button className="d-button d-small" onClick={() => setRoutesOpen(true)}>Boss 属性与路线</button>
     </div>
     <div className={`d-map-body ${displayMode === 'original' ? 'is-original' : ''}`}>
       <section className="d-panel d-map-reference"><div className="d-section-head"><h2><Eye size={15} />道中 / Boss 战原图</h2><div className="d-inline">
@@ -152,10 +153,10 @@ export const Tactical2DMapView: React.FC<Tactical2DMapViewProps> = ({
             {placement ? <><span className={`d-slot-role ${ROLE_SLOT_STYLES[placement.role].pillBg}`}>{placement.label}</span><span className="d-slot-avatar">{avatar ? <img src={avatar} alt={name} /> : name.slice(0, 2)}</span><span className="d-slot-name">{name}</span></> : <><span className="d-cell-coordinate">{x + 1},{z + 1}</span><span className={tile.labelColor}>{tile.label}</span>{danger && <small>Boss区</small>}</>}
           </button>;
         }))}</div>
-        <footer className="d-board-footer"><span>6 × 10 · 点击干员查看站位</span><button className="d-text-button" onClick={() => setRoutesOpen(true)}>Boss 路线</button><button className="d-text-button" onClick={() => setNotesOpen(true)}>站位要点</button></footer>
+        <footer className="d-board-footer"><span>6 × 10 · 点击干员查看站位</span><button className="d-text-button" onClick={() => setNotesOpen(true)}>站位要点</button></footer>
       </section>}
     </div>
-    {routesOpen && <DesktopDialog title="Boss 路线 · 按难度与地形核对" onClose={() => setRoutesOpen(false)}><BossRoutes onOpenImage={(url, title) => { setRoutesOpen(false); onOpenImage(url, title); }} /></DesktopDialog>}
+    {routesOpen && <DesktopDialog title="Boss 属性与路线" onClose={() => setRoutesOpen(false)}><BossRoutes onOpenImage={(url, title) => { setRoutesOpen(false); onOpenImage(url, title); }} /></DesktopDialog>}
     {notesOpen && <DesktopDialog title={`${activeMap.name} · ${stageMode}`} onClose={() => setNotesOpen(false)}><p>{currentLayout.description}</p><ul>{currentLayout.tacticalNotes.map(note => <li key={note}>{note}</li>)}</ul><p>{activeMap.summary}</p></DesktopDialog>}
     {inspectorOpen && selectedPlacement && <DesktopDialog title={`槽位：${selectedPlacement.label}`} onClose={() => setInspectorOpen(false)}><section data-testid="selected-slot-inspector"><p><Crosshair className="inline" size={15} /> {selectedPlacement.elevation === 'high' ? '高台位' : '地面位'} · ({selectedPlacement.x + 1}, {selectedPlacement.z + 1})</p>
       {isInsideBossDangerZone(selectedPlacement.x, selectedPlacement.z, currentLayout.bossDangerZone) && <p className="d-warning"><ShieldAlert className="inline" size={15} />位于 Boss 攻击范围</p>}

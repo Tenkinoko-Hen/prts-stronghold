@@ -477,9 +477,38 @@ interface CompBanRuleProfile {
   criticalOperators: string[]; // 核心干员被禁 -55
   importantOperators: string[]; // 重要干员被禁 -18
   pivotTipWhenSoftBanned: string;
+  setupCheck?: string; // 仅凭 Ban 不能确认的科研或来牌条件
 }
 
 const COMP_BAN_PROFILES: Record<string, CompBanRuleProfile> = {
+  'kjerag-reprise-fast-four': {
+    hardRequiredCovenants: ['谢拉格', '精准'], softSupportCovenants: ['聚合'],
+    criticalOperators: [], importantOperators: ['空弦', '纯烬艾雅法拉'],
+    pivotTipWhenSoftBanned: '用复奏在四本碰五阶；无谢转就不强走逻各斯，有有效迅捷与双镜再选雪猎。缺聚合优先补有效治疗。',
+  },
+  'kjerag-suzuran-snowhunter': {
+    hardRequiredCovenants: ['谢拉格', '精准', '迅捷'], softSupportCovenants: ['坚守'],
+    criticalOperators: ['雪猎', '承曦格雷伊'], importantOperators: ['耶拉', '青枳'],
+    pivotTipWhenSoftBanned: '需要铃兰指令和二本核心对子。缺迅捷先稳场，不沿用双镜的关底预期；牌不顺转铃兰供冰或复奏速四。',
+  },
+  'yan-bison-victoria-research': {
+    hardRequiredCovenants: ['炎', '维多利亚'], softSupportCovenants: ['坚守', '聚合', '灵巧'],
+    criticalOperators: ['风絮', '涤火杰西卡', '赤刃明霄陈'], importantOperators: ['仇白', '余'],
+    setupCheck: '科研：先守住四本炎，火陈与维转到手再合流',
+    pivotTipWhenSoftBanned: '缺火陈、维转或装备用四本整店炎；别在中期同时硬凑三炎和三维。',
+  },
+  'sargon-victoria-mechanist': {
+    hardRequiredCovenants: ['萨尔贡', '维多利亚'], softSupportCovenants: ['坚守', '聚合'],
+    criticalOperators: ['异客', '涤火杰西卡'], importantOperators: [],
+    setupCheck: '科研：四本确认异客装备循环与涤火杰西卡',
+    pivotTipWhenSoftBanned: '精奥受限可以试。异客迟到先用免费换装找战力；缺输出时不靠堆坚守解决漏怪。',
+  },
+  'papyrus-pairs-pivot': {
+    hardRequiredCovenants: [], softSupportCovenants: ['精准'],
+    criticalOperators: [], importantOperators: [],
+    setupCheck: '转线：四本开牌后再选莱塔尼亚或萨尔贡',
+    pivotTipWhenSoftBanned: '按实际开到的五阶和道中生存转线；两家都不合适就保现有强阵，不能假定开出核心。',
+  },
   'kjerag-mechanist-greyy': {
     hardRequiredCovenants: ['谢拉格', '灵巧'], softSupportCovenants: ['坚守', '聚合'],
     criticalOperators: ['承曦格雷伊'], importantOperators: ['耶拉', '初雪'],
@@ -518,7 +547,7 @@ const COMP_BAN_PROFILES: Record<string, CompBanRuleProfile> = {
   'iberia-bastion-three-tier': {
     hardRequiredCovenants: ['伊比利亚'], softSupportCovenants: ['坚守', '聚合', '助力', '迅捷'],
     criticalOperators: ['旅骨', '蓝毒'], importantOperators: ['海沫', '流明', '温蒂'],
-    pivotTipWhenSoftBanned: '精准受限仍可考虑坚守聚合线，但需核对蓝毒与旅骨是否存活；迅捷有来源和空位再补。引星没来用已有输出，六伊不齐先三伊生存收束。',
+    pivotTipWhenSoftBanned: '精准受限仍可走坚守聚合，先核对蓝毒、旅骨。两名低阶伊已精锐仍缺四阶治疗或控制时及时升四，不等固定回合。',
   },
   'kjerag-snowhunter-precision-swift': {
     hardRequiredCovenants: ['谢拉格', '精准', '迅捷'], softSupportCovenants: ['坚守', '聚合'],
@@ -573,7 +602,7 @@ const COMP_BAN_PROFILES: Record<string, CompBanRuleProfile> = {
   'kazimierz-gavial-blemishine': {
     hardRequiredCovenants: ['卡西米尔', '不屈', '突袭'], softSupportCovenants: [],
     criticalOperators: ['砾', '瑕光', '玛恩纳'], importantOperators: ['风丸'],
-    pivotTipWhenSoftBanned: '先确认砾、瑕光与玛恩纳可用；三卡西加三不屈突袭可收束，转职为上限。中期可能漏怪，关键组件受限时不要硬走叠层路线。',
+    pivotTipWhenSoftBanned: '先确认砾、瑕光与玛恩纳。R5–10 先补阻挡、对空和清怪；百炼嘉维尔指令保砾或当前扛线位，别等转职才补战力。',
   },
   'faith-mixer-fast-four': {
     hardRequiredCovenants: ['莱塔尼亚', '精准', '奥术'], softSupportCovenants: ['聚合'],
@@ -701,7 +730,7 @@ export function evaluateCompUnderBans(
   const bannedCovSet = new Set(banState.bannedCovenants);
   const bannedOpSet = new Set(banState.bannedOperators);
 
-  let score = 100;
+  let score = profile?.setupCheck ? 80 : 100;
   const blockedReasons: string[] = [];
   const safeHighlights: string[] = [];
   let coreUnavailable = false;
@@ -714,6 +743,17 @@ export function evaluateCompUnderBans(
   if (comp.id === 'chiave-leithanien-refresh' && !bannedCovSet.has('叙拉古')) {
     score -= 20;
     blockedReasons.push('尚未满足禁叙保莱的特殊卡池，不能预期贾维被动稳定给复奏；按普通精奥莱准备备选');
+  }
+
+  const papyrusLineBans = comp.id === 'papyrus-pairs-pivot'
+    ? ['莱塔尼亚', '萨尔贡'].filter(name => bannedCovSet.has(name))
+    : [];
+  if (papyrusLineBans.length === 2) {
+    score -= 55;
+    coreUnavailable = true;
+    blockedReasons.push('莱塔尼亚和萨尔贡均被禁，本卡两条出口都不可用');
+  } else if (papyrusLineBans.length === 1) {
+    blockedReasons.push(`主阵营【${papyrusLineBans[0]}】被禁，渡桥仅保留另一条出口`);
   }
 
   if (profile) {
@@ -755,6 +795,7 @@ export function evaluateCompUnderBans(
     }
   }
 
+  if (profile?.setupCheck) blockedReasons.push(profile.setupCheck);
   score = Math.max(0, Math.min(100, score));
 
   let status: 'optimal' | 'viable' | 'blocked' = 'optimal';

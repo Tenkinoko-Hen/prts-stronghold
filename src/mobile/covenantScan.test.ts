@@ -8,18 +8,22 @@ import { rankCompsByBanState } from '../utils/tacticalLogic';
 const videoBans = ['萨尔贡', '维多利亚', '叙拉古', '卡西米尔', '乌萨斯', '精准', '迅捷', '助力', '聚合', '奥术'];
 const result = (overrides = {}) => JSON.stringify({ id: 'video-match', status: 'ready', message: '已确认', seenCovenants: [...COVENANT_NAMES].reverse(), bannedCovenants: videoBans, ...overrides });
 
-test('录屏乱序的26个盟约批量应用，保留攻略回合并按 Ban 推荐', () => {
+test('录屏乱序的26个盟约批量应用，清除上一局进度并按新 Ban 推荐', () => {
   const scan = parseCovenantScan(result())!;
   assert.equal(true, scan.complete);
   let state = mobileReducer(emptySession(), { type: 'choose', id: META_COMPS[0].id });
   state = mobileReducer(state, { type: 'round', round: 8 });
+  state = mobileReducer(state, { type: 'ban', group: 'bannedOperators', name: '砾' });
   state = mobileReducer(state, { type: 'applyScan', scan });
   assert.equal('ban', state.step);
-  assert.equal(8, state.rounds[META_COMPS[0].id]);
+  assert.equal(null, state.compId);
+  assert.deepEqual({}, state.rounds);
   assert.deepEqual(videoBans, state.bans.bannedCovenants);
   assert.deepEqual([], state.bans.bannedOperators);
   assert.equal('blocked', rankCompsByBanState(META_COMPS, state.bans).find(item => item.comp.id === 'victoria-bastion-jessica')?.status);
   assert.deepEqual(state, restoreSession(JSON.stringify(state)));
+  const corrected = mobileReducer(state, { type: 'ban', group: 'bannedCovenants', name: videoBans[0] });
+  assert.equal(corrected, mobileReducer(corrected, { type: 'applyScan', scan }));
 });
 
 test('缺失盟约不能伪装完成；取消和错误不能覆盖当前局', () => {

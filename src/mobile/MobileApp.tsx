@@ -1,10 +1,11 @@
-import React, { useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Crosshair, RotateCcw, ShieldBan, X } from 'lucide-react';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATORS, META_COMPS } from '../data/strongholdData';
 import { getRecommendedPaceForRound, rankCompsByBanState } from '../utils/tacticalLogic';
 import { MOBILE_SESSION_KEY, mobileReducer, restoreSession } from './mobileSession';
 import { MobileReference } from './MobileReference';
-import { CovenantScanner } from './CovenantScanner';
+import { CovenantScanner, useCovenantScanner } from './CovenantScanner';
+import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
 import type { RoundSyncProgress } from './RoundSync';
 import { StrategyBadge } from '../components/StrategyBadge';
@@ -36,10 +37,24 @@ export default function MobileApp() {
   const banCount = session.bans.bannedCovenants.length + session.bans.bannedOperators.length;
   const manualRound = (value: number) => { window.PRTSRound?.pause(); dispatch({ type: 'round', round: value }); };
   const openImage = (url: string, title: string) => { setZoom(100); setImage({ url, title }); };
-  const startNewMatch = () => {
-    window.PRTSScan?.reset();
+  const resetRoundSync = useCallback(() => {
     window.PRTSRound?.stop();
     roundSyncProgress.current = { id: '', handled: '', synchronized: false, pending: null };
+  }, []);
+  const applyScan = useCallback((scan: CovenantScan) => {
+    if (scan.status === 'ready') {
+      resetRoundSync();
+      setResetPrompt(false);
+      setHelp(false);
+      setImage(null);
+    }
+    dispatch({ type: 'applyScan', scan });
+    setCorrecting(false);
+  }, [resetRoundSync]);
+  const scanner = useCovenantScanner(session.scanId, applyScan);
+  const startNewMatch = () => {
+    window.PRTSScan?.reset();
+    resetRoundSync();
     dispatch({ type: 'newMatch' });
     setResetPrompt(false);
   };
@@ -68,7 +83,7 @@ export default function MobileApp() {
     {storageError && <p role="alert" className="m-warning">本机未能保存进度，关闭前请记下当前回合。</p>}
     <main className={`m-scroll ${session.step === 'guide' ? 'is-guide' : session.step === 'ban' ? 'is-scan' : ''}`} ref={scrollRef}>
       {session.step === 'ban' && <div className="m-scan-layout"><section className="m-scan-controls" aria-label="识别与校正">
-        <CovenantScanner appliedId={session.scanId} onApply={scan => { dispatch({ type: 'applyScan', scan }); setCorrecting(false); }} />
+        <CovenantScanner appliedId={session.scanId} scanner={scanner} />
         <div className="m-ban-result"><div className="m-result-heading"><strong>{session.scanComplete ? '26 项已确认' : session.scanId ? `已确认 ${session.confirmedCovenants?.length || 0}/26` : '本局条件'} · {session.bans.bannedCovenants.length} 项受限</strong><button className="m-text-button" aria-expanded={correcting} onClick={() => setCorrecting(true)}>补录 / 校正</button></div>
           <div className="m-restricted-chips">{session.bans.bannedCovenants.map(name => <button key={name} onClick={() => dispatch({ type: 'ban', group: 'bannedCovenants', name })} aria-label={`将${name}改为可用`}>{name}<X size={12} /></button>)}</div>
         </div>

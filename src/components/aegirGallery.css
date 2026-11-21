@@ -1,28 +1,70 @@
 .desktop-dialog:has(.aegir-gallery) { width:min(1060px,94vw); max-width:94vw; }
-.aegir-gallery { display:grid; gap:8px; min-width:0; line-height:1.55; font-size:13px; }
-.aegir-pickers { display:grid; grid-template-columns:minmax(100px,1fr) minmax(0,2fr); gap:8px; }
-.aegir-pickers label { display:grid; gap:3px; min-width:0; color:var(--text-secondary,#a0adaa); font-size:12px; }
-.aegir-pickers select,.aegir-tools button {
-  min-width:0; min-height:34px; padding:4px 8px; border:1px solid var(--border-hairline,#54605b);
-  background:var(--bg-elevated,#292f2c); color:var(--text-primary,#edf0e9);
+.aegir-gallery { --aegir-frame-size:min(48dvh,510px); display:grid; gap:8px; min-width:0; line-height:1.45; font-size:12px; }
+.aegir-filters { display:flex; gap:5px; overflow-x:auto; scrollbar-width:thin; }
+.aegir-filters button,.aegir-select,.aegir-tools button,.aegir-index button {
+  min-width:0; min-height:29px; padding:3px 7px; border:1px solid var(--border-hairline);
+  background:var(--bg-elevated); color:var(--text-primary);
 }
-.aegir-pickers select { width:100%; text-overflow:ellipsis; }
+.aegir-filters button { flex:none; white-space:nowrap; }
+.aegir-filters small { margin-left:5px; font-family:var(--font-mono); opacity:.85; }
+.aegir-filters button[aria-pressed=true],.aegir-index button[aria-current] { color:var(--accent-endfield); border-color:var(--accent-endfield); }
+.aegir-body,.aegir-detail { display:grid; min-width:0; gap:7px; align-content:start; }
+.aegir-index { display:none; }
+.aegir-select { width:100%; text-overflow:ellipsis; }
 .aegir-usage { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; }
-.aegir-usage strong { font-size:15px; }
-.aegir-usage small,.aegir-source { color:var(--text-secondary,#a0adaa); }
-.aegir-usage p { flex-basis:100%; margin:0; }
-.aegir-tools { display:flex; align-items:center; gap:8px; }
-.aegir-tools button { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
+.aegir-usage strong { font-size:14px; }
+.aegir-usage small,.aegir-source { color:var(--text-secondary); }
+.aegir-gallery .aegir-usage p { flex-basis:100%; margin:0; }
+.aegir-tools { display:flex; align-items:center; gap:6px; }
+.aegir-tools button { display:inline-flex; align-items:center; justify-content:center; gap:5px; min-width:30px; }
 .aegir-tools button:disabled { opacity:.42; }
 .aegir-tools .aegir-zoom { margin-left:auto; }
-.aegir-frame { min-width:0; overflow:auto; max-height:54dvh; background:#090b0b; overscroll-behavior:contain; }
-.aegir-frame img { display:block; width:auto; max-width:100%; max-height:54dvh; margin:0 auto; object-fit:contain; }
-.aegir-frame.is-zoomed img { width:200%; max-width:none; max-height:none; }
+.aegir-frame { min-width:0; overflow:auto; max-height:var(--aegir-frame-size); background:#090b0b; }
+.aegir-frame img { display:block; width:100%; height:var(--aegir-frame-size); object-fit:contain; }
+.aegir-frame.is-zoomed { overscroll-behavior:contain; }
+.aegir-frame.is-zoomed img { width:max(200%,600px); height:auto; max-width:none; }
 .aegir-source { overflow-wrap:anywhere; font-size:11px; }
-.m-aegir-button { display:inline-flex; align-items:center; gap:5px; }
-.m-guide-workbar .m-workbar-gallery { order:2; flex-shrink:0; color:var(--accent-endfield); }
+button.aegir-reference-trigger {
+  display:inline-flex; justify-content:center; align-items:center; min-height:28px; padding:3px 8px; white-space:nowrap;
+  border:1px solid var(--border-yellow,#aa9733); background:#f5df3e12; color:var(--accent-endfield,#f5df3e);
+}
+.aegir-reference-trigger > span { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
+.aegir-reference-trigger:hover { border-color:var(--accent-endfield); }
+.aegir-reference-trigger.is-preview { position:relative; display:grid; align-content:center; gap:3px; overflow:hidden; white-space:normal; }
+.aegir-reference-trigger.is-preview img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.27; }
+.aegir-reference-trigger.is-preview > :is(span,small) { position:relative; color:inherit; text-shadow:0 1px 4px #000; }
+.aegir-reference-trigger.is-preview > span { font-weight:750; }
+.aegir-reference-trigger.is-preview > small { color:var(--text-primary); }
+.m-guide-workbar .m-workbar-gallery { order:2; flex:none; min-height:24px; font-size:11px; padding:2px 5px; }
+@media (min-width:670px) {
+  .aegir-body { grid-template-columns:minmax(150px,24%) minmax(0,1fr); gap:9px; }
+  .aegir-index { display:grid; align-content:start; gap:4px; overflow:auto; max-height:calc(var(--aegir-frame-size) + 36px); }
+  .aegir-index button { display:flex; align-items:center; gap:6px; padding:4px; text-align:left; }
+  .aegir-index img { width:42px; height:27px; object-fit:cover; flex:none; }
+  .aegir-select { display:none; }
+}
 @media (max-height:450px), (max-width:560px) {
-  .desktop-dialog:has(.aegir-gallery) { max-height:calc(100dvh - 12px); }
+  .desktop-dialog:has(.aegir-gallery) { max-height:calc(100dvh - 10px); }
   .desktop-dialog:has(.aegir-gallery)>header { padding:4px 9px; }
   .desktop-dialog:has(.aegir-gallery) .d-dialog-content { padding:8px; }
+  .aegir-tools button,.aegir-filters button { min-height:26px; }
+}
+@media (max-height:450px) and (max-width:669px) {
+  .aegir-detail { grid-template-columns:minmax(0,1fr) auto; }
+  .aegir-detail > :not(.aegir-select):not(.aegir-tools) { grid-column:1/-1; }
+  .aegir-tools { gap:4px; }
+  .aegir-tools button { min-width:23px; padding:2px 4px; }
+}
+@media (max-height:330px) and (min-width:400px) and (max-width:669px) {
+  .aegir-gallery { --aegir-frame-size:44dvh; }
+  .aegir-filters { gap:4px; }
+  .aegir-filters button { padding-inline:4px; }
+  .aegir-filters small { margin-left:3px; }
+  .aegir-detail:not(:has(.aegir-frame.is-zoomed)) { grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); }
+  .aegir-detail > .aegir-select { grid-column:1; grid-row:1; }
+  .aegir-detail > .aegir-tools { grid-column:2; grid-row:1; justify-self:end; white-space:nowrap; }
+  .aegir-detail > .aegir-tools .aegir-zoom { margin-left:0; }
+  .aegir-detail > .aegir-frame:not(.is-zoomed) { grid-column:1; }
+  .aegir-detail:not(:has(.aegir-frame.is-zoomed)) > .aegir-usage { grid-column:2; align-content:start; gap:3px 6px; }
+  .aegir-usage strong { font-size:13px; }
 }

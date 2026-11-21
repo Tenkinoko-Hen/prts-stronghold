@@ -81,7 +81,7 @@ export function MobileGuide({ comp, round, bans, roundSyncProgress, onRound, onB
         {quickPick && <div className="m-round-menu" role="group" aria-label="回合快选">{Array.from({ length: 15 }, (_, i) => i + 1).map(value => <button key={value} aria-pressed={round === value} onClick={() => manualRound(value)}>R{value}</button>)}</div>}
       </div>
       <RoundSync round={round} progress={roundSyncProgress} onRound={onRound} />
-      {isAegirGuide(comp.id) && <AegirReferenceButton key={comp.id} className="m-icon-button m-workbar-gallery" iconOnly round={round} stage={round >= 14 ? 'Boss战' : '道中'} />}
+      {isAegirGuide(comp.id) && <AegirReferenceButton key={comp.id} className="m-workbar-gallery" round={round} stage={round >= 14 ? 'Boss战' : '道中'} />}
       <div className="m-hud-round-nav">
         <button className="m-icon-button" aria-label="上一回合" disabled={round <= 1} onClick={() => manualRound(round - 1)}><ChevronLeft size={16} /></button>
         <button className="m-icon-button m-primary chamfer-box" aria-label="下一回合" disabled={round >= 15} onClick={() => manualRound(round + 1)}><ChevronRight size={16} /></button>

@@ -1,5 +1,6 @@
 import { COMMUNITY_COMPS } from './communityComps';
 import { BOSS_ROUTE_GUIDES } from './bossRoutes';
+import { NGA_COMMUNITY_COMPS, PEPE_POSITION_IMAGE } from './ngaCommunityComps';
 
 export type RoleType = '输出' | '重装' | '奶';
 export type DirectionType = '→' | '↓' | '↑' | '←' | '→↓';
@@ -1465,10 +1466,12 @@ export const META_COMPS: MetaCompGuide[] = [
   ],
   "imageUrl": "/assets/aistudio/bd7b9f5af0ce29a4c9b417fb9c80c354_e3603720.png",
   "secondaryImageUrl": "/assets/community/source-043.jpg",
-  "coreHighlight": "精奥受限可走三维三坚守。涤火杰西卡靠装备人数叠层，华法琳对准水灯心带灵巧；对空与Boss输出另补。",
+  "coreHighlight": "先守住道中，再用涤火杰西卡开三维三坚守。水灯心可过渡；群怪、对空和关底伤害缺哪项就补哪项。",
   "equipmentTips": [
     "注意（056求助帖的回帖建议）：先用精准、灵巧、坚守等实际战力过渡，涤火杰西卡到手再转三维；核心迟到或装备不足就保过渡阵，别用八格硬塞六维三坚守。",
     "涤火杰西卡到位后，优先买便宜有效的装备，按场上带装备干员数叠维多利亚与坚守。三维能守再看五本塞雷娅与高阶输出，Boss不必硬凑六维。",
+    "NGA 066：若选机械师，低本用每轮两次免费装备刷新找能合的对子。合并并进阶后拿免费三选一，四本再找涤火杰西卡；不把白铁自动升装算作这次手动合并。",
+    "NGA 074：没拿到转职时，可有条件用承曦格雷伊等三精准配三维守路。遇到连续怪海要加群攻；水灯心只是过渡，不押作唯一关底输出。",
     "065 灵巧坚守分支：塞雷娅到手后站在涤火杰西卡身后复制叠层；华法琳朝向水灯心。白铁只进阶自身携带的装备，可在休整期后再分配。",
     "有维多利亚转职可给【塞雷娅】或【佩佩】（有佩佩可换云迹）",
     "补充技能选择（FireShot 009）：涤火杰西卡2技能偏输出、3技能偏道中稳定；按当前清怪和生存缺口选择。",
@@ -2480,11 +2483,11 @@ export const META_COMPS: MetaCompGuide[] = [
   "coreHighlight": "佩佩、鸿雪取得后补三萨与迅捷，五本追核心精锐。迅捷转职到手再给霍尔海雅或佩佩，六萨不挤掉必要治疗与对空。",
   "equipmentTips": [
     "迅捷转职实际取得后可给霍尔海雅，配华法琳；没有转职就按原生迅捷与当前战力过渡。",
-    "萨尔贡道中卡（锡人/至简）休整期给“萨尔贡浓茶”与“盟约之币”，优先喂给主C",
+    "四阶异客进入休整期提供浓茶或盟约之币，偶有拟态物质；至简是固定一费的萨尔贡过渡牌。",
     "补充运营（FireShot 010/014）：四本可用对子碰五阶佩佩、鸿雪，取得核心再决定三萨混搭或六萨；六萨与高迅捷层数仍可能缺Boss输出。",
     "11月13日新补图的五本分支：四本短停找异客、霍尔海雅并碰对子，战力与经济成熟再升五，停3~4回合找佩佩、鸿雪，用五本奖励碰六阶支援；没有固定升五回合。真言有新来源支持，作为取得后的六阶输出候选，不必强追或先于已有支援。",
     "新分支有条件给佩佩转迅捷，叠层足够后按实际词条换灵巧组件；不强制六萨，也不把原三萨三精三奥与作者精迅配置拼成同一套必选名单。缺核心可转已有莱塔尼亚或乌萨斯来牌。",
-    "早三萨评论是另一开局：先三萨配精准坚守保命，四本霍尔海雅衔接，奖励碰佩佩、鸿雪；精准转佩佩属于后期有转职的选择。“大姨策略”“安姐”未确认实名，不据此固定策略家或转职对象。",
+    "NGA 068 精迅分支：四本前可用三坚守和精迅过渡，后期用莎草、卡涅利安、异客、佩佩、鸿雪打底，再补精准、迅捷与生存各一位。精准转职先考虑佩佩，缺迅捷改看灵巧，不硬凑精奥或六萨。",
     "莎草R2~R15为作者单局留场经验；“90%出怪”“两回合叠满迅捷”和打字机bug均未提供复现依据，不作为通关率、固定层数或机制说明。两段长图与评论可在资料库查看。",
     "三萨三精准三奥术另见“三萨精奥 · 异客佩佩鸿雪”，不沿用本卡迅捷转职步骤。"
   ],
@@ -2508,19 +2511,19 @@ export const META_COMPS: MetaCompGuide[] = [
         {
           "name": "莎草",
           "tier": "II",
-          "role": "部署使萨尔贡+不屈+4/8"
+          "role": "萨尔贡、聚合；开技能给身前干员回技力"
         },
         {
           "name": "至简",
           "tier": "III",
-          "role": "获得时得迅捷作战粮"
+          "role": "一费萨尔贡过渡牌"
         }
       ],
       "benchOperators": [
         {
-          "name": "折桠",
+          "name": "艾丝黛尔",
           "tier": "I",
-          "note": "购买价格为1，凑萨尔贡人数"
+          "note": "对子候选，部署后才计入本家人数"
         }
       ],
       "keyActions": [
@@ -2546,17 +2549,17 @@ export const META_COMPS: MetaCompGuide[] = [
         {
           "name": "异客",
           "tier": "IV",
-          "role": "每次开技能萨尔贡+精准+4/8（每回合至多16/32层）"
+          "role": "休整发币或茶，补法伤"
         },
         {
           "name": "佩佩",
           "tier": "V",
-          "role": "周围八格眩晕/沉睡使自身及身后+9/18层"
+          "role": "周围八格眩晕或沉睡触发叠层"
         },
         {
           "name": "鸿雪",
           "tier": "V",
-          "role": "萨尔贡每5层加1%/2%攻击本家终端"
+          "role": "开技能叠萨尔贡和精准"
         },
         {
           "name": "真言",
@@ -2568,6 +2571,26 @@ export const META_COMPS: MetaCompGuide[] = [
       "keyActions": [
         "四本异客稳场，奖励或五本找佩佩鸿雪；高阶没到先保成熟输出。",
         "迅捷转职到手后再给霍尔海雅或佩佩，六萨按实际人数补。"
+      ]
+    },
+    {
+      "phaseName": "三萨精迅 · 佩佩转精准",
+      "rounds": "佩佩、鸿雪和精准转职到手后手动选择",
+      "shopTier": "四本碰五阶；没碰到再酌情五本",
+      "covenantTarget": "3萨尔贡、3精准、2迅捷",
+      "fieldOperators": [
+        { "name": "莎草", "tier": "II", "role": "身前回技力" },
+        { "name": "卡涅利安", "tier": "III", "role": "迅捷、供迅捷作战粮" },
+        { "name": "异客", "tier": "IV", "role": "产装备、补法伤" },
+        { "name": "佩佩", "tier": "V", "role": "有球再转精准" },
+        { "name": "鸿雪", "tier": "V", "role": "叠萨尔贡与精准、远程输出" },
+        { "name": "空弦", "tier": "III", "role": "第三精准示例" },
+        { "name": "青枳", "tier": "III", "role": "第二迅捷示例、兼顾阻挡" }
+      ],
+      "benchOperators": [],
+      "keyActions": [
+        "第八格留给实际需要的治疗或前排。找不到适用的转职，就保留能守住的阵容。",
+        "佩佩可按四合院相对方向给目标叠层。不是三萨精迅的成型前提。"
       ]
     }
   ],
@@ -2948,6 +2971,7 @@ export const META_COMPS: MetaCompGuide[] = [
   "equipmentTips": [
     "小鼓与同构体实际取得后先给空弦过渡；空弦精锐且霍尔海雅到位后再转交。第二套转职到手才给空弦，不以R10保证发放。",
     "062 转莱分支：四本碰到五阶纯烬艾雅法拉可补治疗，中期伤害交给四阶艾雅法拉。缺灵巧时，人数允许才用六莱补攻速。",
+    "NGA 073：术羊打伤害，奶羊保生存。火山打完仍漏怪就查空弦朝向、黑键或霍尔海雅的覆盖；小鼓优先给承担连续输出的人。三聚合或六莱不能代替实际伤害。",
     "道中强力外援：道中看到4阶【温蒂（带3技能）】首选抓取过渡，5阶可选【Mon3tr】与【阿米娅】辅助莱塔尼亚干员叠层",
     "后期若有多余转职球可给【逻各斯】吃莱塔尼亚效果；若没聚合转职道具则优先开3聚合保生存（可不上逻各斯）",
     "Boss排错（FireShot 009）：有层数仍打不动时，先检查法术输出位艾雅法拉是否精锐、是否被眩晕或进场暴毙、输出词条是否齐全；额外狙击镜、骨刺刀按缺口补，不只盯莱塔层数。",
@@ -3766,6 +3790,7 @@ export const META_COMPS: MetaCompGuide[] = [
     ]
   },
   ...COMMUNITY_COMPS,
+  ...NGA_COMMUNITY_COMPS,
 ];
 
 // ---------------------------------------------------------------------------
@@ -3828,7 +3853,7 @@ export const COVENANT_GUIDES: CovenantGuide[] = [
     id: 'iberia',
     name: '伊比利亚盟约 (Iberia)',
     subtitle: '根据场上干员售出价格获取海量层数 · 养成高身价精锐滚雪球',
-    stackCore: '养高干员售出价格（流明/海沫） + 旅骨/艾丽妮按售价倍数爆发叠层',
+    stackCore: '旅骨朝向高售价温蒂或海沫；流明按存活人数叠层，普通棘刺按场上总售价补伊比利亚。',
     pactSummary: '围绕干员“售出价格”进行指数级叠层，通过每回合自动涨价的干员配合旅骨、艾丽妮等按售价倍数加层的核心实现中后期层数爆炸。',
     synergySubPacts: ['聚合', '迅捷', '精准'],
     difficulty: '经济运营',
@@ -3837,16 +3862,14 @@ export const COVENANT_GUIDES: CovenantGuide[] = [
       { name: '深靛', tier: 'I', category: '前中期叠层', effect: '<休整期结束时>使已激活的【伊比利亚】层数+2/4' },
       { name: '旅骨', tier: 'III', category: '前中期叠层', effect: '【前期叠层核心】<休整期结束时>使自身及身前一格干员已激活的盟约叠加等同于其售出价格1倍/2倍的层数' },
       { name: '海沫', tier: 'III', category: '辅助/过渡', effect: '<休整期结束时>自身售出价格+1/2（自身售出价格至多为4/8）' },
-      { name: '流明', tier: 'IV', category: '辅助/过渡', effect: '售出价格为3/6（天生高售价胚子，最适合站旅骨身前翻倍叠层）' },
-      { name: '温蒂', tier: 'IV', category: '前中期叠层', effect: '<战斗结束时>每有一名存活的我方干员，使已激活的【伊比利亚】【聚合】层数+1/2' },
-      { name: '归溟幽灵鲨', tier: 'IV', category: '前中期叠层', effect: '<休整期结束时>使已激活的【伊比利亚】【阿戈尔】体系协同叠层' },
-      { name: '艾丽妮', tier: 'V', category: '后期叠层', effect: '【中后期叠层核心】<休整期结束时>使已激活的【伊比利亚】叠加等同于场上所有干员售出价格1倍/2倍的层数（每回合至多12/24层）' },
-      { name: '棘刺', tier: 'V', category: '本家输出终端', effect: '伊比利亚每叠加3层/2层攻击力+1%/2%，远程持续物理法术混伤' },
-      { name: '歌蕾蒂娅', tier: 'V', category: '本家输出终端', effect: '周围12格每击倒1敌回复3/6点技力，聚怪控制核心' },
+      { name: '温蒂', tier: 'IV', category: '辅助/过渡', effect: '伊比利亚、坚守。售价3/6，可站旅骨身前；3技能补控场。' },
+      { name: '流明', tier: 'IV', category: '前中期叠层', effect: '战斗结束时，每名存活的我方干员使已激活的伊比利亚、聚合叠加1/2层。' },
+      { name: '艾丽妮', tier: 'V', category: '本家输出终端', effect: '战斗中周围12格每击倒一名敌人，回复自身3/6技力。' },
+      { name: '棘刺', tier: 'V', category: '后期叠层', effect: '休整期结束时按场上干员总售价的1/2倍叠伊比利亚，上限12/24层。' },
       { name: '引星棘刺', tier: 'VI', category: '本家输出终端', effect: '【六本终端】使已激活的【伊比利亚】【迅捷】层数+12/24，炼金海域全屏输出' },
     ],
     proTips: [
-      '把高售价的【流明(IV)】或养满8费的【海沫(III)】放在【旅骨(III)】身前一格，每回合休整期直接稳定+12~16层全激活盟约！',
+      '精锐旅骨面向售价6的精锐温蒂或养到售价8的海沫，可给目标叠12或16层。先确认站位、当前售价和已激活盟约。',
     ],
   },
   {
@@ -4016,18 +4039,17 @@ export const COVENANT_GUIDES: CovenantGuide[] = [
       { name: '艾丝黛尔', tier: 'I', category: '前中期叠层', effect: '<战斗中>每次开启技能时使已激活的【萨尔贡】层数+1/2（每回合至多2/4层）' },
       { name: '泡泡', tier: 'II', category: '前中期叠层', effect: '<战斗中>每次开启技能时使已激活的【萨尔贡】【坚守】层数+2/4（每回合至多4/8层）' },
       { name: '莎草', tier: 'II', category: '辅助/过渡', effect: '二阶医疗，提供萨尔贡治疗过渡' },
-      { name: '锡人', tier: 'II', category: '辅助/过渡', effect: '二阶萨尔贡特种，灵活分摊压力' },
       { name: '瑰盐', tier: 'II', category: '辅助/过渡', effect: '伊比利亚聚合医疗，可作外援续航；不计入萨尔贡人数' },
-      { name: '至简', tier: 'III', category: '辅助/过渡', effect: '【纯萨尔贡词条】<进入休整期时>得盟约之币或萨尔贡蜜茶；单萨尔贡词条可喂杰西卡寻呼机定向搜异客/鸿雪/佩佩！' },
-      { name: '卡涅利安', tier: 'III', category: '前中期叠层', effect: '三阶阵法术师，高台蓄力AOE法伤' },
-      { name: '异客', tier: 'IV', category: '后期叠层', effect: '【萨尔贡+奥术核心】<战斗中>每次开启技能时使已激活的【萨尔贡】【精准/奥术】层数+4/8（每回合至多16/32层）' },
+      { name: '至简', tier: 'III', category: '辅助/过渡', effect: '固定一费，只有萨尔贡词条。' },
+      { name: '卡涅利安', tier: 'III', category: '辅助/过渡', effect: '获得时发一件迅捷作战粮，精锐发两件。' },
+      { name: '异客', tier: 'IV', category: '辅助/过渡', effect: '休整期发盟约之币或萨尔贡浓茶；精锐发两件，有小概率发现拟态物质。' },
       { name: '森蚺', tier: 'IV', category: '辅助/过渡', effect: '四阶重装巨像，萨尔贡与不屈双标签前排大盾' },
-      { name: '佩佩', tier: 'V', category: '后期叠层', effect: '【叠层+战力真神】<战斗中>周围八格每有敌人或干员沉睡/眩晕，使自身及身后一格干员已激活盟约+9/18！' },
-      { name: '鸿雪', tier: 'V', category: '本家输出终端', effect: '【萨尔贡+精准大C】五阶狙击，高精准下打字机破甲秒杀Boss' },
+      { name: '佩佩', tier: 'V', category: '后期叠层', effect: '周围八格每有单位进入沉睡或眩晕，给自身和身后一格目标叠1/2层；每场上限9/18层。' },
+      { name: '鸿雪', tier: 'V', category: '本家输出终端', effect: '开技能叠萨尔贡和精准4/8层，每回合至多16/32层。' },
       { name: '真言', tier: 'VI', category: '本家输出终端', effect: '【六本输出终端】<战斗中>【萨尔贡】每叠加5层，本干员攻击力+1%/2%' },
     ],
     proTips: [
-      '佩佩隐藏黑科技：把【佩佩(V)】背对【艾雅法拉(IV)】或【霍尔海雅(IV)】摆放，佩佩3技能开启时会眩晕自己，同样能触发“周围八格有干员进入眩晕使自身及身后干员盟约+9/18”！',
+      '佩佩3技能的自我眩晕也可触发。用四合院时让凛御银灰和阿米娅都面向佩佩，把指定叠层干员放在佩佩身后。',
       '杰西卡精奥远蹭萨尔贡大盟约口诀：萨尔贡只要抓【异客】【鸿雪】【佩佩】【至简（纯萨词条喂寻呼）】！',
     ],
   },
@@ -4156,7 +4178,7 @@ export const UNIVERSAL_STACKERS: UniversalStacker[] = [
     baseStacksPerRound: 12,
     worksOnBench: false,
     description: '<休整期结束时>使自身及身前一格干员已激活的盟约叠加等同于其售出价格2倍的层数',
-    bestPartner: '流明（售价6 -> +12层）、海沫（养满售价8 -> +16层）、高阶六星精锐干员',
+    bestPartner: '精锐温蒂（售价6）、养满售价8的海沫；精锐旅骨按目标实际售价×2叠层。',
   },
   {
     id: 'windscoot',
@@ -4209,6 +4231,7 @@ export interface UploadedAssetItem {
 
 export const UPLOADED_GALLERY_ITEMS: UploadedAssetItem[] = [
   ...BOSS_ROUTE_GUIDES,
+  { id: 'nga-084-pepe', title: '佩佩四合院 · 指定目标叠层', category: '站位一图流', url: PEPE_POSITION_IMAGE, description: 'NGA 084 摆位示意：凛御银灰与阿米娅面向佩佩，目标放佩佩背后一格。' },
   {id:'source-059', title:'复奏：三连奖励留给哪一档', category:'贴吧高分实战', url:'/assets/community/source-059.jpg', description:'作者的奖励分配；速三与一本留对子分开选择'},
   {id:'source-060', title:'拜松：前六轮买牌与包店', category:'贴吧高分实战', url:'/assets/community/source-060.jpg', description:'R5 包店、R6 上四；高层数为个人样本'},
   {id:'source-061', title:'雪猎：聚合回血或角峰抗首击', category:'贴吧高分实战', url:'/assets/community/source-061.jpg', description:'精迅三谢的两种生存配置'},
@@ -4302,23 +4325,23 @@ export const SUB_COVENANT_GUIDES: CovenantGuide[] = [
   {
     id: 'sub-convergence',
     name: '聚合盟约 (Convergence)',
-    subtitle: '激活人数 2/3 · 周围8格敌人阻挡集中于主聚合干员',
-    stackCore: '无需叠层 · 激活2/3人即享八格聚怪与阻挡转移机制（打茧/新Boss必开）',
-    pactSummary: '将干员周围8格内所有敌人的阻挡需求集中于一个主聚合干员，解决漏怪痛点、最大化AOE与灼燃/大丑溅射收益。',
+    subtitle: '两人激活 · 攻击范围内持续恢复；三人增加庇护',
+    stackCore: '按实际攻击范围覆盖输出和前排；抗不住时再补三聚合。',
+    pactSummary: '聚合干员在攻击范围内为友方持续回复生命值与元素损伤；在场三名聚合干员增加范围内友方的庇护。效果随盟约层数提升。',
     synergySubPacts: ['坚守', '奥术', '炎', '莱塔尼亚'],
     difficulty: '功能神羁绊',
     imageUrl: '/assets/aistudio/image_7fa89991.png',
     operators: [
       { name: '波登可', tier: 'II', category: '辅助/过渡', effect: '二阶辅助，前期低费凑2聚合过渡' },
       { name: '风絮', tier: 'III', category: '前中期叠层', effect: '三阶医疗，同时具备【炎】与【聚合】标签，每回合获得干员叠层' },
-      { name: '温蒂', tier: 'IV', category: '前中期叠层', effect: '四阶特种，存活干员叠加【伊比利亚】与【聚合】层数' },
+      { name: '流明', tier: 'IV', category: '前中期叠层', effect: '战后按存活人数叠伊比利亚和聚合。' },
       { name: '余', tier: 'IV', category: '前中期叠层', effect: '四阶重装，集齐【炎】【坚守】【聚合】三大神级词条于一身' },
       { name: '薇薇安娜', tier: 'V', category: '后期叠层', effect: '五阶近卫，击倒敌人叠加【莱塔尼亚】与【聚合】层数（打茧Boss必带）' },
       { name: '纯烬艾雅法拉', tier: 'V', category: '后期叠层', effect: '五阶顶尖治疗（推荐2技能），大范围恢复并凑齐高阶莱塔尼亚+聚合' },
       { name: '黍', tier: 'V', category: '本家输出终端', effect: '五阶护佑者，元素损伤爆发叠层并承接全队聚合阻挡' },
     ],
     proTips: [
-      '打新Boss（如茧）与隐秘难度必须开出【2聚合】（如薇薇安娜+纯烬艾雅法拉，或余+风絮），否则极易漏怪暴毙！',
+      '隐秘战前先看是否能扛住首轮伤害；有聚合仍需安排阻挡、治疗与实际清怪位。',
     ],
   },
   {
@@ -4345,9 +4368,9 @@ export const SUB_COVENANT_GUIDES: CovenantGuide[] = [
   {
     id: 'sub-assist',
     name: '助力盟约 (Assist)',
-    subtitle: '激活人数 2/3 · 提升治疗量与友方增益覆盖率',
-    stackCore: '安哲拉击倒叠层 + 淬羽赫默整备区群叠(+2/4层) + 流明高售价旅骨挂件',
-    pactSummary: '提升治疗量与友方增益覆盖率，随盟约层数进一步放大对队友的攻防辅助效果。',
+    subtitle: '两人激活 · 全队防御、再部署与休整叠层',
+    stackCore: '两名助力休整结束给所有已激活盟约叠2层，三名不同助力改为4层。',
+    pactSummary: '所有干员防御提高，再部署时间缩短30%。休整结束额外叠加当前已激活的盟约。',
     synergySubPacts: ['坚守', '维多利亚', '阿戈尔'],
     difficulty: '辅助续航',
     imageUrl: '/assets/aistudio/image_7fa89991.png',
@@ -4355,7 +4378,6 @@ export const SUB_COVENANT_GUIDES: CovenantGuide[] = [
       { name: '野鬃', tier: 'I', category: '辅助/过渡', effect: '一阶先锋，卡西米尔与助力双标签开局卡' },
       { name: '安哲拉', tier: 'II', category: '前中期叠层', effect: '<战斗中>每击倒一名敌人或我方干员使【阿戈尔】【助力】+3/6' },
       { name: '罗比菈塔', tier: 'III', category: '辅助/过渡', effect: '三阶工匠，提供护盾装置与【坚守】【助力】过渡' },
-      { name: '流明', tier: 'IV', category: '辅助/过渡', effect: '四阶医疗，天生高售价（3/6费），最适合站旅骨身前翻倍叠层' },
       { name: '白铁', tier: 'IV', category: '辅助/过渡', effect: '四阶工匠，在维多利亚队中兼顾产装置与开助力' },
       { name: '淬羽赫默', tier: 'IV', category: '后期叠层', effect: '<休整期结束时>使整备区每名干员已激活的盟约层数+2/4' },
     ],
@@ -4517,7 +4539,7 @@ export const SUB_COVENANT_GUIDES: CovenantGuide[] = [
     stackCore: '低本用云迹开技能叠层，中期华法琳对准仇白、水月或水灯心等受益位。',
     pactSummary: '灵巧干员及周围四格单位获得攻速。达到40层后，覆盖扩大到周围八格。',
     synergySubPacts: ['炎', '奥术', '阿戈尔', '谢拉格'],
-    difficulty: '全流派刚需',
+    difficulty: '攻速与回转',
     imageUrl: '/assets/aistudio/image_babfd902.png',
     operators: [
       { name: '承曦格雷伊', tier: 'II', category: '辅助/过渡', effect: '<获得时>得精准狙击镜；装备手套与不融冰可用于机械师控场' },
@@ -4530,6 +4552,7 @@ export const SUB_COVENANT_GUIDES: CovenantGuide[] = [
     ],
     proTips: [
       '精准、奥术受限时，可看灵巧聚合炎、灵巧坚守维或水月灵巧阿戈尔。灵巧也受限就另找攻速或转阵。',
+      '攻速要看技能机制。双镜雪猎如果频繁换弹，优先保证技能回转，可将高攻速支援移给其他干员。',
     ],
   },
   {
@@ -4665,7 +4688,8 @@ export const BAN_SENSITIVE_OPERATORS = [
   { name: '贝洛内', role: '叙拉古终端' },
   { name: '罗比菈塔', role: '坚守与助力底座' },
   { name: '荒芜拉普兰德', role: '叙拉古高阶补强' },
-  { name: '假日威龙陈', role: '策略火陈输出' },
+  { name: '赤刃明霄陈', role: '火陈自选外援' },
+  { name: '假日威龙陈', role: '狙击外援' },
   { name: '仇白', role: '炎灵巧叠层' },
   { name: '云迹', role: '低本灵巧与奇迹' },
   { name: '霍尔海雅', role: '精准/奥术叠层核心' },
@@ -4683,7 +4707,7 @@ export const BAN_SENSITIVE_OPERATORS = [
   { name: '灵知', role: '迅捷谢输出核心' },
   { name: '蓝毒', role: '伊比利亚主C' },
   { name: '旅骨', role: '伊比利亚售价叠层' },
-  { name: '流明', role: '高售价与聚合治疗' },
+  { name: '流明', role: '聚合治疗与存活叠层' },
   { name: '棘刺', role: '伊比利亚精准终端' },
   { name: '瑕光', role: '卡西不屈回转衔接' },
   { name: '玛恩纳', role: '卡西不屈突袭主C' },
@@ -4719,7 +4743,7 @@ export const COVENANT_SHORT_DESCRIPTIONS: Record<string, string> = {
   精准: '攻击提升+高暴击',
   助力: '治疗护盾与增益',
   突袭: '空降部署爆发伤',
-  聚合: '八格聚怪集中阻挡',
+  聚合: '范围内恢复生命与元素损伤',
   奥术: '法伤提升+无视法抗',
 };
 

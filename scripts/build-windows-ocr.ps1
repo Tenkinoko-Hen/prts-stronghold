@@ -10,10 +10,12 @@ try {
     }
     & $venv -m pip install --index-url https://pypi.org/simple --require-hashes -r 'electron/ocr-requirements.txt'
     if ($LASTEXITCODE -ne 0) { throw 'OCR dependency installation failed.' }
+    $reportCatalog = Join-Path $root 'electron/prts_battle_core/enemy_power.json'
     & $venv -m PyInstaller --noconfirm --onedir --console --name PRTS-OCR `
         --distpath 'work/windows-ocr/runtime' --workpath 'work/windows-ocr/pyinstaller' --specpath 'work/windows-ocr' `
         --collect-data rapidocr_onnxruntime --collect-binaries onnxruntime --copy-metadata rapidocr-onnxruntime `
         --copy-metadata onnxruntime --exclude-module tkinter --exclude-module matplotlib --exclude-module sympy `
+        --add-data "$($reportCatalog):prts_battle_core" `
         'electron/ocr-helper.py'
     if ($LASTEXITCODE -ne 0) { throw 'OCR runtime build failed.' }
     & $venv 'scripts/windows-ocr-notices.py'

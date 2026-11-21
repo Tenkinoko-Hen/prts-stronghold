@@ -53,9 +53,10 @@ export function mobileReducer(state: MobileSession, action: MobileAction): Mobil
   switch (action.type) {
     case 'applyScan': {
       const scan = parseCovenantScan(JSON.stringify(action.scan));
-      if (!scan?.id || !['ready', 'incomplete'].includes(scan.status) || !scan.seenCovenants.length) return state;
-      return { ...state, step: 'ban', scanId: scan.id, scanComplete: scan.complete, confirmedCovenants: [...covenantNames].filter(name => scan.seenCovenants.includes(name)),
-        bans: { ...state.bans, bannedCovenants: scan.bannedCovenants } };
+      if (!scan?.id || scan.id === state.scanId || !['ready', 'incomplete'].includes(scan.status) || !scan.seenCovenants.length) return state;
+      const next = scan.status === 'ready' ? emptySession() : state;
+      return { ...next, step: 'ban', scanId: scan.id, scanComplete: scan.complete, confirmedCovenants: [...covenantNames].filter(name => scan.seenCovenants.includes(name)),
+        bans: { ...next.bans, bannedCovenants: scan.bannedCovenants } };
     }
     case 'ban': {
       const list = state.bans[action.group];

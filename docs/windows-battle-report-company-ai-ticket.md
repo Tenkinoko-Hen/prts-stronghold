@@ -5,9 +5,10 @@
 - 仓库：`Tenkinoko-Hen/prts-stronghold`
 - 分支：`dev/windows-battle-report-1.4.17`
 - 功能和离线自检已完成；未完成的是用户实局验证。确认分支后先运行 `git status -sb`、`git rev-parse --short HEAD`。
+- 源码提交：`f9732e6`。最近一次成功读取远端时，`origin/dev/windows-battle-report-1.4.17` 仍为 `0df50a1`；推送尝试因 GitHub HTTPS 连接超时/重置未完成。先核对远端，再在网络可用时只推送当前开发分支。
 - 最新本地测试包：`J:\PRTS\prts-stronghold\work\windows-latest\PRTS-Stronghold-Windows-x64.exe`
 - 包 SHA-256：`CB121FFA1E308156759E43FAAF68A088ACD8B7544332B00CE9BF9FF13F0768CD`
-- 本轮只推送当前开发分支源码；不上传 EXE、真实战报 JSON、玩家名、网络地址或原始抓包，不合入 `main`，不创建 GitHub Release 或标签。
+- 上传范围仅限当前开发分支源码；不上传 EXE、真实战报 JSON、玩家名、网络地址或原始抓包，不合入 `main`，不创建 GitHub Release 或标签。
 
 ## 已实现与自测
 

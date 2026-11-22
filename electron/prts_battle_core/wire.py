@@ -11,7 +11,7 @@ from typing import NamedTuple
 _HEADER = struct.Struct('!II')
 _MAX_BODY = 131072
 _BOSS_HIT_RATIOS = {7: 0.2, 8: 0.5, 9: 0.8}
-_DOWN_MIN_BODY = {300: 52, 302: 33, 306: 4, 310: 2, 344: 2, 348: 10}
+_DOWN_MIN_BODY = {300: 52, 302: 33, 306: 4, 310: 2, 344: 2, 348: 10, 366: 7}
 _UP_MIN_BODY = {303: 2, 311: 10, 313: 6, 341: 7, 367: 11}
 _PHASES = {1: 'loading', 2: 'special_prep', 3: 'prep', 4: 'self', 5: 'assist', 6: 'boss', 7: 'settle', 8: 'end', 9: 'pause', 100: 'battle_wait', 101: 'boss_wait', 102: 'prep', 103: 'special_prep', 104: 'boss'}
 _STATES = (*range(10), *range(100, 105))
@@ -97,7 +97,9 @@ class WireDecoder:
                 if not is_heartbeat:
                     candidate = Message(message_id, bytes(pending[start:end]), direction)
                     try:
-                        decode_message(candidate)
+                        if decode_message(candidate) is None:
+                            offset += 1
+                            continue
                     except WireError:
                         if direction == "down" and message_id in (300, 302):
                             self.scene_candidate_rejections += 1
@@ -341,15 +343,15 @@ def _help_finish(reader: _Reader) -> dict:
     if not 1 <= round_number <= 15:
         raise WireError('help result round out of range')
     rejoin = reader.boolean()
-    for _ in range(reader.count()):
-        _escaped_enemy(reader)
+    escaped_enemies = tuple(_escaped_enemy(reader) for _ in range(reader.count()))
     kills = []
     for _ in range(reader.count()):
         player, = reader.read('B')
         enemy = _escaped_enemy(reader)
         reader.take(5)
-        kills.append((enemy.instance, enemy.is_token, player, enemy.owner))
-    return {'kind': 'help_finish', 'round': round_number, 'kills': tuple(kills), 'from_rejoin': rejoin}
+        kills.append((enemy.instance, enemy.is_token, player, enemy.owner, enemy.enemy_id))
+    return {'kind': 'help_finish', 'round': round_number, 'kills': tuple(kills),
+            'escaped_enemies': escaped_enemies, 'from_rejoin': rejoin}
 def decode_message(message: Message) -> dict | None:
     """Decode battle messages needed by the statistics model."""
     message_id = message.message_id
@@ -376,7 +378,7 @@ def decode_message(message: Message) -> dict | None:
                         else:
                             if message_id == 366:
                                 uid, code = reader.read('Bh')
-                                if code not in _BOSS_HIT_RATIOS:
+                                if uid not in range(1, 5) or code not in _BOSS_HIT_RATIOS:
                                     return
                                 else:
                                     _skip(reader, (('list', ('str',)), ('list', (4,))))

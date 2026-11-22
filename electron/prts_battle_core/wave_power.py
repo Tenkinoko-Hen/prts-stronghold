@@ -5,12 +5,15 @@
 
 """Summarize escaped enemy power by player and planned spawn action."""
 from collections import Counter, defaultdict
+from collections.abc import Collection, Iterable, Mapping
 from ctypes import c_float
 from functools import cache
 import json
 from pathlib import Path
 from typing import NamedTuple
 from .wire import EscapedEnemy, SpawnGroup, SpawnPreview
+
+EnemyInstance = tuple[int, int, bool]  # owner, instance ID, is token
 @cache
 def _catalog():
     return json.loads(Path(__file__).with_name('enemy_power.json').read_text(encoding='utf-8'))
@@ -37,17 +40,26 @@ def _enemy(enemy_id):
         return (name or enemy_id, raw, factor)
 def _power(raw, factor, count=1):
     return c_float(c_float(count * raw).value / factor).value
-def player_for_escapes(groups: tuple[SpawnGroup, ...], instances: tuple[int, ...]) -> int | None:
+def resolve_enemy_id(instance: int, is_token: bool, known: Collection[str]) -> str:
+    """Prefer observed types. Only a token instance encodes a catalog index."""
+    if known:
+        return next(iter(known)) if len(known) == 1 else ''
+    return _catalog()['tokens'].get(str(instance >> 16), '') if is_token else ''
+
+
+def player_for_escapes(spawns: Iterable[tuple[int, int]], instances: tuple[int, ...]) -> int | None:
     if not instances:
-        return
-    else:
-        owners = {}
-        for group in groups:
-            for instance in group.instances:
-                owners.setdefault(instance, set()).add(group.player)
-        candidates = set.intersection(*(owners.get(instance, set()) for instance in instances))
-        return next(iter(candidates)) if len(candidates) == 1 else None
-def wave_report(groups: tuple[SpawnGroup, ...], previews: tuple[SpawnPreview, ...], escapes: tuple[EscapedEnemy, ...], confirmed_players: set[int], *, boss_groups: bool=False) -> dict:
+        return None
+    owners = defaultdict(set)
+    for owner, instance in spawns:
+        owners[instance].add(owner)
+    candidates = set.intersection(*(owners[instance] for instance in instances))
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def wave_report(groups: tuple[SpawnGroup, ...], previews: tuple[SpawnPreview, ...], escapes: tuple[EscapedEnemy, ...],
+                confirmed_players: set[int], *, enemy_ids: Mapping[EnemyInstance, set[str]] | None = None,
+                boss_groups: bool = False) -> dict:
     """Use instance identity for the join and retain unassigned escapes."""
     planned = Counter()
     instances = {}
@@ -62,13 +74,15 @@ def wave_report(groups: tuple[SpawnGroup, ...], previews: tuple[SpawnPreview, ..
         for preview in previews:
             planned[None, preview.action_index, preview.enemy_id] += preview.count
     escaped = defaultdict(list)
-    tokens = _catalog()['tokens']
+    observed = enemy_ids if enemy_ids is not None else {}
     for enemy in escapes:
         group = None if enemy.is_token else instances.get((enemy.owner, enemy.instance))
-        enemy_id = enemy.enemy_id or (group.enemy_id if group else '')
-        if enemy.is_token and (not enemy_id):
-                enemy_id = tokens.get(str(enemy.instance >> 16), '')
-        action = group.action_index if group else None
+        known = observed.get((enemy.owner, enemy.instance, enemy.is_token))
+        if not known:
+            explicit = enemy.enemy_id or (group.enemy_id if group else '')
+            known = (explicit,) if explicit else ()
+        enemy_id = resolve_enemy_id(enemy.instance, enemy.is_token, known)
+        action = group.action_index if group and enemy_id == group.enemy_id else None
         escaped[enemy.owner, action, enemy_id].append(enemy.instance)
     rows = {}
     for player, action, enemy_id in sorted(planned.keys() | escaped.keys(), key=lambda key: (key[0] or 0, key[1] is None, key[1] if key[1] is not None else 0, key[2])):

@@ -15,7 +15,7 @@
     "prepare:desktop": "node node_modules/electron/install.js",
     "prepare:ocr": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-ocr.ps1",
     "desktop": "npm run prepare:desktop && electron .",
-    "package:win": "npm run prepare:desktop && npm run prepare:ocr && npm run lint && npm run build && electron-builder --win portable --x64 --config.extraMetadata.version=1.2.0 --config.directories.output=work/windows-1.2.0",
+    "package:win": "npm run prepare:desktop && npm run prepare:ocr && npm run lint && npm run build && pwsh -NoProfile -File scripts/build-windows.ps1 -Version 1.4.17",
     "cache:avatars": "node --import tsx scripts/cache-avatars.ts"
   },
   "build": {

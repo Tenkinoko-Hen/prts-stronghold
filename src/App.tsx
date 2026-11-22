@@ -240,27 +240,26 @@ export default function App() {
         />
       )}
 
-      {activeView === 'comps' && (
-        <MetaCompsView
-          key={matchScanId}
-          banState={banState}
-          onChangeBanState={setBanState}
-          desktopScan={scan}
-          onCancelScan={cancelScan}
-          onClearBans={clearBans}
-          selectedCompId={selectedCompId}
-          onSelectCompId={setSelectedCompId}
-          currentRound={currentRound}
-          onChangeRound={setCurrentRound}
-          onOpenImage={(url, title) => setLightboxImage({ url, title })}
-          onJumpTo2DMap={() => setActiveView('tactical')}
-          onJumpToPriorityCovenants={() => {
-            setOnlyCurrentCompPriority(true);
-            setActiveView('covenants');
-          }}
-          onJumpToTransfers={() => setActiveView('transfers')}
-        />
-      )}
+      <MetaCompsView
+        key={matchScanId}
+        visible={activeView === 'comps'}
+        banState={banState}
+        onChangeBanState={setBanState}
+        desktopScan={scan}
+        onCancelScan={cancelScan}
+        onClearBans={clearBans}
+        selectedCompId={selectedCompId}
+        onSelectCompId={setSelectedCompId}
+        currentRound={currentRound}
+        onChangeRound={setCurrentRound}
+        onOpenImage={(url, title) => setLightboxImage({ url, title })}
+        onJumpTo2DMap={() => setActiveView('tactical')}
+        onJumpToPriorityCovenants={() => {
+          setOnlyCurrentCompPriority(true);
+          setActiveView('covenants');
+        }}
+        onJumpToTransfers={() => setActiveView('transfers')}
+      />
 
       {activeView === 'transfers' && (
         <TransferItemsView

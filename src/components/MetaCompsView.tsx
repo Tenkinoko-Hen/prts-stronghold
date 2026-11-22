@@ -11,6 +11,7 @@ import { OperatorAvatar } from './OperatorAvatar';
 import { summarizeBlockedReasons } from './guidePresentation';
 
 interface MetaCompsViewProps {
+  visible: boolean;
   banState: BanPickState;
   onChangeBanState: React.Dispatch<React.SetStateAction<BanPickState>>;
   desktopScan: DesktopCovenantScan | null;
@@ -53,7 +54,7 @@ export function MetaCompsView(props: MetaCompsViewProps) {
       onClick={() => toggle('bannedCovenants', name)}>{banned && <Ban size={11} />}<span>{name}</span></button>;
   })}</div>;
 
-  return <main className="desktop-page">
+  return <main className="desktop-page" hidden={!props.visible}>
     {stage === 'picker' ? <div className="d-picker" data-testid="desktop-picker">
       <aside className="d-pick-side d-panel">
         <div className="d-section-head"><h1><span className="d-step">1</span>识别与校正</h1><div className="d-inline">

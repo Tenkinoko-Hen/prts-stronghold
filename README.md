@@ -19,9 +19,9 @@
 
 使用 Node.js 22.12 或更新的受支持版本。运行 `npm ci` 安装依赖，再用 `npm run dev` 打开网页预览。`npm run lint` 检查类型，`npm run build` 生成前端产物。
 
-Windows 需要 Python 3.12 x64。先运行 `npm run prepare:desktop`、`pwsh -File scripts/build-windows-ocr.ps1` 和 `npm run build`。要生成本地便携包，再运行 `pwsh -File scripts/build-windows.ps1 -Version 1.4.17`；输出在 `work/windows-1.4.17/`，不会上传。只验证分析器可运行 `python electron/ocr-helper.py --battle-report-check`，无需管理员权限或启动游戏。
+Windows 需要 Python 3.12 x64。先运行 `npm run prepare:desktop`、`pwsh -File scripts/build-windows-ocr.ps1` 和 `npm run build`。要生成本地便携包，再运行 `pwsh -File scripts/build-windows.ps1 -Version 1.4.17`；每次打包覆盖 `work/windows-latest/PRTS-Stronghold-Windows-x64.exe`，不会上传。只验证分析器可运行 `python electron/ocr-helper.py --battle-report-check`，无需管理员权限或启动游戏。
 
-战报的界面和 JSON 解析在 `src/desktop/`，Electron 桥接在 `electron/battle-reports.cjs`，本地分析器在 `electron/prts_battle_core/`。桌面端可直接导入 JSON；下一项现场验证是用真实对局确认「采集诊断」中能收到下行场景或阶段更新，并对照实际漏怪与 Boss 伤害。
+战报的界面和 JSON 解析在 `src/desktop/`，Electron 桥接在 `electron/battle-reports.cjs`，本地分析器在 `electron/prts_battle_core/`。桌面端启动后自动采集。「战报 → 历史对局」可导入 JSON，窗口获得焦点时按 `Ctrl+Shift+F9` 可打开采集诊断。实局需核对场景或阶段更新、实际漏怪与 Boss 伤害。
 
 Android 使用 JDK 17、Android SDK Platform 36 和 Build Tools 35.0.0。运行 `scripts/build-android.ps1`，可用 `-SdkRoot`、`-JavaHome` 指定工具路径。版本取自 `android/AndroidManifest.xml`。
 

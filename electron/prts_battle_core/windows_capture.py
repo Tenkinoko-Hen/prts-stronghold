@@ -34,6 +34,11 @@ class Segment:
     ack_sequence: int | None = None
 
 
+@dataclass(frozen=True)
+class RetiredConnections:
+    keys: frozenset[Connection]
+
+
 class ProcessEntry(ct.Structure):
     _fields_ = [
         ("size", wt.DWORD), ("usage", wt.DWORD), ("pid", wt.DWORD),
@@ -86,8 +91,9 @@ def game_connections(pids: set[int]) -> set[Connection]:
     result: set[Connection] = set()
     for index in range(min(count, (len(buffer) - 4) // 24)):
         offset = 4 + index * 24
-        local, remote, pid = struct.unpack_from("4x4s4x4s4xI", buffer, offset)
-        if pid not in pids or local == b"\0" * 4 or remote == b"\0" * 4:
+        state, local, remote, pid = struct.unpack_from("<I4s4x4s4xI", buffer, offset)
+        # CLOSED, TIME_WAIT and DELETE_TCB can outlive the usable game stream in the table.
+        if state in (1, 11, 12) or pid not in pids or local == b"\0" * 4 or remote == b"\0" * 4:
             continue
         local_port = struct.unpack_from("!H", buffer, offset + 8)[0]
         remote_port = struct.unpack_from("!H", buffer, offset + 16)[0]
@@ -170,7 +176,7 @@ def open_receiver(address: str):
 
 def segments(
     stopped: Event, on_status: Callable[[str], None],
-) -> Iterator[tuple[Segment, Direction] | None]:
+) -> Iterator[tuple[Segment, Direction] | RetiredConnections | None]:
     receivers: dict[str, socket.socket | NpcapReceiver] = {}
     connections: set[Connection] = set()
     pids: set[int] = set()
@@ -193,9 +199,12 @@ def segments(
                 pids = game_pids()
             checked = refresh_receivers or (bool(deferred) and now >= next_connection_check)
             if checked:
+                previous = connections
                 connections = game_connections(pids)
                 game_servers = {server for _, server in connections}
                 next_connection_check = now + _CONNECTION_INTERVAL
+                if retired := previous - connections:
+                    yield RetiredConnections(frozenset(retired))
             if refresh_receivers:
                 connected = {client[0] for client, _ in connections}
                 addresses = connected or ((set(receivers) or local_ipv4()) if pids else set())

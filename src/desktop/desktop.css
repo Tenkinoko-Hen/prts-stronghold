@@ -8,6 +8,7 @@
 .d-global-nav { display:flex; align-items:center; gap:24px; font-size:13px; font-weight:700; color:#cbd5e1; min-width:0; overflow-x:auto; }
 .d-global-header > div > button { padding:7px 10px; font-size:12px; }
 .desktop-page { position:absolute; inset:52px 0 0; padding:12px 16px; overflow:hidden; }
+.desktop-page[hidden] { display:none; }
 .d-panel { border:1px solid var(--d-line,#263346); border-radius:10px; background:#0f1621; min-width:0; min-height:0; }
 .d-button, .d-icon { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid #33445c; border-radius:6px; background:#172232; color:#e3eaf5; padding:7px 10px; font-size:12px; font-weight:600; white-space:nowrap; }
 .d-button:hover:not(:disabled), .d-icon:hover:not(:disabled) { background:#233247; border-color:#64748b; }
@@ -45,7 +46,7 @@
 .d-scan-status p + p, .d-scan-status button { margin-top:5px; }
 .d-scan-float { position:fixed; bottom:16px; right:16px; z-index:35; width:min(340px, calc(100% - 32px)); border:1px solid var(--border-hairline); box-shadow:0 8px 24px #0007; }
 .d-scan-float > .d-icon { float:right; margin:0 0 4px 8px; }
-.desktop-app:has(.d-picker) > .d-scan-float { display:none; }
+.desktop-app:has(.desktop-page:not([hidden]) .d-picker) > .d-scan-float { display:none; }
 .d-shortcut { font-size:11px; }
 .d-corrections { border-top:1px solid #21453f; padding-top:12px; }
 .d-corrections h3 { margin:12px 0 7px; color:#a6bbbc; font-size:12px; font-weight:600; }
@@ -91,7 +92,7 @@
 .d-pagination { display:flex; align-items:center; justify-content:space-between; font-size:12px; }
 .d-pagination > span { font-size:11px; }
 .d-empty { align-self:center; grid-column:1/-1; text-align:center; color:#9caec1; }
-.desktop-app:has(.d-guide) .d-global-header { background:#1c201f; border-color:#50564f; }
+.desktop-app:has(.desktop-page:not([hidden]) .d-guide) .d-global-header { background:#1c201f; border-color:#50564f; }
 .d-guide { --d-line:#545b55; --d-muted:#4b5956; --d-ink:#202523; --d-cold:#9bd7f4; --d-signal:#f5df3e; height:100%; display:grid; grid-template-rows:52px minmax(0,1fr) 43px; gap:0; border:1px solid var(--d-line); background:#202523; }
 .d-guide-header { display:flex; align-items:center; gap:10px; padding:7px 12px; border:0; border-bottom:1px solid var(--d-line); background:#262b28; border-radius:0; }
 .d-guide-title { flex:1; min-width:0; }
@@ -335,7 +336,7 @@
 /* 协议终端双栏 */
 .desktop-app { --d-line:var(--border-hairline); --d-muted:var(--text-secondary); --d-gold:var(--accent-endfield); --d-teal:var(--accent-prts); background:var(--protocol-dots),var(--bg-canvas); color:var(--text-primary); }
 .desktop-app button,.desktop-app select,.d-panel,.desktop-dialog,.desktop-dialog button { border-radius:2px; }
-.d-global-header,.desktop-app:has(.d-guide) .d-global-header { background:var(--bg-canvas); border-color:var(--border-hairline); }
+.d-global-header,.desktop-app:has(.desktop-page:not([hidden]) .d-guide) .d-global-header { background:var(--bg-canvas); border-color:var(--border-hairline); }
 .d-global-nav a[aria-current] { color:var(--accent-endfield); border-color:var(--accent-endfield); }
 .d-panel,.desktop-dialog,.desktop-dialog:has(.d-route-overview) { background:var(--bg-surface); border-color:var(--border-hairline); }
 .desktop-dialog > header,.desktop-dialog:has(.d-route-overview) > header,.d-comp-card,.d-map-list button,.d-source-grid button,.d-equipment-list article { background:var(--bg-elevated); border-color:var(--border-hairline); }

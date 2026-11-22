@@ -9,7 +9,7 @@ from time import monotonic
 
 from .analyzer import Analyzer
 from .wave_power import enemy_template
-from .windows_capture import segments
+from .windows_capture import RetiredConnections, segments
 
 
 def print_event(value: dict) -> None:
@@ -48,8 +48,12 @@ def serve() -> None:
             print_event({"kind": "status", "status": value})
             last_status = value
 
+    collect_reports(segments(stopped, status), stopped, status)
+
+
+def collect_reports(results, stopped: Event, status) -> None:
     analyzer = Analyzer()
-    last_report = ""
+    last_report = None
     last_count = -1
     last_progress = None
     next_report = 0.0
@@ -70,10 +74,13 @@ def serve() -> None:
             return
         conn = analyzer.current[1]
         model = conn.model
-        progress = (conn.serial, conn.player, model.current_round, conn.last_phase, len(model.rounds),
+        progress = (conn.generation, conn.closed, conn.serial, conn.player, model.current_round,
+                    conn.last_phase, len(model.rounds),
                     analyzer.report_events[311], analyzer.report_events[313])
         if progress == last_progress and (analyzer.message_count == last_count or (not force and now < next_report)):
             return
+        if conn.closed and last_report is None and last_progress and last_progress[:3] == progress[:3]:
+            return  # This closed match was already emitted and cleared.
         if not (last_report or model.rounds or model.battle_config or force or idle):
             # 同一批数据里的初始预告和场景合并显示；即使缺场景，空闲时也会发出预告。
             return
@@ -89,15 +96,21 @@ def serve() -> None:
                 for wave in row.get("wave_power", {}).get("rows", ())),
             len(report["spawn_plan"]),
         )
-        if not (round_count or report["spawn_plan"] or report["battle_config"]):
-            return
-        capture = report["capture"]
-        report["capture"] = {key: capture[key] for key in ("match", "round", "self")}
-        report["players"] = dict.fromkeys(report["players"], "")
-        encoded = json.dumps({"kind": "report", "report": report}, ensure_ascii=False, allow_nan=False)
-        if encoded != last_report:
-            print(encoded, flush=True)
-            last_report = encoded
+        if round_count or report["spawn_plan"] or report["battle_config"]:
+            capture = report["capture"]
+            report["capture"] = {key: capture[key] for key in ("match", "round", "self", "self_basis") if key in capture}
+            # Keep display names only in the local renderer feed; diagnostics contain counts, not names.
+            encoded = json.dumps({"kind": "report", "report": report}, ensure_ascii=False, allow_nan=False)
+            if encoded != last_report:
+                print(encoded, flush=True)
+                last_report = encoded
+            if not conn.closed:
+                return
+        if last_report is not None:
+            print_event({"kind": "report", "report": None})
+            last_report = None
+        round_count = 0
+        report_details = (0, 0, 0)
 
     def send_diagnostics(force: bool = False) -> None:
         nonlocal next_diagnostics
@@ -112,9 +125,16 @@ def serve() -> None:
               analyzer.scene_candidate_rejections, *report_details, processing_errors,
               file=sys.stderr, flush=True)
         print("PRTS_REPORT_BYTES", payload_bytes["down"], payload_bytes["up"], file=sys.stderr, flush=True)
+        print("PRTS_REPORT_BOSS", *(analyzer.boss_events[key] for key in
+              ("phase", "terminal", "runtime", "rank", "ratio", "unassigned", "inferred")), file=sys.stderr, flush=True)
+        unknown = []
+        for key, count in analyzer.unknown.most_common(12):
+            direction, message_id = key.split(" ", 1)
+            unknown.extend((0 if direction == "down" else 1, int(message_id), count))
+        print("PRTS_REPORT_UNKNOWN", *unknown, file=sys.stderr, flush=True)
 
     try:
-        for result in segments(stopped, status):
+        for result in results:
             messages = analyzer.message_count
             errors = analyzer.parse_errors + analyzer.reassembly_errors
             try:
@@ -123,6 +143,8 @@ def serve() -> None:
                     if now >= next_recovery:
                         next_recovery = now + 0.25
                         analyzer.resume_acknowledged_gaps(now)
+                elif isinstance(result, RetiredConnections):
+                    analyzer.retire_connections(result.keys)
                 else:
                     segment, direction = result
                     if segment.payload:

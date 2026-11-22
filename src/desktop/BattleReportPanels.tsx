@@ -1,15 +1,17 @@
 import { useState, type ReactNode } from 'react';
 import { ScanFace } from 'lucide-react';
-import { REPORT_ROUNDS, REPORT_SEATS, roundMetrics, waveOwner, type BattleReport, type BattleRound } from './battleReportData';
+import { REPORT_SEATS, groupEnemyOutcomes, hasBossDamage, ownLeakKinds, ownRoundLeaks, resolvePreviewRound, roundMetrics,
+  visibleSpawnRows, waveOwner, type BattleReport, type BattleRound, type EnemyOutcome, type PreviewRoundFilter,
+  type ReportRoundFilter } from './battleReportData';
+import { ReportRoundTimeline } from './ReportRoundTimeline';
+import type { ReportRecord } from './battleReports';
 import portraits from './enemyPortraits.json';
 
 const PHASES: Record<string, string> = {
   loading: '载入', special_prep: '特殊准备', prep: '准备', self: '防守', assist: '协防', boss: 'Boss 战',
   settle: '结算', end: '结束', pause: '暂停', battle_wait: '等待战斗', boss_wait: '等待 Boss 战',
 };
-const metrics = ['漏怪', '协防', '本回合扣血', '漏怪战力'];
 const numbers = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
-const compact = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
 type Metric = ReturnType<typeof roundMetrics>[number];
 
 export const formatReportNumber = (value: number | null | undefined) => value == null ? '—' : numbers.format(value);
@@ -32,23 +34,91 @@ export function reportPhase(data?: BattleRound) {
   if (data?.allPlayersLeaked) return '全员漏怪';
   if (data && ['settle', 'end', 'boss'].includes(data.phase)) return PHASES[data.phase];
   if (data?.assistsStatus === 'reported') return '协防已结算';
-  if (data && data.phase !== 'assist' && (data.unassignedSelfLeaks !== null || data.leaksStatus === 'observed')) return '本路已结算';
+  if (data && data.phase !== 'assist' && (data.selfLeaks !== null || data.leaksStatus === 'observed')) return '本路已结算';
   if (data && Object.hasOwn(PHASES, data.phase)) return PHASES[data.phase];
   return '—';
 }
 
-function seatName(seat: number, report?: BattleReport) {
-  return <span className={`d-report-seat d-report-seat-${seat}`} title={report?.names[seat]}>
-    {seat}号{report?.self === seat ? ' · 我' : ''}
+export function seatName(seat: number, report?: BattleReport) {
+  const id = report?.names[seat];
+  const isSelf = report?.self === seat;
+  const label = `${seat}号${isSelf ? ' · 我' : ''}`;
+  return <span className={`d-report-seat d-report-seat-${seat}`} title={id ? `${id} · ${label}` : label}>
+    <bdi>{seat}号</bdi>{id && <span className="d-report-seat-name">· {id}</span>}{isSelf && <small>我</small>}
   </span>;
 }
 
-const selfLeaks = (row: BattleRound, report: BattleReport) =>
-  row.unassignedSelfLeaks ?? (report.self ? row.leaks[report.self] : undefined);
+type AssistData = Pick<BattleRound, 'assistPairs' | 'assistsStatus' | 'unattributedAssists'>
+  & Partial<Pick<BattleRound, 'allPlayersLeaked' | 'hpCosts' | 'uncoveredLeaks' | 'uncoveredPartial'>>;
 
-function metricText(metric: Metric, power = false) {
+function visibleAssistPairs(data: AssistData, self: number | null, team = false) {
+  if (team || self === null) return data.assistPairs;
+  const own = data.assistPairs.filter(pair => pair.owner === self || pair.killer === self);
+  return own.length ? own : data.assistPairs;
+}
+
+function AssistSummary({ data, report, team = false, ownLeaks }: {
+  data: AssistData; report?: BattleReport; team?: boolean; ownLeaks?: number;
+}) {
+  const self = report?.self ?? null;
+  const pairs = visibleAssistPairs(data, self, team);
+  const unmatched = data.unattributedAssists;
+  const otherPairs = data.assistPairs.length - pairs.length;
+  const ownHpLoss = self === null ? 0 : data.hpCosts?.[self] ?? 0;
+  const ownCover = self !== null && data.assistPairs.some(pair => pair.owner === self);
+  const observedUncovered = self === null ? 0 : data.uncoveredLeaks?.[self] ?? 0;
+  const uncoveredCount = observedUncovered || (ownHpLoss > 0 && !ownCover ? ownLeaks ?? 0 : 0);
+  const hasUncoveredLeak = !team && (data.allPlayersLeaked || ownHpLoss > 0 || observedUncovered > 0);
+  const uncovered = hasUncoveredLeak
+    ? `${ownCover ? '仍有本路漏怪未兜住' : '无人兜底'}${uncoveredCount > 0
+      ? ` · 漏怪 ${data.uncoveredPartial && observedUncovered > 0 ? '≥' : ''}${formatReportNumber(uncoveredCount)} 只` : ''}`
+      + `${ownHpLoss > 0 ? ` · 扣血 ${formatReportNumber(ownHpLoss)} 点` : ''}`
+    : undefined;
+  const player = (seat: number) => seat === self ? <strong>我</strong> : seatName(seat, report);
+  const list = <ul className="d-report-assists">
+    {pairs.map(({ killer, owner, count }) => <li key={`${killer}:${owner}`}>
+      {player(killer)} {killer === owner ? '拦下自己的漏怪' : <>帮 {player(owner)} 兜底</>} <strong>{formatReportNumber(count)} 只</strong>
+    </li>)}
+    {unmatched > 0 && <li className="d-muted">{pairs.length ? '另有' : '已记录'} {formatReportNumber(unmatched)} 只协防击杀，未能确认漏怪者</li>}
+  </ul>;
+  const empty = uncovered || (data.assistsStatus === 'skipped' ? '本回合未进入协防'
+    : data.assistsStatus === 'reported' ? '已结算，未记录到协防击杀' : '尚未记录协防');
+  return <>
+    {pairs.length || unmatched ? list : <span className="d-muted">{empty}</span>}
+    {uncovered && (pairs.length > 0 || unmatched > 0) && <small className="d-muted d-report-assist-note">{uncovered}</small>}
+    {otherPairs > 0 && <small className="d-muted d-report-assist-note">另有队友间兜底，点回合可查看</small>}
+    {data.assistsStatus === 'observed' && <small className="d-muted d-report-assist-note">部分协防记录</small>}
+  </>;
+}
+
+function EnemyOutcomes({ label, enemies, total }: { label: string; enemies: EnemyOutcome[]; total: number }) {
+  if (total <= 0) return null;
+  const known = enemies.reduce((sum, enemy) => sum + enemy.count, 0);
+  const rows = known <= total ? enemies : [];
+  const missing = rows === enemies ? total - known : total;
+  return <div className="d-report-outcome">
+    <span className="d-report-outcome-label">{label}</span>
+    <ul className="d-report-outcome-chips">
+      {rows.map(enemy => <li key={enemy.id}><EnemyLabel id={enemy.id} name={enemy.name} /><strong>×{formatReportNumber(enemy.count)}</strong></li>)}
+      {missing > 0 && <li className="d-muted d-report-outcome-unknown">{rows.length ? '另有 ' : ''}{formatReportNumber(missing)} 只未识别怪物</li>}
+    </ul>
+  </div>;
+}
+
+function RoundOutcomes({ data, report, leaks }: { data: BattleRound; report: BattleReport; leaks: number | undefined }) {
+  const pairs = visibleAssistPairs(data, report.self);
+  const cover = pairs.reduce((sum, pair) => sum + pair.count, data.unattributedAssists);
+  const enemies = groupEnemyOutcomes(data.assistEnemies.filter(enemy => pairs.some(pair => pair.killer === enemy.killer && pair.owner === enemy.owner)));
+  if (!leaks && !cover) return <span className="d-muted">—</span>;
+  return <div className="d-report-outcomes">
+    <EnemyOutcomes label="本路漏怪" enemies={ownLeakKinds(data, report)} total={leaks ?? 0} />
+    <EnemyOutcomes label="已兜住" enemies={enemies} total={cover} />
+  </div>;
+}
+
+function metricText(metric: Metric) {
   if (!metric) return '—';
-  const value = power && metric.value >= 10000 ? `${compact.format(metric.value / 10000)}万` : formatReportNumber(metric.value);
+  const value = formatReportNumber(metric.value);
   return metric.quality === 'minimum' ? `≥${value}` : metric.quality === 'estimated' ? `≈${value}` : `${value}${metric.quality ? '*' : ''}`;
 }
 
@@ -65,69 +135,34 @@ function sumMetrics(values: Metric[]) {
 export function RoundMatrix({ report, active, onRound }: {
   report?: BattleReport; active?: number; onRound(round: number): void;
 }) {
-  const [view, setView] = useState<'summary' | 'seats' | null>(null);
   if (!report?.rounds.length) return <p className="d-muted d-report-note">{report?.preview.length
     ? `已收到 ${report.preview.length} 条预告，尚无实战回合。` : '暂无回合记录。'}</p>;
-  const sparse = report.rounds.every(row => (!row.phase || row.phase === 'other') && !Object.keys(row.hpCosts).length
-    && !row.rows.some(wave => wave.seat !== null && wave.planned !== null) && !Object.keys(row.bossDamage).length);
-  const summary = (view ?? (sparse ? 'summary' : 'seats')) === 'summary';
-  const controls = <div className="d-report-view-switch" role="group" aria-label="回合记录布局">
-    <button className="d-button d-small" type="button" aria-pressed={summary} onClick={() => setView('summary')}>结算概览</button>
-    <button className="d-button d-small" type="button" aria-pressed={!summary} onClick={() => setView('seats')}>四席明细</button>
-  </div>;
-  const local = report.rounds.flatMap(row => selfLeaks(row, report) ?? []);
-  if (summary) return <>
-    <div className="d-section-head d-report-subhead"><h2>已记录 {report.rounds.length} 个回合</h2>{controls}</div>
-    <div className="d-report-summary"><span>本路已记录漏怪 <strong>{local.length ? formatReportNumber(local.reduce((a, b) => a + b, 0)) : '—'}</strong></span>
-      <span>{report.self ? `本路 ${report.self} 号` : '本路席位待确认'}</span></div>
-    <div className="d-report-table d-report-compact" tabIndex={0} aria-label="逐回合结算概览"><table>
-      <thead><tr><th scope="col">回合</th><th scope="col">最近记录</th><th scope="col">本路漏怪</th>
-        {REPORT_SEATS.map(seat => <th key={seat} scope="col">{seatName(seat, report)} 协防</th>)}</tr></thead>
-      <tbody>{report.rounds.slice().reverse().map(row => <tr key={row.number} data-current={row.number === active}>
-        <th scope="row"><button type="button" className="d-report-round-link" onClick={() => onRound(row.number)}
-          aria-label={`查看 R${row.number} 漏怪战力`}>R{row.number}</button></th>
-        <td>{reportPhase(row)}</td><td className="d-report-own-leaks">{formatReportNumber(selfLeaks(row, report))}</td>
-        {REPORT_SEATS.map(seat => <td key={seat}>{metricText(roundMetrics(row, seat)[1])}</td>)}
-      </tr>)}</tbody>
-    </table></div>
-    <p className="d-muted d-report-legend">— 未记录 · * 部分记录</p>
-  </>;
-  const recorded = new Map(report?.rounds.map(row => [row.number, row]));
-  const rows = REPORT_ROUNDS.map(number => {
-    const data = recorded.get(number);
-    const seats = REPORT_SEATS.map(seat => roundMetrics(data, seat));
-    return { number, data, cells: metrics.flatMap((_, index) => seats.map(seat => seat[index])) };
-  });
+  const local = report.rounds.flatMap(row => ownRoundLeaks(row, report) ?? []);
+  const self = report.self;
   return <>
-    <div className="d-section-head d-report-subhead"><h2>四席回合记录</h2>{controls}</div>
-    <div className="d-report-table d-report-matrix" tabIndex={0} aria-label="逐回合数据表">
-      <table>
-        <thead>
-          <tr><th rowSpan={2} scope="col">回合</th><th rowSpan={2} scope="col">阶段</th>
-            {metrics.map((name, index) => <th className="d-report-metric-group" data-metric={index} key={name} colSpan={4} scope="colgroup">{name}</th>)}
-          </tr>
-          <tr>{metrics.map(name => REPORT_SEATS.map(seat => <th key={`${name}-${seat}`} scope="col">{seatName(seat, report)}</th>))}</tr>
-        </thead>
-        <tbody>{rows.map(({ number, data, cells }) => <tr key={number} data-current={number === active} data-recorded={Boolean(data)}>
-          <th scope="row">{data
-            ? <button className="d-report-round-link" type="button" onClick={() => onRound(number)} aria-label={`查看 R${number} 漏怪战力`}>R{number}</button>
-            : `R${number}`}</th>
-          <td>{reportPhase(data)}{data && data.unassignedSelfLeaks !== null &&
-            <small style={{ display: 'block' }}>本路漏怪 {data.unassignedSelfLeaks} · 席位待确认</small>}</td>
-          {cells.map((cell, i) => {
-            const eliminatedAt = (report?.eliminated[REPORT_SEATS[i % 4]] ?? Infinity);
-            const missing = !cell && data && eliminatedAt < number ? '阵亡' : null;
-            return <td key={i} data-quality={cell?.quality} data-known={Boolean(cell)} title={cell && i >= 12 ? formatReportNumber(cell.value) : undefined}>
-              {missing ?? metricText(cell, i >= 12)}
-            </td>;
-          })}
-        </tr>)}</tbody>
-        <tfoot><tr><th scope="row">合计</th><td>{recorded.size ? `${recorded.size} 回合` : '—'}</td>
-          {rows[0].cells.map((_, i) => <td key={i}>{metricText(sumMetrics(rows.filter(row => row.data).map(row => row.cells[i])), i >= 12)}</td>)}
-        </tr></tfoot>
-      </table>
+    <div className="d-section-head"><h2>已记录 {report.rounds.length} 个回合</h2></div>
+    <div className="d-report-summary">
+      <span className="d-report-identity"><strong>我</strong> · {self === null ? '席位未确认' : `${self}号`}
+        {report.selfBySettlement && <small className="d-muted">结算关联</small>}
+        {report.selfManual && <small className="d-muted">手动确认</small>}
+        {self !== null && report.names[self] && <bdi className="d-report-self-id">{report.names[self]}</bdi>}</span>
+      <span>本路已记录漏怪 <strong>{local.length ? formatReportNumber(local.reduce((a, b) => a + b, 0)) : '—'}</strong></span>
     </div>
-    <p className="d-muted d-report-legend">— 缺少数据 · * 部分记录 · ≈ 按扣血估算 · ≥ 已知下限</p>
+    <div className="d-report-table d-report-compact" tabIndex={0} aria-label="逐回合本路结算"><table>
+      <thead><tr><th scope="col">回合</th><th scope="col">我漏怪</th><th scope="col">兜底与协防</th><th scope="col">怪物记录</th></tr></thead>
+      <tbody>{report.rounds.slice().reverse().map(row => {
+        const leaks = ownRoundLeaks(row, report);
+        return <tr key={row.number} data-current={row.number === active}>
+          <th scope="row"><button type="button" className="d-report-round-link" onClick={() => onRound(row.number)}
+            aria-label={`查看 R${row.number} 回合详情`}>R{row.number}</button></th>
+          <td>{leaks === undefined ? <span className="d-muted">未记录</span>
+            : <strong className="d-report-own-leaks">{formatReportNumber(leaks)} 只</strong>}</td>
+          <td><AssistSummary data={row} report={report} ownLeaks={leaks} /></td>
+          <td><RoundOutcomes data={row} report={report} leaks={leaks} /></td>
+        </tr>;
+      })}</tbody>
+    </table></div>
+    <p className="d-muted d-report-legend">本路漏怪按进入协防前计数，已被兜住的也计在内。{self === null && '席位未确认，协防只列已识别的双方。'}</p>
   </>;
 }
 
@@ -136,60 +171,79 @@ function RoundPreviewLink({ report, number, open }: { report?: BattleReport; num
   return count ? <button type="button" className="d-button d-small" onClick={() => open(number)}>查看 R{number} 出怪预告 · {count} 条</button> : null;
 }
 
-export function WaveDetails({ report, active, onRound, following, onFollow, onPreview }: {
-  report?: BattleReport; active?: BattleRound; onRound(round: number): void; following: boolean; onFollow(): void;
-  onPreview(round: number): void;
+function sumAssists(rounds: BattleRound[]): AssistData {
+  const pairs = new Map<string, BattleRound['assistPairs'][number]>();
+  let unattributedAssists = 0;
+  for (const round of rounds) {
+    unattributedAssists += round.unattributedAssists;
+    for (const pair of round.assistPairs) {
+      const key = `${pair.killer}:${pair.owner}`;
+      pairs.set(key, { ...pair, count: (pairs.get(key)?.count ?? 0) + pair.count });
+    }
+  }
+  const assistsStatus = rounds.every(round => round.assistsStatus === 'skipped') ? 'skipped'
+    : rounds.every(round => ['reported', 'skipped'].includes(round.assistsStatus)) ? 'reported'
+    : rounds.some(round => ['reported', 'observed'].includes(round.assistsStatus)) ? 'observed' : 'unknown';
+  return { assistPairs: [...pairs.values()], assistsStatus, unattributedAssists };
+}
+
+export function WaveDetails({ report, round, onRound, onPreview }: {
+  report?: BattleReport; round: ReportRoundFilter; onRound(round: ReportRoundFilter): void; onPreview(round: number): void;
 }) {
-  if (!active) return <p className="d-muted d-report-note">暂无回合记录。</p>;
-  const assistStatus = { reported: '协防已结算', observed: '部分协防记录', skipped: '本回合跳过协防' }[active.assistsStatus];
-  const waves = active.rows.filter(wave => wave.seat !== null || wave.leaked !== null);
+  const all = round === 'all';
+  const recorded = report?.rounds ?? [];
+  const active = all ? undefined : recorded.find(row => row.number === round);
+  const rows = all ? recorded : active ? [active] : [];
+  const timeline = <ReportRoundTimeline label="回合详情" selected={round} current={report?.current}
+    available={new Set(recorded.map(row => row.number))} onSelect={onRound} />;
+  if (!report || !rows.length) return <>{timeline}<div className="d-report-empty">
+    <span>{all ? '暂无回合记录。' : `R${round} 暂无实战记录。`}</span>
+    {round !== 'all' && <RoundPreviewLink report={report} number={round} open={onPreview} />}
+  </div></>;
+  const total = (values: Metric[]) => all ? sumMetrics(values) : values[0];
+  const leaks = total(rows.map(row => {
+    const value = ownRoundLeaks(row, report);
+    return value === undefined ? undefined : { value };
+  }));
+  const waves = active?.rows.filter(wave => wave.seat !== null || wave.leaked !== null) ?? [];
+  const assists = all ? sumAssists(rows) : rows[0];
   return <>
-    <div className="d-section-head">
-      <h2>R{active.number} · {reportPhase(active)}</h2>
-      <div className="d-inline">
-        {!following && <button className="d-button d-small" type="button" onClick={onFollow}>跟随当前回合</button>}
-        <select className="d-button d-small" aria-label="漏怪战力回合" value={active.number} onChange={event => onRound(Number(event.target.value))}>
-          {report?.rounds.map(row => <option key={row.number} value={row.number}>R{row.number}</option>)}
-        </select>
-      </div>
+    {timeline}
+    <div className="d-section-head d-report-subhead">
+      <h2>{all ? '全部回合累计' : `R${round} · ${reportPhase(active)}`}</h2>
+      {all && <small className="d-muted">已知数据合计 · 已记录 {rows.length} 回合</small>}
     </div>
-    {active.unassignedSelfLeaks !== null && <p className="d-muted d-report-note">
-      本路结算：漏怪 {active.unassignedSelfLeaks}。席位确认后会计入对应玩家。
-    </p>}
+    <div className="d-report-summary">
+      <span>我漏怪 <strong>{leaks ? `${metricText(leaks)} 只` : '未记录'}</strong></span>
+      {report.self !== null && seatName(report.self, report)}
+    </div>
+    {Boolean(leaks?.value) && <div className="d-report-outcomes"><EnemyOutcomes label="本路漏怪"
+      enemies={groupEnemyOutcomes(rows.flatMap(row => ownLeakKinds(row, report)))} total={leaks!.value} /></div>}
     <div className="d-report-seat-cards">
-      {REPORT_SEATS.map(seat => <div key={seat}>{seatName(seat, report)}
-        <strong>{metricText(roundMetrics(active, seat)[3], true)}</strong>
-        <small>漏怪 {metricText(roundMetrics(active, seat)[0])} · 最近血量 {formatReportNumber(report?.hp[seat])}</small>
-      </div>)}
+      {REPORT_SEATS.map(seat => {
+        const lane = rows.map(row => roundMetrics(row, seat, report.self));
+        return <div key={seat}>{seatName(seat, report)}
+          <strong>{metricText(total(lane.map(values => values[0])))} 只</strong>
+          <small>漏怪 · 协防 {metricText(total(lane.map(values => values[1])))} 只</small>
+        </div>;
+      })}
     </div>
+    <section className="d-report-assist-detail">
+      <h3>{all ? '兜底合计' : '本回合兜底'}</h3><AssistSummary data={assists} report={report} team={all}
+        ownLeaks={active ? ownRoundLeaks(active, report) : undefined} />
+    </section>
+    <p className="d-muted d-report-legend">— 未记录 · * 部分记录 · ≈ 估算 · ≥ 已知下限</p>
     {waves.length ? <div className="d-report-table"><table>
-      <thead><tr>{['归属', '批次', '敌人', '计划', '漏怪', '单体战力', '漏怪战力'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+      <thead><tr>{[active?.bossGroups ? '战区' : '玩家', '批次', '敌人', '计划', '漏怪'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
       <tbody>{waves.flatMap((wave, i) => (wave.enemies.length ? wave.enemies : [undefined]).map((enemy, j) => <tr key={`${i}-${j}`}>
-        {j === 0 && <><th rowSpan={Math.max(1, wave.enemies.length)} scope="row">{waveOwner(wave.seat, active.bossGroups)}</th>
+        {j === 0 && <><th rowSpan={Math.max(1, wave.enemies.length)} scope="row">{wave.seat !== null && !active?.bossGroups ? seatName(wave.seat, report) : waveOwner(wave.seat, active?.bossGroups ?? false)}</th>
           <td rowSpan={Math.max(1, wave.enemies.length)}>{batchName(wave.action)}</td></>}
         <td><EnemyLabel id={enemy?.id} name={enemy?.name} /></td>
         <td>{formatReportNumber(enemy?.count ?? (enemy ? null : wave.planned))}</td>
         <td>{formatReportNumber(enemy?.leaked ?? (enemy ? null : wave.leaked))}</td>
-        <td>{formatReportNumber(enemy?.power)}</td>
-        {j === 0 && <td rowSpan={Math.max(1, wave.enemies.length)}>
-          {wave.unpriced > 0 ? wave.power ? `≥${formatReportNumber(wave.power)}` : '—' : formatReportNumber(wave.power)}
-        </td>}
       </tr>))}</tbody>
-    </table></div> : <div className="d-report-empty"><span>R{active.number} 暂无战斗编排。</span>
+    </table></div> : active && <div className="d-report-empty"><span>R{active.number} 暂无战斗编排。</span>
       <RoundPreviewLink report={report} number={active.number} open={onPreview} /></div>}
-    {(assistStatus || active.assistPairs.length > 0) && <section>
-      <div className="d-section-head"><h3>协防击杀</h3><span className="d-muted">{assistStatus}
-        {active.unattributedAssists > 0 ? ` · 未归属击杀 ${active.unattributedAssists}` : ''}</span></div>
-      <div className="d-report-table"><table>
-        <thead><tr><th scope="col">击杀者 ＼ 敌人归属</th>{REPORT_SEATS.map(seat => <th key={seat} scope="col">{seatName(seat, report)}</th>)}</tr></thead>
-        <tbody>{REPORT_SEATS.map(killer => <tr key={killer}><th scope="row">{seatName(killer, report)}</th>
-          {REPORT_SEATS.map(owner => {
-            const pairs = active.assistPairs.filter(pair => pair.killer === killer && pair.owner === owner);
-            const skipped = active.assistsStatus === 'skipped' && active.assists[killer] === 0 && active.assists[owner] === 0;
-            return <td key={owner}>{pairs.length || skipped ? formatReportNumber(pairs.reduce((sum, pair) => sum + pair.count, 0)) : '—'}</td>;
-          })}</tr>)}</tbody>
-      </table></div>
-    </section>}
   </>;
 }
 
@@ -201,6 +255,7 @@ export function BossDamage({ report, number, onRound, reference, onPreview }: {
   const data = report?.rounds.find(row => row.number === number);
   const hasBreakdown = data && (data.bossUplinkRows.length > 0 || data.bossOfficial.length > 0
     || Object.keys(data.bossUplink).length > 0);
+  const recorded = hasBossDamage(data);
   return <>
     {report?.rounds.some(row => row.number >= 14 && (Object.keys(row.bossPercent).length || Object.keys(row.bossDamage).length))
       && <div className="d-report-table"><table>
@@ -221,14 +276,23 @@ export function BossDamage({ report, number, onRound, reference, onPreview }: {
       </div>
     </div>
     {reference}
-    {!hasBreakdown && !Object.keys(data?.bossPercent ?? {}).length && !Object.keys(data?.bossDamage ?? {}).length && data?.bossHp == null
-      ? <div className="d-report-empty"><span>R{number} 暂无 Boss 战记录。</span>
-        <RoundPreviewLink report={report} number={number} open={onPreview} /></div> : data && <>
-      <p className="d-muted">Boss 血量 {formatReportNumber(data.bossHp)} · {
-        data.bossStatus === 'settlement' ? '已结算' : data.bossStatus === 'reported' ? '已记录伤害'
-          : hasBreakdown ? '累计伤害未确认' : '尚无伤害记录'
-      }</p>
-      {hasBreakdown && <div className="d-report-table"><table>
+    {data && (recorded || data.bossHp !== null) && <p className="d-muted">
+      {data.bossHp !== null && <>Boss 血量 {formatReportNumber(data.bossHp)} · </>}
+      {data.bossStatus === 'settlement' ? '已取得服务器伤害结算'
+        : data.bossEnded ? '战斗阶段已结束，未取得服务器伤害结算'
+          : data.bossStatus === 'reported' ? '已记录伤害，未取得服务器结算'
+            : data.bossOfficial.length ? '已收到榜单，未取得服务器伤害结算'
+              : hasBreakdown ? '仅有本端伤害上报，未取得全队结算' : '未取得伤害结算'}
+      {data.bossRoundInferred && ' · 回合按最近确认进度关联，等待场景校正'}
+    </p>}
+    {!recorded && <div className="d-report-empty"><span>{data?.bossEnded ? `R${number} Boss 战斗阶段已结束，但未采到伤害。`
+      : data?.phase === 'boss' ? `已采到 R${number} Boss 开战阶段，尚未采到伤害。`
+        : `未采到 R${number} 的 Boss 战阶段或伤害。`}</span>
+      <span>请按 Ctrl+Shift+F9 查看采集诊断，核对 Boss 结算是否入表。</span>
+      <RoundPreviewLink report={report} number={number} open={onPreview} />
+    </div>}
+    {data && hasBreakdown && <>
+      <div className="d-report-table"><table>
         <thead><tr>{['来源', '座位', '攻击编号', '类型', '伤害'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>
           {REPORT_SEATS.filter(seat => data.bossUplink[seat] !== undefined).map(seat => <tr key={`sum-${seat}`}>
@@ -240,46 +304,54 @@ export function BossDamage({ report, number, onRound, reference, onPreview }: {
             <td>{hit.source === null ? '—' : bossSourceLabels[hit.source] ?? '未知'}</td><td>{formatReportNumber(hit.damage)}</td>
           </tr>)}
         </tbody>
-      </table></div>}
+      </table></div>
     </>}
   </>;
 }
 
-export function SpawnPreview({ report, round, query, onRound, onQuery }: {
-  report?: BattleReport; round: string; query: string; onRound(round: string): void; onQuery(query: string): void;
+export function SpawnPreview({ report, filter, onSelect }: {
+  report?: BattleReport; filter: PreviewRoundFilter; onSelect(round: PreviewRoundFilter): void;
 }) {
-  const [kind, setKind] = useState<'plan' | 'battle' | null>(null);
+  const [kind, setKind] = useState<'plan' | 'battle'>('plan');
   const plans = report?.preview.some(row => row.kind === 'plan');
   const hasBattle = report?.preview.some(row => row.kind === 'battle');
-  const currentKind = kind ?? (!plans && hasBattle ? 'battle' : 'plan');
-  const battle = currentKind === 'battle';
-  const keyword = query.trim().toLowerCase();
-  const rows = report?.preview.filter(item => item.kind === currentKind && (!round || item.round === Number(round))
-    && (!keyword || item.name.toLowerCase().includes(keyword) || item.id.toLowerCase().includes(keyword))) ?? [];
+  const battle = hasBattle && (!plans || kind === 'battle');
+  const round = resolvePreviewRound(report, filter);
+  const available = new Set(report?.preview.filter(row => row.kind === (battle ? 'battle' : 'plan')).map(row => row.round));
+  const rows = visibleSpawnRows(report, battle ? 'battle' : 'plan', round === 'all' ? '' : String(round), '');
+  const sections = new Map<number, typeof rows>();
+  for (const enemy of rows) {
+    const group = sections.get(enemy.round);
+    if (group) group.push(enemy);
+    else sections.set(enemy.round, [enemy]);
+  }
   return <>
-    <div className="d-report-filters">
-      <div className="d-report-view-switch" role="group" aria-label="出怪记录来源">
-        <button className="d-button d-small" type="button" aria-pressed={!battle} onClick={() => setKind('plan')}>对局预告</button>
-        <button className="d-button d-small" type="button" aria-pressed={battle} onClick={() => setKind('battle')}>战斗编排</button>
-      </div>
-      <select className="d-button d-small" aria-label="出怪预告回合" value={round} onChange={event => onRound(event.target.value)}>
-        <option value="">全部回合</option>{REPORT_ROUNDS.map(number => <option key={number} value={number}>R{number}</option>)}
-      </select>
-      <input aria-label="搜索敌人" type="search" placeholder="搜索敌人名称或编号" value={query} onChange={event => onQuery(event.target.value)} />
-      <span className="d-muted">{rows.length} 条</span>
-    </div>
-    {rows.length ? <div className="d-report-table d-report-scroll-table" tabIndex={0} aria-label="敌人预告明细"><table>
-      <thead><tr>{['回合', '归属', '批次', '敌人', '数量', '单体战力', '来源'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-      <tbody>{rows.map((enemy, i) => <tr key={i}><th scope="row">R{enemy.round}</th><td>{enemy.owner}</td>
-        <td>{enemy.source === 'Boss 预告' ? '—' : batchName(enemy.action)}</td><td><EnemyLabel id={enemy.id} name={enemy.name} /></td>
-        <td>{formatReportNumber(enemy.count)}</td><td>{formatReportNumber(enemy.power)}</td>
-        <td>{enemy.source}{enemy.seenRound === 0 ? ' · 载入' : enemy.seenRound === null ? '' : ` · R${enemy.seenRound}`}</td>
-      </tr>)}</tbody>
-    </table></div> : <p className="d-muted d-report-note">{battle && !hasBattle ? '暂无战斗编排。' : !battle && !plans ? '暂无出怪预告。' : '没有匹配的敌人。'}</p>}
+    <ReportRoundTimeline label="出怪预告回合" selected={round} current={report?.current} available={available}
+      onSelect={onSelect} follow={{ enabled: filter === 'follow', onEnable: () => onSelect('follow') }} />
+    {(plans && hasBattle || filter === 'follow' && !report?.current && report) && <div className="d-report-preview-meta">
+      {plans && hasBattle && <div className="d-report-view-switch" role="group" aria-label="出怪列表">
+        <button className="d-button d-small" type="button" aria-pressed={!battle} onClick={() => setKind('plan')}>预告</button>
+        <button className="d-button d-small" type="button" aria-pressed={Boolean(battle)} onClick={() => setKind('battle')}>实战编排</button>
+      </div>}
+      {filter === 'follow' && !report?.current && <small className="d-muted">
+        {round === 'all' ? '当前回合未确认，先显示全部预告'
+          : round > (report?.rounds.at(-1)?.number ?? 0) ? `当前回合未确认，先显示 R${round} 预告`
+            : `当前回合未确认，暂显示最近记录 R${round}`}
+      </small>}
+    </div>}
+    {rows.length ? <div className="d-report-table d-report-scroll-table d-report-spawns" tabIndex={0} aria-label={battle ? '实战编排' : '出怪预告'}><table>
+      <thead><tr><th scope="col">回合</th><th scope="col">批次</th><th scope="col">敌人</th>
+        <th scope="col">{battle ? '已记录合计' : '数量'}</th></tr></thead>
+      {[...sections].map(([number, enemies]) => <tbody key={number}>{enemies.map((enemy, i) => <tr key={i}>
+        {i === 0 && <th scope="rowgroup" rowSpan={enemies.length}>R{number}</th>}
+        <td>{enemy.boss ? 'Boss' : batchName(enemy.action)}</td><td><EnemyLabel id={enemy.id} name={enemy.name} /></td>
+        <td className="d-report-spawn-count">{formatReportNumber(enemy.count)}</td>
+      </tr>)}</tbody>)}
+    </table></div> : <p className="d-muted d-report-note">{round !== 'all'
+      ? `R${round} 暂无${battle ? '实战编排' : '出怪预告'}。` : '暂无出怪预告。'}</p>}
   </>;
 }
 
-export type ReportRecord = { key: string; label: string; report: BattleReport; seenAt: number; source: 'live' | 'file' };
 const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
 
 export function ReportHistory({ records, liveKey, onOpen }: {
@@ -300,10 +372,10 @@ export function ReportHistory({ records, liveKey, onOpen }: {
           <td>{dateTime.format(entry.seenAt)}</td><td>{entry.report.difficulty || '—'}</td>
           <td>{last ? `R${last.number} · ${reportPhase(last)}` : '—'}</td>
           <td>{metricText(sumMetrics(entry.report.rounds.map(row => {
-            const value = selfLeaks(row, entry.report);
+            const value = ownRoundLeaks(row, entry.report);
             return value === undefined ? undefined : { value };
           })))}</td>
-          {REPORT_SEATS.map(seat => <td key={seat}>{metricText(sumMetrics(entry.report.rounds.map(row => roundMetrics(row, seat)[0])))}</td>)}
+          {REPORT_SEATS.map(seat => <td key={seat}>{metricText(sumMetrics(entry.report.rounds.map(row => roundMetrics(row, seat, entry.report.self)[0])))}</td>)}
           <td><button className="d-button d-small" type="button" onClick={() => onOpen(entry.key)}>查看</button></td>
         </tr>;
       })}</tbody>

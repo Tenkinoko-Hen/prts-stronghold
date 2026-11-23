@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

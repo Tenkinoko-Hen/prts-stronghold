@@ -2,15 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { BossDamage, RoundMatrix, SpawnPreview, WaveDetails } from './BattleReportPanels';
+import { BossDamage } from './BattleReportPanels';
+import { RoundMatrix, WaveDetails } from './BattleReportRounds';
+import { SpawnPreview } from './BattleReportSpawns';
+import { laneKinds, laneLeaks, roundOutcome } from './battleRoundOutcome';
+import { demoReport } from './demo/battleReportFixture';
 import { BattleReportRoster } from './BattleReportRoster';
 import { defaultBossRound, hasBossDamage, ownLeakKinds, ownLeakPower, ownRoundLeaks, readBattleReport, reportProgress, resolvePreviewRound,
-  roundMetrics, visibleSpawnRows } from './battleReportData';
+  roundMetrics, visibleSpawnRows, type BattleReport, type ReportRoundFilter } from './battleReportData';
 import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport } from './battleReports';
 import portraits from './enemyPortraits.json';
 
 const report = (match: number, current: number, rounds: Record<number, unknown>, self: number | null = 1) =>
   readBattleReport({ capture: { match, round: current, self }, players: {}, rounds });
+const detailView = (report: BattleReport, round: ReportRoundFilter, seat = report.self) =>
+  renderToStaticMarkup(createElement(WaveDetails, { report, round, seat }));
 
 test('settlement-only reports do not substitute the recorded round for the current round', () => {
   const capture = report(1, 0, { 2: { self_leaks: 4 } });
@@ -64,6 +70,90 @@ test('Boss damage survives a sparse same-match update and archive without leakin
   assert.equal(records.history[0].report.rounds[0].bossDamage[1], 35000);
   records = updateLiveReport(records, report(2, 1, { 1: { phase: 'prep' } }), 1, 22);
   assert.equal(records.live?.report.rounds.some(row => row.number >= 14), false);
+});
+
+test('a ranking or local hit arriving after a settlement does not erase that settlement', () => {
+  const initial = { boss_damage: { 1: 35000, 2: 0 }, boss_percent: { 1: 35, 2: 0 }, boss_status: 'settlement' };
+  let records = updateLiveReport({ history: [] }, report(1, 14, { 14: initial }), 1, 10);
+  const rank = { player: 1, identifier: 123, damage: 999 };
+  records = updateLiveReport(records, report(1, 14, { 14: { boss_official: [rank], boss_status: 'unknown' } }), 1, 11);
+  records = updateLiveReport(records, report(1, 14, { 14: { boss_uplink: { 1: 70 },
+    boss_uplink_rows: [{ player: 1, attacker: 42, source: 1, damage: 70 }] } }), 1, 12);
+  const result = records.live!.report;
+  const [row] = result.rounds;
+  assert.deepEqual(row.bossDamage, { 1: 35000, 2: 0 });
+  assert.deepEqual(row.bossPercent, { 1: 35, 2: 0 });
+  assert.equal(row.bossStatus, 'settlement');
+  assert.equal(row.bossOfficial[0].damage, 999);
+  assert.equal(row.bossUplinkRows[0].damage, 70);
+  const html = renderToStaticMarkup(createElement(BossDamage, { report: result, number: 14, onRound: () => {},
+    onPreview: () => {}, reference: null }));
+  assert.match(html, /35,000/);
+  assert.match(html, /已取得服务器伤害结算/);
+  assert.match(html, /999/);
+});
+
+test('reconnecting keeps independent Boss sources while newer results replace the same source', () => {
+  let records = updateLiveReport({ history: [] }, report(1, 14, { 14: {
+    boss_official: [{ player: 1, identifier: 1, damage: 800 }], boss_uplink: { 1: 80 },
+    boss_damage: { 1: 800 }, boss_percent: { 1: 8 }, boss_status: 'reported',
+  } }), 1, 10);
+  records = updateLiveReport(records, null, 1, 11);
+  const corrected = report(1, 15, { 14: { boss_damage: { 1: 0, 2: 900 }, boss_status: 'settlement',
+    boss_official: [{ player: 2, identifier: 2, damage: 900 }] }, 15: { phase: 'prep' } });
+  records = updateLiveReport(records, corrected, 1, 12);
+  const [r14, r15] = records.live!.report.rounds;
+  assert.deepEqual(r14.bossDamage, { 1: 0, 2: 900 });
+  assert.deepEqual(r14.bossPercent, {}); // A superseded total cannot supply the new percentage.
+  assert.deepEqual(r14.bossOfficial.map(hit => hit.damage), [900]);
+  assert.deepEqual(r14.bossUplink, { 1: 80 });
+  assert.equal(hasBossDamage(r15), false);
+});
+
+test('a positive Boss ranking retires an all-zero snapshot in either arrival order, including reconnect', () => {
+  const first = report(1, 14, { 14: { phase: 'prep', boss_damage: { 1: 0 }, boss_percent: { 1: 0 },
+    boss_status: 'reported', boss_round_basis: 'inferred' } });
+  const records = updateLiveReport({ history: [] }, first, 1, 10);
+  for (const player of [1, 2]) {
+    const ranking = report(1, 14, { 14: { phase: 'prep', boss_damage: {}, boss_percent: {}, boss_status: 'unknown',
+      boss_official: [{ player, identifier: 1, damage: 900 }], boss_round_basis: 'confirmed' } });
+    const archived = updateLiveReport(updateLiveReport({ history: [] }, ranking, 1, 10), null, 1, 11);
+    for (const state of [updateLiveReport(records, ranking, 1, 11), updateLiveReport(archived, first, 1, 12)]) {
+      const result = state.live!.report, [row] = result.rounds;
+      assert.deepEqual(row.bossDamage, {});
+      assert.deepEqual(row.bossPercent, {});
+      assert.equal(row.bossStatus, 'unknown');
+      const html = renderToStaticMarkup(createElement(BossDamage, { report: result, number: 14, onRound: () => {},
+        onPreview: () => {}, reference: null }));
+      assert.match(html, /已收到榜单，未取得服务器伤害结算/);
+      assert.doesNotMatch(html, /0% · 0|等待场景校正/);
+    }
+  }
+});
+
+test('a Boss ranking invalidates a conflicting zero but preserves the other seats of a mixed settlement', () => {
+  const first = report(1, 14, { 14: { boss_damage: { 1: 35000, 2: 0, 3: 0 }, boss_percent: { 1: 35, 2: 0, 3: 0 },
+    boss_status: 'settlement' } });
+  const next = report(1, 14, { 14: { boss_official: [{ player: 2, identifier: 123, damage: 900 }] } });
+  const [row] = updateLiveReport(updateLiveReport({ history: [] }, first, 1, 10), next, 1, 11).live!.report.rounds;
+  assert.deepEqual(row.bossDamage, { 1: 35000, 3: 0 });
+  assert.deepEqual(row.bossPercent, { 1: 35, 3: 0 });
+  assert.equal(row.bossStatus, 'settlement');
+});
+
+test('an inferred Boss ranking keeps its warning until the round is explicitly confirmed', () => {
+  const ranking = { boss_official: [{ player: 2, identifier: 1, damage: 900 }], boss_round_basis: 'inferred' };
+  let records = updateLiveReport({ history: [] }, report(1, 14, { 14: ranking }), 1, 10);
+  for (const update of [{ phase: 'other' }, { boss_uplink: { 2: 30 } }, { boss_ended: true, boss_round_basis: 'inferred' }]) {
+    records = updateLiveReport(records, report(1, 14, { 14: update }), 1, 11);
+    assert.equal(records.live!.report.rounds[0].bossRoundInferred, true);
+    assert.equal(records.live!.report.rounds[0].bossOfficial[0].damage, 900);
+  }
+  for (const confirmation of [{ phase: 'prep', boss_round_basis: 'confirmed' }, { phase: 'boss' }]) {
+    const result = updateLiveReport(records, report(1, 14, { 14: confirmation }), 1, 12).live!.report;
+    assert.equal(result.rounds[0].bossRoundInferred, false);
+    assert.equal(result.rounds[0].bossOfficial[0].damage, 900);
+  }
 });
 
 test('direct local leak counts take precedence over cooperative counts for the own seat only', () => {
@@ -145,9 +235,9 @@ test('same-match sparse updates and reconnect keep old assist pairs, but a corre
 test('a corrected seat does not mislabel an old assist as mine or make the pair disappear', () => {
   const first = updateLiveReport({ history: [] }, report(1, 4, { 4: covered }, 3), 1, 100);
   const state = updateLiveReport(first, report(1, 5, { 5: { phase: 'prep' } }, 2), 1, 101);
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: state.live!.report, onRound: () => {} }));
-  assert.match(html, /1号.*帮.*3号.*兜底.*1 只/);
-  assert.doesNotMatch(html, /帮 <strong>我<\/strong> 兜底/);
+  const html = detailView(state.live!.report, 4);
+  assert.match(html, /队友间兜底.*1号.*3号.*兜底.*1 只/);
+  assert.doesNotMatch(html, /与我相关/);
 });
 
 test('manual game nicknames label assists locally and stay with that match through refresh and reconnect', () => {
@@ -159,12 +249,12 @@ test('manual game nicknames label assists locally and stay with that match throu
   const named = reportWithPlayerNames(state.live!);
   assert.equal(named.names[1], '测试队友#1000');
   assert.equal(named.names[2], '');
-  const view = renderToStaticMarkup(createElement(BattleReportRoster, { entry: state.live!, report: named,
+  const view = renderToStaticMarkup(createElement(BattleReportRoster, { entry: state.live!, report: named, seat: named.self, onViewSeat: () => {},
     onSave: () => {}, onSetSelfSeat: () => {} }));
   assert.match(view, /测试队友#1000.*手填/);
   assert.match(view, /补录昵称/);
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: named, onRound: () => {} }));
-  assert.match(html, /测试队友#1000.*帮 <strong>我<\/strong> 兜底.*1 只/);
+  const html = detailView(named, 4);
+  assert.match(html, /与我相关.*测试队友#1000.*测试本人.*兜底.*1 只/);
 
   state = updateLiveReport(state, null, 1, 101);
   assert.equal(reportWithPlayerNames(state.history[0]).names[3], '测试本人');
@@ -204,13 +294,13 @@ test('manual local seat confirmation labels my seat and assist pairs, survives s
   const named = reportWithPlayerNames(state.live!);
   assert.equal(named.self, 2);
   assert.equal(named.selfManual, true);
-  const roster = renderToStaticMarkup(createElement(BattleReportRoster, { entry: state.live!, report: named,
+  const roster = renderToStaticMarkup(createElement(BattleReportRoster, { entry: state.live!, report: named, seat: named.self, onViewSeat: () => {},
     onSave: () => {}, onSetSelfSeat: () => {} }));
   assert.match(roster, /2号.*队友乙.*我/);
-  assert.match(roster, /已选 2号/);
-  const matrix = renderToStaticMarkup(createElement(RoundMatrix, { report: named, onRound: () => {} }));
+  assert.equal((roster.match(/class="d-seat-button"/g) ?? []).length, 4);
+  const matrix = detailView(named, 1);
   assert.match(matrix, /2号.*手动确认/);
-  assert.match(matrix, /4号.*帮.*我.*兜底.*2 只/);
+  assert.match(matrix, /与我相关.*4号.*2号.*我.*兜底.*2 只/);
 
   state = updateLiveReport(state, readBattleReport({ capture: { match: 9, round: 3 }, players: {}, rounds: {},
     battle_config: { mode_id: 'mode_multi_normal' } }), 1, 101);
@@ -227,23 +317,23 @@ test('overview shows the captured ID and who covered my leaks rather than four a
     rounds: { 2: { self_leaks: 2, assists_status: 'reported', assists: { 3: 2 },
       assist_pairs: [{ killer: 3, owner: 2, count: 2 }] } },
   });
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, onRound: () => {} }));
+  const html = detailView(data, 2);
   assert.match(html, /2号/);
   assert.match(html, /结算关联/);
   assert.match(html, /SyntheticSelf#1001/);
-  assert.match(html, /SyntheticTeammate#1002.*帮.*我.*兜底.*2 只/);
+  assert.match(html, /与我相关.*SyntheticTeammate#1002.*SyntheticSelf#1001.*兜底.*2 只/);
   assert.doesNotMatch(html, /[1234]号协防/);
   assert.equal(data.rounds[0].unattributedAssists, 0);
 });
 
 test('overview distinguishes an unrecorded assist, unknown ownership and an explicit local zero', () => {
   const capture = report(1, 0, { 1: { self_leaks: 0 }, 2: { self_leaks: 2, assists_status: 'reported', assists: { 3: 1 } } }, null);
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: capture, onRound: () => {} }));
+  const html = detailView(capture, 1) + detailView(capture, 2);
   assert.match(html, /席位未确认/);
   assert.match(html, /0 只/);
-  assert.match(html, /尚未记录协防/);
+  assert.match(html, /战况未确认/);
   assert.match(html, /1 只协防击杀，未能确认漏怪者/);
-  assert.doesNotMatch(html, /帮 <strong>我<\/strong> 兜底/);
+  assert.doesNotMatch(html, /全队无漏|与我相关/);
 });
 
 test('spawn preview hides source, owner and power; only battle rows aggregate different routes', () => {
@@ -257,9 +347,9 @@ test('spawn preview hides source, owner and power; only battle rows aggregate di
   assert.deepEqual(battle.map(row => row.count), [6]);
   assert.deepEqual(visibleSpawnRows(data, 'battle', '1', ''), []);
   const html = renderToStaticMarkup(createElement(SpawnPreview, { report: data, filter: 2, onSelect: () => {} }));
-  assert.match(html, /回合.*批次.*敌人.*数量/);
-  assert.match(html, /R2.*第 1 批.*合成敌人.*>5</);
-  assert.doesNotMatch(html, /归属|单体战力|来源|98,765/);
+  assert.match(html, /R2 波次.*第 1 批.*合成敌人.*×5/);
+  assert.doesNotMatch(html, /<table/);
+  assert.doesNotMatch(html, /归属|单体战力|合成来源|98,765/);
 });
 
 const typedEnemy = { id: portraits.ids[0], name: '合成漏怪', count: 1, unit_power: 300 };
@@ -269,11 +359,11 @@ test('round log shows actual outcome portraits and labels unidentified enemies c
     ...covered, self_leaks: 2, self_leak_enemies: [typedEnemy],
     assist_enemies: [{ ...typedEnemy, killer: 1, owner: 3 }],
   } }, spawn_plan: [{ round: 4, enemy_id: 'preview_only', name: '预告专用', count: 2 }] });
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, onRound: () => {} }));
-  assert.match(html, /怪物记录/);
-  assert.match(html, /本路漏怪.*d-report-portrait.*合成漏怪.*×1.*另有 1 只未识别怪物/);
-  assert.match(html, /已兜住.*d-report-portrait.*合成漏怪.*×1/);
-  assert.doesNotMatch(html, /队伍明细|本路概览|预告专用/);
+  const html = detailView(data, 4);
+  assert.match(html, /本路漏怪.*d-report-portrait.*合成漏怪.*×1.*另有 1 只未记录怪种/);
+  assert.match(html, /本路被兜住.*d-report-portrait.*合成漏怪.*×1/);
+  assert.match(html, /本回合出怪预告.*预告专用/);
+  assert.doesNotMatch(html.split('本回合出怪预告')[0], /预告专用/);
   assert.deepEqual(ownLeakPower(data.rounds[0], data), { value: 300, quality: 'partial' });
 });
 
@@ -281,39 +371,42 @@ test('HP damage is explicit and fills missing enemy names from the own lane', ()
   const data = report(1, 10, { 10: { self_leaks: 10, self_leak_enemies: [], hp_costs: { 3: 10 }, assists_status: 'unknown',
     wave_power: { confirmed_players: [3], rows: [{ player: 3, planned: 10, leaked: 10, power: 3000,
       enemies: [{ id: typedEnemy.id, name: typedEnemy.name, planned: 10, leaked: 10, unit_power: 300 }] }] } } }, 3);
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, onRound: () => {} }));
-  assert.match(html, /无人兜底 · 漏怪 10 只 · 扣血 10 点/);
+  const html = detailView(data, 10);
+  assert.match(html, /扣血 10 点/);
+  assert.doesNotMatch(html, /无人兜底/);
   assert.match(html, /本路漏怪.*合成漏怪.*×10/);
   assert.doesNotMatch(html, /尚未记录协防/);
   assert.deepEqual(ownLeakKinds(data.rounds[0], data), [{ id: typedEnemy.id, name: typedEnemy.name, count: 10, unitPower: 300 }]);
 
   const unknown = report(2, 10, { 10: { self_leaks: 2, assists_status: 'unknown' } }, 3);
-  const unknownHtml = renderToStaticMarkup(createElement(RoundMatrix, { report: unknown, onRound: () => {} }));
-  assert.match(unknownHtml, /尚未记录协防/);
+  const unknownHtml = detailView(unknown, 10);
+  assert.match(unknownHtml, /兜底未确认/);
   assert.doesNotMatch(unknownHtml, /无人兜底/);
 
   const partial = report(3, 10, { 10: { self_leaks: 2, hp_costs: { 3: 2 }, assist_pairs: [{ killer: 2, owner: 3, count: 1 }] } }, 3);
-  const partialHtml = renderToStaticMarkup(createElement(RoundMatrix, { report: partial, onRound: () => {} }));
-  assert.match(partialHtml, /仍有本路漏怪未兜住/);
+  const partialHtml = detailView(partial, 10);
+  assert.match(partialHtml, /本路被兜住.*1 只/);
+  assert.match(partialHtml, /扣血 2 点/);
   assert.doesNotMatch(partialHtml, /无人兜底/);
 });
 
 test('remaining escaped enemies are shown as uncovered by their owning lane', () => {
   const data = report(1, 4, { 4: { self_leaks: 2, uncovered_leaks: { 3: 2 }, uncovered_status: 'reported' } }, 3);
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, onRound: () => {} }));
-  assert.match(html, /无人兜底 · 漏怪 2 只/);
+  const html = detailView(data, 4);
+  assert.match(html, /本路无人兜底/);
+  assert.match(html, /本路未兜住 2 只/);
 });
 
 test('incomplete cooperative ownership displays a lane leak count as a lower bound', () => {
   const data = report(1, 4, { 4: { leaks: { 1: 0, 2: 1, 3: 0, 4: 1 }, leaks_status: 'observed', leak_minimums: { 4: 1 } } }, null);
-  const html = renderToStaticMarkup(createElement(WaveDetails, { report: data, round: 4, onRound: () => {}, onPreview: () => {} }));
+  const html = detailView(data, 4);
   assert.match(html, /≥1 只/);
 });
 
 test('a catalog token is rendered as a named portrait even if the seat and assist stage are missing', () => {
   const token = { id: 'enemy_1137_plasm', name: '畸变赘生物', count: 2, unit_power: 1750 };
   const data = report(1, 0, { 8: { self_leaks: 2, self_leak_enemies: [token] } }, null);
-  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, onRound: () => {} }));
+  const html = detailView(data, 8);
   assert.match(html, /本路漏怪.*d-report-portrait.*畸变赘生物.*×2/);
   assert.doesNotMatch(html, /未记录种类/);
   assert.deepEqual(ownLeakPower(data.rounds[0], data), { value: 3500, quality: undefined });
@@ -327,33 +420,31 @@ test('local settlement types do not borrow types from a conflicting cooperative 
   assert.equal(ownLeakPower(data.rounds[0], data), undefined);
 });
 
-test('round detail timeline separates totals and round data without showing leak power', () => {
+test('round detail separates totals and round data without showing leak power', () => {
   const data = report(1, 4, { 3: { self_leaks: 1, self_leak_enemies: [typedEnemy] },
     4: { ...covered, self_leaks: 2, self_leak_enemies: [{ ...typedEnemy, count: 2 }] }, 5: {} }, 3);
-  const view = (round: number | 'all') => renderToStaticMarkup(createElement(WaveDetails, { report: data, round,
-    onRound: () => {}, onPreview: () => {} }));
+  const view = (round: number | 'all') => detailView(data, round);
   const all = view('all');
-  assert.match(all, /aria-pressed="true">全部回合/);
-  assert.match(all, /全部回合累计.*我漏怪 <strong>3\* 只/);
+  assert.match(all, /全部回合累计.*本路漏怪 <strong>3\* 只/);
   assert.match(all, /合成漏怪.*×3/);
   assert.doesNotMatch(all, /战力/);
   const single = view(4);
-  assert.match(single, /R4 · .*我漏怪 <strong>2 只/);
+  assert.match(single, /R4.*本路漏怪 <strong>2 只/);
   assert.doesNotMatch(single, /全部回合累计|×3/);
   assert.match(view(6), /R6 暂无实战记录/);
 });
 
 test('preview follows confirmed current round, lets manual pins win, and does not infer a round from previews', () => {
-  const data = report(1, 4, { 4: {}, 5: {} }, 3);
+  const data = report(1, 4, { 3: {}, 4: {} }, 3);
   assert.equal(resolvePreviewRound(data, 'follow'), 4);
-  assert.equal(resolvePreviewRound({ ...data, current: null }, 'follow'), 5);
+  assert.equal(resolvePreviewRound({ ...data, current: null }, 'follow'), 4);
+  assert.equal(resolvePreviewRound(report(1, 4, { 4: {}, 5: { phase: 'self' } }), 'follow'), 5);
   assert.equal(resolvePreviewRound({ ...data, current: null, rounds: [] }, 'follow'), 'all');
   assert.equal(resolvePreviewRound(data, 'all'), 'all');
   assert.equal(resolvePreviewRound(data, 2), 2);
   const html = renderToStaticMarkup(createElement(SpawnPreview, { report: data, filter: 'follow', onSelect: () => {} }));
-  assert.match(html, /全部回合.*>R1<.*>R2<.*>R15<.*跟随回合/);
-  assert.match(html, /aria-pressed="true" aria-current="step"[^>]*>R4</);
-  assert.doesNotMatch(html, /搜索敌人|<select/);
+  assert.match(html, /checked="".*仅看当前及后续回合/);
+  assert.match(html, /R4 起/);
 });
 
 test('follow mode shows the nearest upcoming forecast without claiming an unconfirmed round', () => {
@@ -367,9 +458,70 @@ test('follow mode shows the nearest upcoming forecast without claiming an unconf
   assert.equal(data.current, null);
   assert.equal(resolvePreviewRound(data, 'follow'), 4);
   const html = renderToStaticMarkup(createElement(SpawnPreview, { report: data, filter: 'follow', onSelect: () => {} }));
-  assert.match(html, /当前回合未确认，先显示 R4 预告/);
+  assert.match(html, /当前回合未确认，暂从 R4 显示/);
   assert.match(html, /重连后预告/);
-  assert.doesNotMatch(html, /后续预告/);
-  assert.match(html, /aria-pressed="true" data-available="true" title="R4">R4<\/button>/);
-  assert.doesNotMatch(html, /aria-current="step"/);
+  assert.match(html, /后续预告/);
+  assert.doesNotMatch(html, /旧预告|<small>当前<\/small>/);
+});
+
+test('the same R9 distinguishes the five results and both scopes without borrowing local identity', () => {
+  const data = readBattleReport(demoReport('settled'));
+  const outcome = (n: number, seat = 3) => roundOutcome(data.rounds[n - 1], data, seat, true);
+  assert.deepEqual(data.rounds.map((_, i) => outcome(i + 1).tone), ['clean', 'covered', 'covered', 'covered', 'covered', 'breached', 'clean', 'covered', 'partial']);
+  assert.match(outcome(6).note, /共漏 6 只 · 无人可协防/);
+  assert.equal(outcome(9).label, '本路未兜住 3 只');
+  assert.equal(outcome(9, 2).label, '本路已兜住');
+  assert.match(outcome(9, 1).note, /全队未兜住 7 只/);
+  const r9 = data.rounds[8];
+  assert.equal(laneLeaks(r9, data, 4)?.value, 8);
+  assert.deepEqual(laneKinds(r9, data, 4), []);
+  assert.equal(laneKinds(r9, data, 3).length, 3);
+  const html = detailView(data, 9);
+  assert.match(html, /与我相关.*1号.*3号.*3 只.*队友间兜底.*1号.*2号.*1 只.*1号.*4号.*4 只/);
+  assert.doesNotMatch(html, /点回合可查看/);
+  const pending = readBattleReport(demoReport('assisting'));
+  assert.equal(roundOutcome(pending.rounds[8], pending, 3, true).tone, 'assisting');
+  assert.equal(roundOutcome(pending.rounds[8], pending, 3, false).tone, 'unknown');
+  const pendingHtml = renderToStaticMarkup(createElement(RoundMatrix, { report: pending, live: true, onPreview: () => {} }));
+  assert.match(pendingHtml, /本路已漏 6 只 · 协防结算后自动刷新怪种/);
+  assert.doesNotMatch(pendingHtml, /未识别怪物/);
+});
+
+test('partial evidence, HP cost, and legacy unassigned kills cannot prove a team or personal outcome', () => {
+  for (const row of [{ self_leaks: 0 }, { leaks: { 1: 0 }, leaks_status: 'reported' },
+    { self_leaks: 1, assists_status: 'reported', assist_pairs: [{ killer: 1, owner: 4, count: 1 }] },
+    { self_leaks: 1, uncovered_status: 'reported' }, { hp_costs: { 3: 3 } }]) {
+    const data = report(1, 9, { 9: row }, 3);
+    assert.equal(roundOutcome(data.rounds[0], data, 3, true).tone, 'unknown');
+  }
+  const data = report(1, 9, { 9: { phase: 'assist', self_leaks: 2, assists_status: 'observed',
+    uncovered_status: 'observed', uncovered_leaks: { 3: 1 }, assist_pairs: [{ killer: 1, owner: 3, count: 1 }] } }, 3);
+  assert.equal(roundOutcome(data.rounds[0], data, 3, true).label, '本路未兜住 ≥1 只');
+  const stale = report(1, 9, { 9: { phase: 'assist', self_leaks: 6 }, 10: { phase: 'prep' } }, 3);
+  assert.equal(roundOutcome(stale.rounds[0], stale, 3, true).tone, 'unknown');
+  const legacy = report(1, 9, { 9: { assists_status: 'reported', assists: { 3: 1, 4: 2 }, assist_pairs: [{ killer: 3, owner: 3, count: 1 }] } }, 3);
+  assert.deepEqual(legacy.rounds[0].assists, { 3: 0 });
+  assert.equal(legacy.rounds[0].unattributedAssists, 2);
+});
+
+test('team settlement survives a sparse frame but a new complete empty remainder corrects it', () => {
+  const original = readBattleReport(demoReport('settled'));
+  let records = updateLiveReport({ history: [] }, original, 1, 1);
+  const correction = (row: object) => report(1, 10, { 9: row, 10: { phase: 'prep' } }, 3);
+  records = updateLiveReport(records, correction({ phase: 'settle' }), 1, 2);
+  let data = records.live!.report;
+  assert.equal(roundOutcome(data.rounds[8], data, 3, false).label, '本路未兜住 3 只');
+  records = updateLiveReport(records, correction({ assists_status: 'reported', uncovered_status: 'reported', uncovered_leaks: {} }), 1, 3);
+  data = records.live!.report;
+  assert.equal(roundOutcome(data.rounds[8], data, 3, false).tone, 'covered');
+  assert.equal(data.rounds[8].assistPairs.length, 0);
+});
+
+test('opening renders only received R1 to R3 forecasts and the actual count of available rounds', () => {
+  const data = readBattleReport(demoReport('opening'));
+  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, onPreview: () => {} }));
+  assert.equal(data.preview.length, 117);
+  assert.match(html, /R1 波次.*R2 波次.*R3 波次/);
+  assert.doesNotMatch(html, /R4 波次|回合详情/);
+  assert.match(html, /查看全部 15 回合预告/);
 });

@@ -172,7 +172,7 @@ function installBattleReports({ app, mainWindow, ipcMain }) {
     if (details && !details[0] && !details[1] && (details[3] || details[4]))
       detail += '\n目前只取得结算，尚未收到可用的服务端场景。';
     if (details && !details[0] && !details[1] && diagnostics?.[0] > 0 && traffic?.[0] === diagnostics[0])
-      detail += `\n本次采集命中的 ${diagnostics[0]} 个下行数据段各只有 1 字节。可继续查看本路结算，或导入本局已有的完整 JSON 战报。`;
+      detail += `\n本次采集命中的 ${diagnostics[0]} 个下行数据段各只有 1 字节。已记录的本路结算仍可查阅或导出。`;
     if (bossDetails) {
       const [stage, terminal, runtime, rank, ratio, unassigned, inferred = 0] = bossDetails;
       detail += `\n\nBoss 采集累计：开战场景 ${stage} · R14/R15 结算或结束场景 ${terminal} · 非零伤害快照 ${runtime}`

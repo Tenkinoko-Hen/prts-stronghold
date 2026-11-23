@@ -125,7 +125,10 @@ class MatchStats:
     def set_phase(self, round_number: int, phase: str) -> None:
         if round_number > 0:
             self.current_round = round_number
-            self.rounds.setdefault(round_number, RoundStats()).phase = phase
+            data = self.rounds.setdefault(round_number, RoundStats())
+            data.phase = phase
+            if round_number in BOSS_ROUNDS and phase == 'boss':
+                data.boss_round_basis = 'confirmed'
 
     def observe_round(self, round_number: int) -> None:
         """Record an observed round even if its sender's seat is still unknown."""

@@ -1,4 +1,4 @@
-import { REPORT_SEATS, hasBossDamage, type BattleReport, type BattleRound } from './battleReportData';
+import { mergeBossRound, REPORT_SEATS, type BattleReport, type BattleRound } from './battleReportData';
 
 export type ReportStatus = 'starting' | 'waiting' | 'connecting' | 'listening' | 'permission' | 'paused' | 'unavailable' | 'incompatible' | 'failed';
 export interface ReportFeed {
@@ -20,7 +20,6 @@ export interface ReportRecord {
   report: BattleReport;
   label: string;
   seenAt: number;
-  source: 'live' | 'file';
   manualNames?: ManualNames;
   manualSelfSeat?: ReportSeat;
 }
@@ -28,7 +27,7 @@ export interface ReportRecords { live?: ReportRecord; history: ReportRecord[] }
 export const MAX_REPORT_HISTORY = 20;
 export const MAX_MANUAL_NAME_LENGTH = 80;
 
-export const canEditPlayerNames = (entry: ReportRecord) => entry.source === 'live' && entry.report.match !== null;
+export const canEditPlayerNames = (entry: ReportRecord) => entry.report.match !== null;
 export const canConfirmSelfSeat = (entry: ReportRecord) => canEditPlayerNames(entry) && entry.report.self === null;
 
 export function setReportPlayerNames(records: ReportRecords, key: string, values: ManualNames): ReportRecords {
@@ -85,25 +84,27 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
     if (!row) {
       row = oldKinds === old.selfLeakEnemies ? old : { ...old, selfLeakEnemies: oldKinds };
     } else {
+      const missingAssist = !hasAssistResult(row);
+      const missingLeaks = !Object.keys(row.leaks).length && !Object.keys(row.leakMinimums).length
+        && !['reported', 'observed'].includes(row.leaksStatus);
+      if (missingLeaks && (Object.keys(old.leaks).length || Object.keys(old.leakMinimums).length))
+        row = { ...row, leaks: old.leaks, leaksStatus: old.leaksStatus, leakMinimums: old.leakMinimums };
+      if (missingAssist && !Object.keys(row.uncoveredLeaks).length && !['reported', 'observed'].includes(row.uncoveredStatus)
+          && (Object.keys(old.uncoveredLeaks).length || ['reported', 'observed'].includes(old.uncoveredStatus)))
+        row = { ...row, uncoveredLeaks: old.uncoveredLeaks, uncoveredStatus: old.uncoveredStatus };
+      if (missingAssist && !Object.keys(row.hpCosts).length && Object.keys(old.hpCosts).length)
+        row = { ...row, hpCosts: old.hpCosts, skippedCosts: old.skippedCosts };
+      if (missingAssist && missingLeaks && old.allPlayersLeaked) row = { ...row, allPlayersLeaked: true };
       if (row.selfLeaks === null && old.selfLeaks !== null) {
         row = { ...row, selfLeaks: old.selfLeaks, selfLeakEnemies: oldKinds,
           unassignedSelfLeaks: incoming.self === null ? old.selfLeaks : null };
       }
-      if (!hasAssistResult(row) && hasAssistResult(old)) {
+      if (missingAssist && hasAssistResult(old)) {
         row = { ...row, assists: old.assists, assistsStatus: old.assistsStatus,
           assistsPartial: old.assistsPartial, assistPairs: old.assistPairs, assistEnemies: old.assistEnemies,
           unattributedAssists: old.unattributedAssists };
       }
-      if (row.number >= 14) {
-        if (!hasBossDamage(row) && hasBossDamage(old)) {
-          row = { ...row, bossDamage: old.bossDamage, bossPercent: old.bossPercent, bossUplink: old.bossUplink,
-            bossUplinkRows: old.bossUplinkRows, bossOfficial: old.bossOfficial, bossStatus: old.bossStatus,
-            bossRoundInferred: row.phase === 'boss' || row.bossEnded ? false : old.bossRoundInferred };
-        }
-        if ((old.bossEnded && !row.bossEnded) || (old.bossHp !== null && row.bossHp === null)) {
-          row = { ...row, bossEnded: row.bossEnded || old.bossEnded, bossHp: row.bossHp ?? old.bossHp };
-        }
-      }
+      if (row.number >= 14) row = mergeBossRound(old, row);
     }
     if (rounds.get(old.number) !== row) {
       rounds.set(old.number, row);
@@ -128,7 +129,7 @@ export function updateLiveReport(records: ReportRecords, report: BattleReport | 
   return {
     live: { manualNames: previous?.manualNames, manualSelfSeat: report.self === null ? previous?.manualSelfSeat : undefined,
       key, report: next, label: report.match === null ? '本地实况' : `本地对局 ${report.match}`,
-      seenAt: previous?.seenAt ?? now, source: 'live' },
+      seenAt: previous?.seenAt ?? now },
     history: (live ? [live, ...rest] : rest).slice(0, MAX_REPORT_HISTORY),
   };
 }

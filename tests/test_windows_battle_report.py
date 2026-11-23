@@ -523,6 +523,18 @@ class BossCaptureTests(unittest.TestCase):
         self.assertEqual(row['boss_round_basis'], 'inferred')
         self.assertEqual(self.analyzer.boss_events['inferred'], 3)
 
+    def test_boss_stage_confirms_inferred_damage_without_another_damage_update(self):
+        self.down(boss_scene_frame(13, 4))
+        self.down(frame(310, runtime_body({1: 6000})))
+        self.down(boss_scene_frame(14, 4))
+        self.assertEqual(self.analyzer.snapshot()['rounds'][14]['boss_round_basis'], 'inferred')
+        self.down(boss_scene_frame(14, 6))
+        row = self.analyzer.snapshot()['rounds'][14]
+        self.assertEqual(row['boss_round_basis'], 'confirmed')
+        self.assertEqual(row['boss_damage'], {1: 6000})
+        self.assertEqual(row['boss_status'], 'reported')
+        self.assertNotIn(15, self.analyzer.snapshot()['rounds'])
+
     def test_boss_runtime_without_nearby_round_confirmation_is_not_guessed(self):
         self.down(boss_scene_frame(12, 4, totals={1: 0}))
         self.down(frame(310, runtime_body({1: 6000})))

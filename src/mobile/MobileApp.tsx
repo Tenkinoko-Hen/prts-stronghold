@@ -13,7 +13,9 @@ import { OperatorAvatar } from '../components/OperatorAvatar';
 import { summarizeBlockedReasons } from '../components/guidePresentation';
 import './mobile.css';
 
+import MatchReport from './MatchReport';
 export default function MobileApp() {
+  const [reportOpen,showReport]=useState(true);
   const [session, dispatch] = useReducer(mobileReducer, null, () => {
     try { return restoreSession(localStorage.getItem(MOBILE_SESSION_KEY)); } catch { return restoreSession(null); }
   });
@@ -76,6 +78,7 @@ export default function MobileApp() {
   </div>;
 
   const guiding = session.step === 'guide' && Boolean(comp);
+  if(reportOpen) return <MatchReport onGuide={()=>showReport(false)}/>;
   return <div className={`mobile-app ${overlay ? 'is-overlay' : ''}${guiding ? ' is-guiding' : ''}`}>
     {!guiding && <header className="m-workbar"><strong>{session.step === 'ban' ? '识别与推荐' : session.step === 'plans' ? '选择方案' : '随行资料库'}</strong>
       <button className="m-icon-button" aria-label="开始新局" title="开始新局" onClick={() => setResetPrompt(true)}><RotateCcw size={16} /></button><button className="m-icon-button" aria-label="使用帮助" onClick={() => setHelp(true)}><CircleHelp size={17} /></button>
@@ -133,7 +136,7 @@ export default function MobileApp() {
       {session.step === 'library' && <MobileReference onOpenImage={openImage} />}
     </main>
     {guiding && <div className="m-round-controls"><button className="m-secondary chamfer-box" aria-label="上一回合" disabled={round <= 1} onClick={() => manualRound(round - 1)}><ArrowLeft size={17} /><span>上一回合</span></button><button className="m-primary chamfer-box" aria-label="下一回合" disabled={round >= 15} onClick={() => manualRound(round + 1)}><span>{round === 15 ? '已到终盘' : '下一回合'}</span><ArrowRight size={17} /></button></div>}
-    <nav className="m-bottom-nav" aria-label="手机导航">{([
+    <button className="m-secondary" onClick={()=>showReport(true)}>返回本局战报</button><nav className="m-bottom-nav" aria-label="手机导航">{([
       ['ban', '识别', ShieldBan], ['plans', '方案', Crosshair], ['guide', '跟进', Check], ['library', '资料', BookOpen],
     ] as const).map(([step, title, Icon]) => <button key={step} aria-current={session.step === step ? 'page' : undefined} onClick={() => dispatch({ type: 'step', step })}><Icon size={19} /><span>{title}</span></button>)}</nav>
     {help && <div className="m-modal-backdrop" onClick={() => setHelp(false)}><section className="m-confirm" role="dialog" aria-modal="true" aria-label="使用帮助" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭帮助" onClick={() => setHelp(false)}><X size={18} /></button><h2>识别 → 选方案 → 跟进</h2><p>在游戏打开「确认本局信息」，露出核心盟约与两排附加盟约。点击识别，允许系统屏幕共享，读全后这里会显示推荐。</p><p>点击受限标签可改为可用；「补录 / 校正」可修改全部盟约。未确认项不代表可用。灰暗表示阵容受限，不代表其中所有干员被禁，核心干员仍需按游戏核对。</p><p>点击当前回合编号可快速跳转。开启自动回合后框选游戏回合数字，收起助手时同步，手动切换会暂停自动跟进。</p><p>截图只在内存中本机处理，不保存、不上传。攻略按经济、来牌与承压调整，推导内容已标注。</p></section></div>}

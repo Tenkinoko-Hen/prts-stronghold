@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 import java.util.HashMap;
 import java.util.Map;

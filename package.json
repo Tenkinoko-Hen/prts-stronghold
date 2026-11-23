@@ -1,5 +1,5 @@
 {
-  "name": "prts-stronghold",
+  "name": "prts-live-dossier",
   "private": true,
   "version": "1.0.0",
   "description": "卫戍协议战术终端",
@@ -15,19 +15,38 @@
     "prepare:desktop": "node node_modules/electron/install.js",
     "prepare:ocr": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-ocr.ps1",
     "desktop": "npm run prepare:desktop && electron .",
-    "package:win": "npm run prepare:desktop && npm run prepare:ocr && npm run lint && npm run build && pwsh -NoProfile -File scripts/build-windows.ps1 -Version 1.4.17",
+    "package:win": "npm run prepare:desktop && npm run prepare:ocr && npm run lint && npm run build && pwsh -NoProfile -File scripts/build-windows.ps1 -Version 1.0.0",
     "cache:avatars": "node --import tsx scripts/cache-avatars.ts"
   },
   "build": {
-    "appId": "com.prts.stronghold",
-    "productName": "PRTS Stronghold",
+    "appId": "com.prts.dossier.live",
+    "productName": "PRTS Live Dossier",
     "asar": true,
     "electronDist": "node_modules/electron/dist",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json", "!node_modules/**/*"],
-    "extraResources": [{ "from": "work/windows-ocr/runtime/PRTS-OCR", "to": "ocr" }],
-    "win": { "target": ["portable"], "signAndEditExecutable": false },
-    "portable": { "artifactName": "PRTS-Stronghold-${version}-Windows-x64.exe" }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "work/windows-ocr/runtime/PRTS-OCR",
+        "to": "ocr"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "PRTS-Stronghold-${version}-Windows-x64.exe"
+    }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -55,5 +74,6 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "productName": "PRTS Live Dossier"
 }

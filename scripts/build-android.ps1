@@ -76,33 +76,14 @@ try {
     } finally { $archive.Dispose() }
     Invoke-BuildTool "$buildTools\zipalign.exe" @('-p', '-f', '4', "$buildRoot\unsigned.apk", "$buildRoot\aligned.apk")
 
-    # 私钥留在当前用户配置目录，绝不放入项目或 APK；以后更新沿用同一签名。
-    New-Item -ItemType Directory -Force -Path $signingRoot | Out-Null
-    $acl = [Security.AccessControl.DirectorySecurity]::new()
-    $acl.SetAccessRuleProtection($true, $false)
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-    $propagation = [Security.AccessControl.PropagationFlags]::None
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', $inherit, $propagation, 'Allow'))
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-18'), 'FullControl', $inherit, $propagation, 'Allow'))
-    [IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($signingRoot), $acl)
-    $keyStore = Join-Path $signingRoot 'prts-mobile.jks'
-    $passwordFile = Join-Path $signingRoot 'password.txt'
-    if (!(Test-Path -LiteralPath $passwordFile)) {
-        if (Test-Path -LiteralPath $keyStore) { throw '签名密码文件缺失，请恢复原签名资料；不会覆盖已有私钥。' }
-        $bytes = New-Object byte[] 36
-        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-        try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-        [IO.File]::WriteAllText($passwordFile, [Convert]::ToBase64String($bytes))
-    }
-    $env:PRTS_STORE_PASSWORD = [IO.File]::ReadAllText($passwordFile)
-    if (!(Test-Path -LiteralPath $keyStore)) {
-        Invoke-BuildTool "$JavaHome\bin\keytool.exe" @('-genkeypair', '-keystore', $keyStore, '-storetype', 'JKS', '-alias', 'prts', '-keyalg', 'RSA', '-keysize', '3072', '-validity', '10000', '-dname', 'CN=PRTS Stronghold, OU=Personal, O=PRTS, C=CN', '-storepass:env', 'PRTS_STORE_PASSWORD', '-keypass:env', 'PRTS_STORE_PASSWORD')
-    }
+    $signingRoot = Join-Path $env:LOCALAPPDATA 'PRTSReportReview/signing'
+    $keyStore = Join-Path $signingRoot 'review.p12'
+    $secret = Import-Clixml -LiteralPath (Join-Path $signingRoot 'review.clixml')
+    $env:PRTS_STORE_PASSWORD = ([Management.Automation.PSCredential]::new('review',$secret)).GetNetworkCredential().Password
     [xml]$manifest = Get-Content -LiteralPath 'android\AndroidManifest.xml' -Raw
     $version = $manifest.manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')
     $apk = Join-Path $releaseRoot "PRTS-Stronghold-$version-Android.apk"
-    Invoke-BuildTool "$buildTools\apksigner.bat" @('sign', '--ks', $keyStore, '--ks-key-alias', 'prts', '--ks-pass', 'env:PRTS_STORE_PASSWORD', '--key-pass', 'env:PRTS_STORE_PASSWORD', '--out', $apk, "$buildRoot\aligned.apk")
+    Invoke-BuildTool "$buildTools\apksigner.bat" @('sign', '--ks', $keyStore, '--ks-key-alias', 'review', '--ks-pass', 'env:PRTS_STORE_PASSWORD', '--key-pass', 'env:PRTS_STORE_PASSWORD', '--out', $apk, "$buildRoot\aligned.apk")
     Invoke-BuildTool "$buildTools\apksigner.bat" @('verify', '--verbose', $apk)
     Invoke-BuildTool "$buildTools\zipalign.exe" @('-c', '4', $apk)
     $hash = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()

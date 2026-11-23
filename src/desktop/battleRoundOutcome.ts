@@ -1,0 +1,70 @@
+import { confirmedCurrent, ownLeakKinds, REPORT_SEATS, roundMetrics, type BattleReport, type BattleRound } from './battleReportData';
+
+export type LaneMetric = ReturnType<typeof roundMetrics>[number];
+export type OutcomeTone = 'clean' | 'assisting' | 'covered' | 'partial' | 'breached' | 'unknown';
+type Outcome = { tone: OutcomeTone; label: string; note: string };
+
+export function laneLeaks(row: BattleRound, report: BattleReport, seat: number | null): LaneMetric {
+  if (seat !== null) return roundMetrics(row, seat, report.self)[0];
+  return row.selfLeaks === null ? undefined : { value: row.selfLeaks };
+}
+
+export function laneKinds(row: BattleRound, report: BattleReport, seat: number | null) {
+  if (seat === report.self) return ownLeakKinds(row, report);
+  // 换视角不改变采集身份；其他席位只能使用本席明确归属的战斗编排。
+  return ownLeakKinds({ ...row, selfLeaks: null, selfLeakEnemies: null }, { ...report, self: seat });
+}
+
+export function metricText(metric: LaneMetric) {
+  if (!metric) return '—';
+  return metric.quality === 'minimum' ? `≥${metric.value}` : metric.quality === 'estimated' ? `≈${metric.value}`
+    : `${metric.value}${metric.quality ? '*' : ''}`;
+}
+
+export function sumMetrics(values: LaneMetric[]): LaneMetric {
+  const known = values.filter(value => value !== undefined);
+  if (!known.length) return undefined;
+  return { value: known.reduce((sum, metric) => sum + metric.value, 0),
+    quality: known.some(metric => metric.quality === 'estimated') ? 'estimated'
+      : known.some(metric => metric.quality === 'minimum') ? 'minimum'
+      : known.some(metric => metric.quality) || known.length < values.length ? 'partial' : undefined };
+}
+
+export function roundOutcome(row: BattleRound, report: BattleReport, seat: number | null, live: boolean): Outcome {
+  const complete = row.leaksStatus === 'reported' && REPORT_SEATS.every(id => row.leaks[id] !== undefined)
+    && !(row.selfLeaks !== null && (report.self === null ? row.selfLeaks > Math.max(...Object.values(row.leaks))
+      : row.leaks[report.self] !== row.selfLeaks));
+  const initial = Object.values(row.leaks).reduce((a, b) => a + b, 0);
+  const remaining = Object.values(row.uncoveredLeaks).reduce((a, b) => a + b, 0);
+  const covered = row.assistPairs.reduce((sum, pair) => sum + pair.count, row.unattributedAssists);
+  const exactRemaining = row.uncoveredStatus === 'reported';
+  const count = (n: number) => `${exactRemaining ? '' : '≥'}${n} 只`;
+  if (row.allPlayersLeaked || (row.assistsStatus === 'skipped' && complete && REPORT_SEATS.every(id => row.leaks[id] > 0))) {
+    const minimum = REPORT_SEATS.reduce((sum, id) => sum + Math.max(1, row.leaks[id] ?? 0,
+      row.leakMinimums[id] ?? 0, id === report.self ? row.selfLeaks ?? 0 : 0), 0);
+    return { tone: 'breached', label: '全队均漏', note: `全员失守 · 共漏 ${complete ? initial : `≥${minimum}`} 只 · 无人可协防` };
+  }
+  if (complete && initial === 0 && !covered && !remaining && !Object.values(row.hpCosts).some(n => n > 0))
+    return { tone: 'clean', label: '全队无漏', note: '全员守住 · 无需协防' };
+  const hasLeaks = initial > 0 || (row.selfLeaks ?? 0) > 0 || covered > 0 || remaining > 0;
+  const own = laneLeaks(row, report, seat);
+  const saved = row.assistPairs.reduce((n, pair) => n + (pair.owner === seat ? pair.count : 0), 0);
+  const left = seat === null ? undefined : row.uncoveredLeaks[seat] ?? (exactRemaining ? 0 : undefined);
+  if (left && (saved > 0 || (own && !own.quality && exactRemaining && left < own.value)))
+    return { tone: 'partial', label: `本路未兜住 ${count(left)}`, note: '本路部分兜住' };
+  if (left && own && !own.quality && exactRemaining && left === own.value && !saved)
+    return { tone: 'breached', label: '本路无人兜底', note: `本路未兜住 ${count(left)}` };
+  if (live && confirmedCurrent(report) === row.number && row.phase === 'assist' && hasLeaks && !remaining
+      && !['reported', 'observed'].includes(row.uncoveredStatus) && !['reported', 'skipped'].includes(row.assistsStatus))
+    return { tone: 'assisting', label: '协防中', note: '协防进行中 · 待结算' };
+  if (own && own.value > 0 && ((exactRemaining && left === 0) || (!own.quality && saved === own.value && !left)))
+    return { tone: 'covered', label: '本路已兜住', note: '本路漏怪已全额兜住' };
+  if (remaining > 0 && (covered > 0 || (complete && exactRemaining && remaining < initial)))
+    return { tone: 'partial', label: '队伍部分兜住', note: `全队未兜住 ${count(remaining)}` };
+  if (hasLeaks && exactRemaining && !remaining)
+    return { tone: 'covered', label: '全队已兜住', note: '全队漏怪已全额兜住' };
+  if (remaining) return { tone: 'unknown', label: `未兜住 ${count(remaining)}`, note: '已记录队伍漏怪，兜底情况未确认' };
+  return { tone: 'unknown', label: row.assistsStatus === 'skipped' ? '未进入协防'
+    : row.phase === 'assist' ? '结算未确认' : hasLeaks ? '兜底未确认' : '战况未确认',
+  note: covered ? `已记录 ${covered} 只协防击杀，完整结果未确认` : '暂无完整队伍结算' };
+}

@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;

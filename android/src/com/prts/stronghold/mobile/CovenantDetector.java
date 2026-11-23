@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 /** 文字定位后，仅判断其上方圆形盟约徽章；不依赖游戏动态排列顺序。 */
 final class CovenantDetector {

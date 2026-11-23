@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 public final class RoundDetectorTest {
     private static int checks;

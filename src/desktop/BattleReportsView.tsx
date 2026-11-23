@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
-import { Activity, FileUp, Shield } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Activity, ChevronDown, FileDown, ListTree, Radio, Swords } from 'lucide-react';
 import { BossRoutes } from '../components/BossRoutes';
 import { ImageLightboxModal } from '../components/ImageLightboxModal';
 import { DesktopDialog } from './DesktopDialog';
-import { defaultBossRound, readBattleReport, reportLeader, reportProgress, type PreviewRoundFilter, type ReportRoundFilter } from './battleReportData';
-import { BossDamage, ReportHistory, RoundMatrix, SpawnPreview, WaveDetails } from './BattleReportPanels';
+import { defaultBossRound, readBattleReport, reportLeader, reportProgress, type PreviewRoundFilter } from './battleReportData';
+import { BossDamage } from './BattleReportPanels';
+import { RoundMatrix } from './BattleReportRounds';
+import { SpawnPreview } from './BattleReportSpawns';
 import { BattleReportRoster } from './BattleReportRoster';
-import { MAX_REPORT_HISTORY, reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type ReportFeed, type ReportRecord,
-  type ReportRecords, type ReportStatus } from './battleReports';
+import { BattleReportExportDialog } from './BattleReportExportDialog';
+import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
+import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type ReportFeed,
+  type ReportRecords, type ReportSeat, type ReportStatus } from './battleReports';
 import './battleReports.css';
 
 const STATUS: Record<ReportStatus, string> = {
@@ -15,29 +19,30 @@ const STATUS: Record<ReportStatus, string> = {
   waiting: '等待 Windows 版明日方舟启动',
   connecting: '游戏已启动，等待对局连接',
   listening: '本地采集中',
-  permission: '实时采集需要以管理员身份运行 PRTS；可导入 JSON 战报。',
+  permission: '实时采集需要以管理员身份运行 PRTS；已有历史战局可在左上角切换查阅或导出。',
   paused: '实时采集已暂停',
-  unavailable: '未能在当前网络上采集，可导入 JSON 战报。',
-  incompatible: '当前游戏数据未能识别，可导入 JSON 战报。',
-  failed: '本地战报组件未启动，请重启 PRTS，或从「历史对局」导入 JSON。',
+  unavailable: '未能在当前网络上采集。已有历史战局仍可查阅或导出。',
+  incompatible: '当前游戏数据未能识别。已有历史战局仍可查阅或导出。',
+  failed: '本地战报组件未启动，请重启 PRTS。',
 };
-const maxReportBytes = 8 * 1024 * 1024;
-const TABS = { rounds: '回合记录', waves: '回合详情', boss: 'Boss 伤害', preview: '出怪预告', history: '历史对局' } as const;
+const TABS = { rounds: '实时战报', preview: '出怪预告', boss: 'Boss 伤害' } as const;
+const TAB_ICONS = { rounds: Activity, preview: ListTree, boss: Swords };
+const shortStatus: Record<ReportStatus, string> = { starting: '启动中', waiting: '等待游戏', connecting: '等待对局',
+  listening: '采集中', permission: '需要权限', paused: '已暂停', unavailable: '采集不可用', incompatible: '数据未识别', failed: '启动失败' };
+const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
 type Tab = keyof typeof TABS;
 
-export default function BattleReportsView({ api, visible }: { api: BattleReportsBridge; visible: boolean }) {
+export default function BattleReportsView({ api, visible, sourceLabel }: { api: BattleReportsBridge; visible: boolean; sourceLabel?: string }) {
   const [records, setRecords] = useState<ReportRecords>({ history: [] });
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('rounds');
   const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
   const [status, setStatus] = useState<ReportStatus>('starting');
-  const [waveFilter, setWaveFilter] = useState<{ key: string; round: ReportRoundFilter } | null>(null);
+  const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
   const [bossFilter, setBossFilter] = useState<{ key: string; round: 14 | 15 } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [exported, setExported] = useState<ReportSummary | null>(null);
   const [leaderKey, setLeaderKey] = useState('');
   const [leaderImage, setLeaderImage] = useState<{ url: string; title: string } | null>(null);
-  const nextImport = useRef(0);
 
   useEffect(() => {
     let changed = false;
@@ -62,47 +67,32 @@ export default function BattleReportsView({ api, visible }: { api: BattleReports
     return () => { mounted = false; remove(); };
   }, [api]);
 
-  const importReport = async (file: File) => {
-    setBusy(true);
-    try {
-      if (file.size > maxReportBytes) throw new Error('JSON 战报不能超过 8 MB。');
-      let raw: unknown;
-      try { raw = JSON.parse(await file.text()); }
-      catch { throw new Error('无法读取 JSON 战报；请选 ArkLogs 的 .json 文件。'); }
-      const entry: ReportRecord = { key: `file:${++nextImport.current}`, label: file.name, report: readBattleReport(raw),
-        seenAt: file.lastModified || Date.now(), source: 'file' };
-      setRecords(previous => ({ ...previous, history: [entry, ...previous.history].slice(0, MAX_REPORT_HISTORY) }));
-      openRecord(entry.key);
-      setError('');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '无法导入战报。'); }
-    finally { setBusy(false); }
-  };
-
   const opened = openedKey === records.live?.key ? records.live : records.history.find(entry => entry.key === openedKey);
   const entry = opened ?? records.live;
   const report = entry && reportWithPlayerNames(entry);
   const key = entry?.key ?? '';
+  const replay = Boolean(entry && entry.key !== records.live?.key);
   const liveView = status === 'listening' && (!entry || entry.key === records.live?.key);
-  const { number: latestRound, label: progressLabel } = reportProgress(report, liveView);
-  const waveRound = waveFilter?.key === key ? waveFilter.round : 'all';
-  const previewRound = previewFilter?.key === key ? previewFilter.round : 'follow';
+  const canExport = report?.rounds.some(isCombatRound) ?? false;
+  const exportReason = '尚无实战回合，不能导出战报文档。';
+  const progressLabel = reportProgress(report, liveView).label;
+  const seat = perspective?.key === key ? perspective.seat : report?.self ?? null;
+  const previewRound = previewFilter?.key === key ? previewFilter.round : replay ? 'all' : 'follow';
   const bossNumber = bossFilter?.key === key ? bossFilter.round : defaultBossRound(report);
-  const lastLocal = !report && records.history.find(entry => entry.source === 'live');
+  const lastLocal = !report && records.history[0];
   const leader = tab === 'boss' && report && reportLeader(report, bossNumber);
   const highDifficulty = ['mode_multi_hard', 'mode_multi_abyss'].includes(report?.mode ?? '') ? true
     : ['mode_multi_funny', 'mode_multi_normal'].includes(report?.mode ?? '') ? false : undefined;
-  const selectWaveRound = (round: ReportRoundFilter) => setWaveFilter({ key, round });
   const selectBossRound = (round: number) => { if (round === 14 || round === 15) setBossFilter({ key, round }); setLeaderKey(''); };
-  const showPreview = (round: number) => { setPreviewFilter({ key, round }); setTab('preview'); };
+  const showPreview = (round: PreviewRoundFilter) => { setPreviewFilter({ key, round }); setTab('preview'); };
   const openTab = (name: Tab) => {
-    if (name !== tab && name === 'waves') setWaveFilter(null);
     if (name !== tab && name === 'preview') setPreviewFilter(null);
     setTab(name);
     setLeaderKey('');
   };
   const openRecord = (key: string | null, tab: Tab = 'rounds') => {
     setOpenedKey(key);
-    setWaveFilter(null);
+    setPerspective(null);
     setBossFilter(null);
     setLeaderKey('');
     setPreviewFilter(null);
@@ -110,47 +100,46 @@ export default function BattleReportsView({ api, visible }: { api: BattleReports
   };
   if (!visible) return null;
   return <main className="desktop-page d-report-page">
-    <section className="d-panel d-report-shell" aria-label="本地战报">
-      <header className="d-section-head d-report-head">
-        <div><div className="d-report-kicker">PRTS / BATTLE LOG</div><h1><Activity size={18} />战报</h1></div>
+    <section className="d-report-shell" aria-label="本地战报">
+      <header className="d-report-context">
+        <label className="d-match-select"><select aria-label="选择对局" value={opened && opened.key !== records.live?.key ? opened.key : ''}
+          onChange={e => openRecord(e.target.value || null)}>
+          <option value="">{records.live?.label ?? '实时战报'}（当前）</option>
+          {records.history.map(item => <option key={item.key} value={item.key}>{item.label} · {dateTime.format(item.seenAt)}
+            {item.report.difficulty && ` · ${item.report.difficulty}`}</option>)}
+        </select><ChevronDown size={14} /></label>
+        <span className="d-export-trigger" title={canExport ? undefined : exportReason} tabIndex={canExport ? undefined : 0}
+          aria-label={canExport ? undefined : exportReason}>
+          <button type="button" className="d-button d-export-button" data-history={replay} disabled={!canExport}
+            title={canExport ? '导出战报文档' : exportReason} onClick={() => {
+              if (entry && report && canExport) setExported(summarizeBattleReport(entry, report, liveView, new Date()));
+            }}><FileDown size={15} />导出战报文档</button>
+        </span>
+        <span className="d-report-status" role="status" data-live={liveView} title={replay ? entry?.label : sourceLabel ?? STATUS[status]}>
+          <Radio size={14} />{replay ? '历史回放' : sourceLabel ?? shortStatus[status]}</span>
+        {report && <span className="d-report-progress" title={[report.difficulty, progressLabel].filter(Boolean).join(' · ')}>{progressLabel}</span>}
+        {entry && report && <BattleReportRoster key={entry.key} entry={entry} report={report} seat={seat}
+          onViewSeat={seat => setPerspective({ key, seat })}
+          onSave={names => setRecords(previous => setReportPlayerNames(previous, entry.key, names))}
+          onSetSelfSeat={value => { setRecords(previous => setReportSelfSeat(previous, entry.key, value)); setPerspective(null); }} />}
       </header>
-      <div className="d-report-meta">
-        <div className="d-report-status" role="status"><Shield size={14} /><span>{STATUS[status]}</span></div>
-        {entry && <span title={entry.label} className="d-report-record-title">{entry.label}</span>}
-        {report?.difficulty && <span>难度 <strong>{report.difficulty}</strong></span>}
-        {(report || liveView) && <strong className="d-report-progress">{progressLabel}</strong>}
-        {opened && opened.key !== records.live?.key && <button className="d-button d-small" type="button" onClick={() => openRecord(null)}>返回实时战报</button>}
-      </div>
-      {error && <p role="alert" className="d-warning d-report-error">{error}</p>}
-      {entry && report && tab !== 'history' && <BattleReportRoster key={entry.key} entry={entry} report={report}
-        onSave={names => setRecords(previous => setReportPlayerNames(previous, entry.key, names))}
-        onSetSelfSeat={seat => setRecords(previous => setReportSelfSeat(previous, entry.key, seat))} />}
+      {!sourceLabel && ['failed', 'permission', 'unavailable', 'incompatible'].includes(status) && <p className="d-warning d-report-error">{STATUS[status]}</p>}
       <nav className="d-report-tabs" aria-label="战报视图">
-        {(Object.keys(TABS) as Tab[]).map(name => <button key={name} className="d-button d-small" type="button"
-          aria-pressed={tab === name} onClick={() => openTab(name)}>{TABS[name]}</button>)}
+        {(Object.keys(TABS) as Tab[]).map(name => { const Icon = TAB_ICONS[name]; return <button key={name} type="button"
+          aria-pressed={tab === name} onClick={() => openTab(name)}><Icon size={15} />{name === 'rounds' && replay ? '战报回放' : TABS[name]}</button>; })}
+        {report?.difficulty && <small>{report.difficulty}</small>}
       </nav>
       <div className="d-report-body">
-        {tab === 'rounds' && <RoundMatrix key={key} report={report} active={latestRound}
-          onRound={round => { selectWaveRound(round); setTab('waves'); }} />}
-        {tab === 'waves' && <WaveDetails report={report} round={waveRound} onRound={selectWaveRound} onPreview={showPreview} />}
+        {tab === 'rounds' && <RoundMatrix key={key} report={report} seat={seat} live={liveView} onPreview={() => showPreview('all')} />}
         {tab === 'boss' && lastLocal && <button type="button" className="d-button d-small"
           onClick={() => openRecord(lastLocal.key, 'boss')}>查看最近本地对局</button>}
-        {tab === 'boss' && <BossDamage report={report} number={bossNumber} onRound={selectBossRound} reference={leader &&
+        {tab === 'boss' && <BossDamage report={report} seat={seat} number={bossNumber} onRound={selectBossRound} reference={leader &&
           <div className="d-report-leader"><strong>{leader.name}</strong><button className="d-button d-small" type="button"
             onClick={() => { setLeaderKey(key); setLeaderImage(null); }}>领袖属性与站位</button></div>} onPreview={showPreview} />}
-        {tab === 'preview' && <SpawnPreview key={key} report={report} filter={previewRound}
+        {tab === 'preview' && <SpawnPreview key={key} report={report} live={liveView} filter={previewRound}
           onSelect={round => setPreviewFilter({ key, round })} />}
-        {tab === 'history' && <>
-          <div className="d-report-history-actions">
-            <label className="d-button d-primary d-report-import"><FileUp size={15} />导入 JSON
-              <input aria-label="导入 JSON 战报" type="file" accept=".json,application/json" disabled={busy}
-                onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importReport(file); }} />
-            </label>
-          </div>
-          <ReportHistory records={(records.live ? [records.live, ...records.history] : records.history)
-            .slice().sort((a, b) => b.seenAt - a.seenAt)} liveKey={records.live?.key} onOpen={openRecord} />
-        </>}
       </div>
+      {exported && <BattleReportExportDialog report={exported} onClose={() => setExported(null)} />}
       {leaderKey === key && leader && <>
         <DesktopDialog open={visible && !leaderImage} title={`${leader.name} · R${bossNumber} 参考资料`} onClose={() => setLeaderKey('')}>
           <BossRoutes key={`${key}-${leader.id}-${bossNumber}`} leader={{ encounter: leader, round: bossNumber,

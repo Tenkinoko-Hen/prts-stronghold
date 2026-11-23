@@ -24,7 +24,7 @@ app.whenReady().then(() => {
   });
   mainWindow = new BrowserWindow({
     title: '卫戍协议战术终端 · PRTS Stronghold',
-    width: 1440, height: 900, minWidth: 1024, minHeight: 700,
+    width: 1080, height: 720, minWidth: 640, minHeight: 420,
     center: true, fullscreen: false, show: false, autoHideMenuBar: true,
     backgroundColor: '#0B0C0E',
     icon: path.join(__dirname, 'branding', 'app.ico'),
@@ -33,6 +33,7 @@ app.whenReady().then(() => {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
     },
   });
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.setMenu(null);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event, url) => {

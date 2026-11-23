@@ -37,6 +37,9 @@ const numberTable = (value: unknown) => Object.fromEntries(REPORT_SEATS.flatMap(
   const data = number(object(value)?.[id]);
   return data === null ? [] : [[id, data]];
 }));
+// 保留“明确确认”与“未提供依据”的区别；仅在桌面内存中随回合复制，不写入 JSON。
+const confirmedBossBasis = Symbol('confirmedBossBasis');
+const confirmedBossRound = { [confirmedBossBasis]: true };
 
 interface Enemy {
   id: string;
@@ -70,7 +73,7 @@ export interface BattleRound {
   leaksStatus: string;
   leakMinimums: Record<number, number>;
   uncoveredLeaks: Record<number, number>;
-  uncoveredPartial: boolean;
+  uncoveredStatus: string;
   unassignedSelfLeaks: number | null;
   selfLeaks: number | null;
   selfLeakEnemies: EnemyOutcome[] | null;
@@ -157,7 +160,7 @@ export function readBattleReport(input: unknown): BattleReport {
   const root = object(input);
   const players = object(root?.players);
   const rounds = object(root?.rounds);
-  if (!root || !players || !rounds) throw new Error('这不是有效的 ArkLogs JSON 战报。');
+  if (!root || !players || !rounds) throw new Error('战报快照缺少玩家或回合数据。');
   const capture = object(root.capture);
   const config = object(root.battle_config);
   const mode = text(config?.mode_id);
@@ -223,17 +226,26 @@ export function readBattleReport(input: unknown): BattleReport {
     const assistPairs = [...pairs.values()];
     // Older imports may carry only each killer's total. Retain those observations without guessing the owner.
     const killTotals = object(row.assists);
-    const unmatched = REPORT_SEATS.reduce((sum, killer) => sum + Math.max(0, (leakCount(killTotals?.[killer]) ?? 0)
-      - assistPairs.filter(pair => pair.killer === killer).reduce((total, pair) => total + pair.count, 0)), 0);
+    const unmatched = Math.max(leakCount(row.unattributed_assists) ?? 0, REPORT_SEATS.reduce((sum, killer) => sum + Math.max(0, (leakCount(killTotals?.[killer]) ?? 0)
+      - assistPairs.filter(pair => pair.killer === killer).reduce((total, pair) => total + pair.count, 0)), 0));
+    const assists = numberTable(row.assists_others);
+    if (!object(row.assists_others)) for (const killer of REPORT_SEATS) {
+      const known = assistPairs.filter(pair => pair.killer === killer);
+      const others = known.reduce((n, pair) => n + (pair.owner !== killer ? pair.count : 0), 0);
+      if (others || killTotals?.[killer] === known.reduce((n, pair) => n + pair.count, 0)) assists[killer] = others;
+    }
+    const uncovered = object(row.uncovered_leaks);
+    const inferred = row.boss_round_basis === 'inferred';
+    const confirmed = row.boss_round_basis === 'confirmed' || (!inferred && (row.phase === 'boss' || row.boss_ended === true));
     result.push({
       number: index, phase: text(row.phase), leaks: numberTable(row.leaks), leaksStatus: text(row.leaks_status),
-      leakMinimums: numberTable(row.leak_minimums), uncoveredLeaks: numberTable(row.uncovered_leaks),
-      uncoveredPartial: text(row.uncovered_status) !== 'reported', skippedCosts,
+      leakMinimums: numberTable(row.leak_minimums), uncoveredLeaks: numberTable(uncovered),
+      uncoveredStatus: uncovered ? text(row.uncovered_status) : '', skippedCosts,
       unassignedSelfLeaks: leakCount(row.unassigned_self_leaks),
       selfLeaks: leakCount(row.self_leaks) ?? leakCount(row.unassigned_self_leaks),
       selfLeakEnemies: Array.isArray(row.self_leak_enemies) ? row.self_leak_enemies.flatMap(value => readEnemyOutcome(value) ?? []) : null,
-      assists: numberTable(row.assists_others ?? row.assists), assistsStatus: text(row.assists_status),
-      assistsPartial: assistsStatus !== 'reported' && assistsStatus !== 'skipped',
+      assists, assistsStatus: text(row.assists_status),
+      assistsPartial: (assistsStatus !== 'reported' && assistsStatus !== 'skipped') || (!object(row.assists_others) && unmatched > 0),
       assistPairs,
       assistEnemies: array(row.assist_enemies).flatMap(value => {
         const enemy = readEnemyOutcome(value), data = object(value);
@@ -241,11 +253,11 @@ export function readBattleReport(input: unknown): BattleReport {
         if (!enemy || killer === null || owner === null || !pairs.has(`${killer}:${owner}`)) return [];
         return [{ ...enemy, killer, owner }];
       }),
-      unattributedAssists: Math.max(leakCount(row.unattributed_assists) ?? 0, unmatched),
+      unattributedAssists: unmatched,
       hpCosts: Object.keys(hpCosts).length ? hpCosts : skippedCosts, allPlayersLeaked: row.all_players_leaked === true,
       bossDamage: numberTable(row.boss_damage), bossPercent: numberTable(row.boss_percent), bossUplink: numberTable(row.boss_uplink),
       bossUplinkRows: bossHits(row.boss_uplink_rows, false), bossOfficial: bossHits(row.boss_official, true),
-      bossStatus: text(row.boss_status), bossRoundInferred: row.boss_round_basis === 'inferred',
+      bossStatus: text(row.boss_status), bossRoundInferred: inferred, ...(confirmed ? confirmedBossRound : {}),
       bossEnded: row.boss_ended === true, bossHp: number(row.boss_hp), bossPlanId, bossGroups,
       waveConfirmed: array(waveReport?.confirmed_players).flatMap(value => seat(value) ?? []), rows: lines,
     });
@@ -279,9 +291,14 @@ export function ownLeakKinds(row: BattleRound, report: BattleReport): EnemyOutco
   return known.reduce((count, enemy) => count + enemy.count, 0) <= total ? groupEnemyOutcomes(known) : [];
 }
 
+export function confirmedCurrent(report?: BattleReport) {
+  return report?.current && report.current >= (report.rounds.at(-1)?.number ?? 0) ? report.current : null;
+}
+
 export function resolvePreviewRound(report: BattleReport | undefined, selected: PreviewRoundFilter): ReportRoundFilter {
   if (selected !== 'follow') return selected;
-  if (report?.current) return report.current;
+  const current = confirmedCurrent(report);
+  if (current) return current;
   const lastObserved = report?.rounds.at(-1)?.number ?? 0;
   const nextForecast = report?.preview.reduce<number | undefined>((nearest, row) =>
     row.round > lastObserved && (nearest === undefined || row.round < nearest) ? row.round : nearest, undefined);
@@ -317,9 +334,43 @@ export function reportProgress(report: BattleReport | undefined, live: boolean) 
   return { number, label };
 }
 
+const hasValues = (values: Record<number, number>) => Object.keys(values).length > 0;
+const hasServerTotals = (row: BattleRound) => hasValues(row.bossDamage) || hasValues(row.bossPercent);
+const hasUplink = (row: BattleRound) => hasValues(row.bossUplink) || row.bossUplinkRows.length > 0;
+
 export function hasBossDamage(row: BattleRound | undefined) {
-  return !!row && ([row.bossDamage, row.bossPercent, row.bossUplink].some(values => Object.keys(values).length > 0)
-    || row.bossOfficial.length > 0 || row.bossUplinkRows.length > 0);
+  return !!row && (hasServerTotals(row) || hasUplink(row) || row.bossOfficial.length > 0);
+}
+
+function resolveBossTotals(source: BattleRound, official: BossHit[]) {
+  if (source.bossOfficial === official || !official.length) return source;
+  const ranked = official.filter(hit => hit.damage > 0);
+  if (!ranked.length) return source;
+  // 跨快照时沿用分析器的规则：正数榜单可推翻全零快照；混合快照只撤回同席位的零。
+  const anyDamage = Object.values(source.bossDamage).some(value => value > 0);
+  const revoked = REPORT_SEATS.filter(seat => source.bossDamage[seat] === 0 && (!anyDamage || ranked.some(hit => hit.seat === seat)));
+  if (!revoked.length) return source;
+  const bossDamage = { ...source.bossDamage }, bossPercent = { ...source.bossPercent };
+  for (const seat of revoked) {
+    delete bossDamage[seat];
+    if (bossPercent[seat] === 0) delete bossPercent[seat];
+  }
+  return { bossDamage, bossPercent, bossStatus: hasValues(bossDamage) ? source.bossStatus : 'unknown' };
+}
+
+export function mergeBossRound(old: BattleRound, row: BattleRound): BattleRound {
+  const official = !row.bossOfficial.length && old.bossOfficial.length ? old.bossOfficial : row.bossOfficial;
+  const totals = resolveBossTotals(!hasServerTotals(row) && hasServerTotals(old) ? old : row, official);
+  const uplink = !hasUplink(row) && hasUplink(old) ? old : row;
+  const keepConfirmation = confirmedBossBasis in old && !(confirmedBossBasis in row);
+  const inferred = !(confirmedBossBasis in row) && !keepConfirmation && (row.bossRoundInferred || old.bossRoundInferred);
+  const ended = row.bossEnded || old.bossEnded, hp = row.bossHp ?? old.bossHp;
+  if (totals === row && uplink === row && official === row.bossOfficial && !keepConfirmation && inferred === row.bossRoundInferred
+      && ended === row.bossEnded && hp === row.bossHp) return row;
+  return { ...row, ...(keepConfirmation ? confirmedBossRound : {}),
+    bossDamage: totals.bossDamage, bossPercent: totals.bossPercent, bossStatus: totals.bossStatus,
+    bossUplink: uplink.bossUplink, bossUplinkRows: uplink.bossUplinkRows, bossOfficial: official,
+    bossRoundInferred: inferred, bossEnded: ended, bossHp: hp };
 }
 
 export function defaultBossRound(report: BattleReport | undefined): 14 | 15 {

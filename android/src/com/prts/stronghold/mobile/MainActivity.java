@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 import android.Manifest;
 import android.app.Activity;
@@ -77,13 +77,13 @@ public class MainActivity extends Activity {
         body.setPadding(dp(24), dp(24), dp(24), dp(24));
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
-        body.addView(text("PRTS 随行攻略", 28, 0xffedf4f5));
-        body.addView(text("识别盟约 Ban → 选方案 → 逐回合跟进", 17, 0xff9ce3bb));
+        body.addView(text("PRTS 战报终端", 28, 0xffedf4f5));
+        body.addView(text("局内战报 · 回合识别 · 随行攻略", 17, 0xff9ce3bb));
         body.addView(text("27 套阵容 · 离线资料库\n拖动悬浮球到顺手的位置，点球显示攻略；面板顶部可拖动，点「收起」返回游戏。", 15, 0xffb7cbd5));
         permissionStatus = text("", 14, 0xffe4d3a5);
         body.addView(permissionStatus);
         button(body, "开启悬浮球 · 返回游戏", v -> startOverlay());
-        button(body, "在应用内查看攻略", v -> {
+        button(body, "打开战报与攻略", v -> {
             OverlayService.stopActive();
             showGuide();
         });

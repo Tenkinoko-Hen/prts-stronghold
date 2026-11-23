@@ -726,14 +726,15 @@ export const TransferEquipmentSvg: React.FC<TransferEquipmentSvgProps> = ({
   const badgeStyle =
     (tier && ITEM_TIER_BADGE_COLORS[tier]) ||
     'bg-slate-800 text-slate-200 border-slate-600';
+  const compact = size <= 44;
 
   return (
     <div
       style={{ width: size, height: size }}
-      className="relative rounded-xl overflow-hidden bg-gradient-to-br from-[#5A6D73] via-[#2C3A3F] to-[#182226] border border-slate-600/80 shadow-md shrink-0 flex items-center justify-center select-none"
+      className={`relative overflow-hidden bg-gradient-to-br from-[#5A6D73] via-[#2C3A3F] to-[#182226] border border-slate-600/80 shadow-md shrink-0 flex items-center justify-center select-none ${compact ? 'rounded-md' : 'rounded-xl'}`}
     >
       {/* Inner dark frame matching Arknights item card */}
-      <div className="w-[78%] h-[78%] rounded-lg bg-[#141B1E] border border-white/10 flex items-center justify-center overflow-hidden">
+      <div className={`bg-[#141B1E] border border-white/10 flex items-center justify-center overflow-hidden ${compact ? 'size-[90%] rounded' : 'size-[78%] rounded-lg'}`}>
         <svg
           viewBox="0 0 80 80"
           className="w-full h-full"
@@ -746,7 +747,11 @@ export const TransferEquipmentSvg: React.FC<TransferEquipmentSvgProps> = ({
       {/* Top-Right Roman Numeral Tier Badge (Exact match to infographics) */}
       {tier && (
         <span
-          className={`absolute top-1 right-1 z-10 px-1.5 py-0.2 text-[10px] font-mono-tabular font-extrabold rounded border shadow ${badgeStyle}`}
+          className={`absolute z-10 text-[10px] font-mono-tabular font-extrabold border shadow ${badgeStyle} ${
+            compact
+              ? 'top-px right-px px-0.5 leading-[11px] rounded-sm'
+              : 'top-1 right-1 px-1.5 py-0.2 rounded'
+          }`}
         >
           {tier}
         </span>

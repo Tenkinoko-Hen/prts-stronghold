@@ -1,0 +1,133 @@
+:root {
+  color-scheme:dark;
+  --page:#0c0e11; --line:#232830; --text:#eceff4; --muted:#8b94a0; --rule:#fff;
+  --yellow:#e6c828; --red:#d9534f; --stamp-ink:#0c0e11;
+  --mono:Consolas,"SFMono-Regular","Microsoft YaHei",monospace;
+}
+* { box-sizing:border-box; }
+body { margin:0; color:var(--text); background:var(--page); font:14px/1.5 "Segoe UI","Microsoft YaHei",sans-serif; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+main { width:100%; max-width:1160px; margin:auto; padding:28px 36px 36px; }
+h1,h2,h3,p,dl,dd,ul { margin:0; }
+.mast { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.18fr); align-items:center; gap:24px; border-top:2px solid var(--rule); padding:16px 0 20px; border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:baseline; gap:10px; color:var(--muted); font-size:11px; }
+.brand b { color:var(--yellow); font:700 19px/1 var(--mono); }
+h1 { margin:8px 0; font-size:26px; line-height:1.28; }
+.meta { display:flex; flex-wrap:wrap; gap:1px 15px; color:var(--muted); font-size:11px; }
+.meta strong { flex-basis:100%; margin-bottom:2px; color:var(--text); font-size:13px; }
+.meta time { font-family:var(--mono); white-space:nowrap; }
+.kpis { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr); }
+.kpis>div { min-width:0; padding:2px 10px 2px 16px; border-left:1px solid var(--line); }
+.kpis dt { color:var(--muted); font-size:12px; }
+.kpis dd { margin-top:6px; font:700 29px/1.12 var(--mono); }
+.slash { color:var(--muted); font-weight:400; }
+.loss { color:var(--red); }
+
+section { margin-top:24px; }
+.section-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:3px 14px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+h2 { display:flex; align-items:baseline; gap:10px; font-size:17px; line-height:1.4; }
+.section-no { color:var(--muted); font:400 12px/1 var(--mono); }
+.section-head p,.legend,.wave-note { color:var(--muted); font-size:11px; }
+.legend,.wave-note { margin-top:7px; }
+table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:13px; }
+th,td { padding:6px 9px; text-align:left; border-bottom:1px solid var(--line); }
+th:first-child,td:first-child { padding-left:0; }
+th:last-child,td:last-child { padding-right:0; }
+thead th { color:var(--muted); font-size:11px; font-weight:500; }
+[data-seat="1"] { --seat:#6e94b8; } [data-seat="2"] { --seat:#b3748a; }
+[data-seat="3"] { --seat:#5a9c84; } [data-seat="4"] { --seat:#8b7fb5; }
+.identity-col { width:37%; } .ratio-col { width:23%; } .damage-col { width:15%; }
+.players :is(td,th):not(:first-child) { text-align:right; }
+.players td { font-family:var(--mono); }
+.players thead span,.ratio-base { display:inline-block; white-space:nowrap; }
+.ratio-base { color:var(--muted); }
+.identity { display:flex; align-items:baseline; gap:6px; }
+.identity bdi { min-width:0; }
+.seat-index { flex:none; margin-right:3px; padding-bottom:1px; border-bottom:2px solid var(--seat); color:var(--muted); font:700 12px/1.4 var(--mono); }
+.self-mark,.top-mark { flex:none; white-space:nowrap; font:600 10px/15px "Microsoft YaHei",sans-serif; padding:0 4px; }
+.self-mark { color:var(--stamp-ink); background:var(--yellow); }
+.top-mark { color:var(--muted); border:1px solid var(--muted); line-height:13px; }
+
+.boss-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 36px; }
+.boss-wave:only-child { grid-column:1/-1; }
+.boss-wave header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:2px 10px; margin:10px 0 5px; }
+.boss-wave h3 { font-size:14px; font-weight:650; }
+.wave-no { margin-right:8px; font:700 14px/1 var(--mono); }
+.boss-wave header>span,.damage { font-size:12px; }
+.boss-wave header>span,.share { color:var(--muted); }
+.boss-wave strong { color:var(--text); font-family:var(--mono); }
+.damage { display:grid; grid-template-columns:3em minmax(0,1fr) 4.1em minmax(4.6em,auto); align-items:center; gap:8px; padding:2px 0; }
+.damage-seat { display:flex; align-items:center; gap:6px; }
+.seat-dot { width:6px; height:6px; flex:none; border-radius:50%; background:var(--seat); }
+.share,.damage strong { text-align:right; font-family:var(--mono); }
+.track { display:block; height:4px; background:var(--line); }
+.track i { display:block; height:100%; background:var(--seat); }
+.track.missing { height:0; background:none; border-bottom:1px dashed var(--line); }
+
+.c-round { width:6%; } .c-lanes { width:25%; } .c-links { width:36%; }
+.rounds th,.rounds td { vertical-align:top; }
+.round { color:var(--text); font:700 15px/1.45 var(--mono); white-space:nowrap; }
+.outcome { font-size:13px; font-weight:650; }
+.outcome.breached { display:inline-block; padding:0 4px; color:var(--stamp-ink); background:var(--red); }
+.unknown,.empty,.lanes { color:var(--muted); }
+.lanes { margin-top:2px; font-size:12px; }
+.lane { display:inline-block; }
+.rounds ul { padding:0; list-style:none; }
+.rounds li+li,.kinds+.kinds { margin-top:3px; }
+.kinds { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 4px; }
+.kinds small { color:var(--muted); font-size:11px; }
+.enemy { display:inline-block; max-width:100%; padding:0 3px; border:1px solid var(--line); font-size:12px; }
+.enemy b { white-space:nowrap; font-family:var(--mono); }
+.enemy.elite { border-bottom-color:var(--muted); } .enemy.boss { border:1px solid var(--muted); border-bottom:3px double var(--muted); }
+.rounds .quiet :is(th,td) { vertical-align:middle; padding-top:3px; padding-bottom:3px; }
+.quiet td { color:var(--muted); }
+.quiet .outcome { font-size:12px; font-weight:400; }
+.quiet-note { margin-left:16px; font-size:12px; opacity:.82; }
+
+@media screen and (max-width:850px) {
+  main { padding:20px; }
+  .mast { grid-template-columns:1fr; gap:14px; padding-bottom:14px; }
+  .kpis>div:first-child { border:0; padding-left:0; }
+  .kpis dd { font-size:25px; }
+}
+@media screen and (max-width:680px) {
+  main { padding:16px 14px 24px; }
+  h1 { font-size:22px; } h2 { font-size:15px; }
+  section { margin-top:19px; }
+  .kpis>div { padding:0 4px 0 8px; }
+  .kpis dt { font-size:11px; } .kpis dd { font-size:20px; }
+  .identity-col { width:41%; } .ratio-col { width:21%; } .damage-col { width:16%; }
+  .players :is(th,td) { padding:5px 2px; font-size:11px; }
+  .players thead th { font-size:10px; }
+  .identity { gap:3px; } .seat-index { font-size:10px; margin-right:0; }
+  .self-mark,.top-mark { padding:0 2px; }
+  .boss-grid { grid-template-columns:minmax(0,1fr); gap:4px; }
+  .boss-wave+.boss-wave { border-top:1px solid var(--line); }
+  .rounds,.rounds tbody { display:block; }
+  .rounds colgroup,.rounds thead { display:none; }
+  .rounds tbody tr { display:grid; grid-template-columns:36px minmax(0,1fr); align-items:baseline; gap:3px 7px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .rounds tr.quiet { padding:3px 0; }
+  .rounds tbody :is(th,td),.rounds .quiet :is(th,td) { padding:0; border:0; }
+  .rounds td { grid-column:2; }
+  .rounds .empty { display:none; }
+  .details::before { content:attr(data-col); display:block; margin:3px 0 1px; color:var(--muted); font-size:10px; }
+  .quiet-note { margin-left:10px; }
+}
+@media print {
+  @page { size:A4; margin:12mm; }
+  :root { color-scheme:light; --page:#fff; --line:#c0c5ca; --text:#171a1e; --muted:#505861; --rule:#171a1e; }
+  body { print-color-adjust:exact; -webkit-print-color-adjust:exact; font-size:9pt; line-height:1.35; }
+  main { max-width:none; padding:0; }
+  .mast { gap:12pt; padding:7pt 0; }
+  .brand b { color:var(--text); } h1 { margin:4pt 0; font-size:16pt; }
+  .meta { gap:1pt 7pt; font-size:7.5pt; } .meta strong { font-size:9pt; }
+  .kpis>div { padding:1pt 3pt 1pt 7pt; } .kpis dd { font-size:16pt; } .kpis dt { font-size:8pt; }
+  section { margin-top:8pt; } .section-head { padding-bottom:3pt; break-after:avoid; } h2 { font-size:11pt; }
+  .boss-grid { gap:8pt 16pt; } .boss-wave header { margin:5pt 0 2pt; } .damage { padding:1pt 0; gap:4pt; }
+  .mast,.boss-wave,tr { break-inside:avoid; } thead { display:table-header-group; break-after:avoid; }
+  table,.outcome,.boss-wave h3,.wave-no,.round { font-size:9pt; }
+  th,td { padding:2pt 4pt; } .rounds .quiet :is(th,td) { padding-top:1pt; padding-bottom:1pt; }
+  .meta time,.lanes,.enemy,.boss-wave header>span,.damage,.quiet-note,.quiet .outcome { font-size:8pt; }
+  .legend,.wave-note,.section-head p,thead th,.kinds small { font-size:7.5pt; }
+  .legend { margin-top:3pt; } .quiet-note { opacity:1; }
+  .loss { color:#a12f2d; }
+}

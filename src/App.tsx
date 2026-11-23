@@ -23,7 +23,7 @@ const FAV_STORAGE_KEY = 'stronghold_fav_covenants_v1';
 const desktopAPI = window.electronAPI;
 const BattleReportsView = lazy(() => import('./desktop/BattleReportsView'));
 export default function App() {
-  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [pinPending, setPinPending] = useState(false);
   const [pinError, setPinError] = useState('');
   const toggleAlwaysOnTop = async () => {
@@ -34,7 +34,7 @@ export default function App() {
     catch { setPinError('置顶失败，请重试'); }
     finally { setPinPending(false); }
   };
-  const [activeView, setActiveView] = useState<ActiveView>('comps');
+  const [activeView, setActiveView] = useState<ActiveView>('reports');
   const [selectedMapId, setSelectedMapId] = useState<string>(TACTICAL_MAPS[0].id);
   const [stageMode, setStageMode] = useState<'道中' | 'Boss战'>('Boss战');
 

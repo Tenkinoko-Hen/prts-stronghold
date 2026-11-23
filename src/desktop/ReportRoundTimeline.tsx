@@ -1,19 +1,16 @@
-import { Radio } from 'lucide-react';
-import { REPORT_ROUNDS, type ReportRoundFilter } from './battleReportData';
+import { ListFilter } from 'lucide-react';
+import type { PreviewRoundFilter, ReportRoundFilter } from './battleReportData';
 
-export function ReportRoundTimeline({ label, selected, available, current, onSelect, follow }: {
-  label: string; selected: ReportRoundFilter; available: ReadonlySet<number>; current?: number | null;
-  onSelect(round: ReportRoundFilter): void; follow?: { enabled: boolean; onEnable(): void };
+export function ReportRoundTimeline({ selected, available, first, onSelect }: {
+  selected: PreviewRoundFilter; available: number[]; first: ReportRoundFilter; onSelect(round: PreviewRoundFilter): void;
 }) {
-  return <div className="d-report-timeline" role="group" aria-label={label}>
-    <div className="d-report-timeline-track">
-      <button className="d-button d-small" type="button" aria-pressed={selected === 'all'} onClick={() => onSelect('all')}>全部回合</button>
-      {REPORT_ROUNDS.map(round => <button className="d-button d-small d-report-timeline-round" type="button" key={round}
-        aria-pressed={selected === round} aria-current={current === round ? 'step' : undefined}
-        data-available={available.has(round)} title={available.has(round) ? `R${round}` : `R${round} · 暂无记录`}
-        onClick={() => onSelect(round)}>R{round}</button>)}
-    </div>
-    {follow && <button className="d-button d-small d-report-timeline-follow" type="button"
-      aria-pressed={follow.enabled} onClick={follow.onEnable}><Radio size={13} aria-hidden="true" />跟随回合</button>}
-  </div>;
+  return <>
+    <label className="d-report-follow"><input type="checkbox" checked={selected === 'follow'}
+      onChange={e => onSelect(e.target.checked ? 'follow' : 'all')} />仅看当前及后续回合</label>
+    <label className="d-round-filter"><ListFilter size={14} /><select aria-label="筛选预告回合" value={selected}
+      onChange={e => onSelect(e.target.value === 'all' || e.target.value === 'follow' ? e.target.value : Number(e.target.value))}>
+      <option value="follow">{first === 'all' ? '跟随进度' : `R${first} 起`}</option>
+      <option value="all">全部回合</option>{available.map(n => <option key={n} value={n}>R{n}</option>)}
+    </select></label>
+  </>;
 }

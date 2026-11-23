@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 import org.json.JSONObject;
 import java.util.UUID;
@@ -26,9 +26,9 @@ final class RoundScanState {
     }
     static synchronized double[] region() { return region == null ? null : region.clone(); }
     static synchronized long generation() { return generation; }
-    static synchronized void observe(int value, long expectedGeneration) {
-        if (!is("scanning") || generation != expectedGeneration || value < 1 || value > 15 || round == value) return;
-        round = value; sequence++; message = "已确认游戏 R" + value + "；展开攻略查看";
+    static synchronized boolean observe(int value, long expectedGeneration) {
+        if (!is("scanning") || generation != expectedGeneration || value < 1 || value > 15 || round == value) return false;
+        round = value; sequence++; message = "已确认游戏 R" + value + "；展开攻略查看"; return true;
     }
     static synchronized void pause() { if (is("scanning")) { generation++; set("paused", "手动切换已暂停同步，可继续自动跟进"); } }
     static synchronized void resume() { if (is("paused") && region != null) { generation++; round = 0; set("scanning", "收起助手后重新确认当前回合"); } }

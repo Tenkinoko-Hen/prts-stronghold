@@ -1,4 +1,4 @@
-package com.prts.stronghold.mobile;
+package com.prts.dossier.review;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -42,6 +42,8 @@ final class GuideWebView {
         settings.setSupportZoom(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
+        view.addJavascriptInterface(new SessionBridge(context),"PRTSJournal");
+        view.addJavascriptInterface(new ReportFiles.Bridge(context),"PRTSFiles");
         view.addJavascriptInterface(new ScanBridge(context.getApplicationContext()), "PRTSScan");
         view.addJavascriptInterface(new RoundBridge(context.getApplicationContext()), "PRTSRound");
         view.setWebViewClient(new WebViewClient() {

@@ -57,7 +57,7 @@ function Prepare-OcrDependencies([string]$ProjectRoot, [string]$BuildRoot, [stri
     foreach ($element in $manifest.SelectNodes('//*')) {
         foreach ($attribute in @($element.Attributes)) {
             if ($attribute.NamespaceURI -eq $toolsNs) { $null=$element.RemoveAttributeNode($attribute) }
-            elseif ($attribute.Value.Contains('${applicationId}')) { $attribute.Value=$attribute.Value.Replace('${applicationId}','com.prts.stronghold.mobile') }
+            elseif ($attribute.Value.Contains('${applicationId}')) { $attribute.Value=$attribute.Value.Replace('${applicationId}','com.prts.dossier.review') }
         }
     }
     $manifestPath=Join-Path $ProjectRoot "$BuildRoot\AndroidManifest.xml"

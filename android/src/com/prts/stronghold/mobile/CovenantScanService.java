@@ -150,7 +150,8 @@ public class CovenantScanService extends Service {
         busy = true;
         recognizer.process(InputImage.fromBitmap(input, 0)).addOnSuccessListener(text -> {
             if (!finished && RoundScanState.matches(scanId) && !OverlayService.isExpanded() && !MainActivity.isVisible() && RoundScanState.generation() == generation) {
-                RoundScanState.observe(roundDetector.observe(text.getText(), SystemClock.elapsedRealtime()), generation);
+                int observed = roundDetector.observe(text.getText(), SystemClock.elapsedRealtime());
+                if (RoundScanState.observe(observed, generation)) SessionBridge.observe(this, observed);
             } else roundDetector.reset();
         }).addOnFailureListener(error -> { roundDetector.reset(); })
           .addOnCompleteListener(task -> { input.recycle(); busy = false; });

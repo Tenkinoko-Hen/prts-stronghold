@@ -24,7 +24,8 @@
     "asar": true,
     "electronDist": "node_modules/electron/dist",
     "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json", "!node_modules/**/*"],
+    "files": ["dist/**/*", "electron/**/*", "package.json", "!node_modules/**/*",
+      { "from": "modules/battle-report/electron", "to": "modules/battle-report/electron", "filter": ["battle-reports.cjs", "windows-runtime.cjs"] }],
     "extraResources": [{ "from": "work/windows-ocr/runtime/PRTS-OCR", "to": "ocr" }],
     "win": { "target": ["portable"], "signAndEditExecutable": false },
     "portable": { "artifactName": "PRTS-Stronghold-${version}-Windows-x64.exe" }

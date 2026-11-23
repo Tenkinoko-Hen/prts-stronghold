@@ -15,6 +15,10 @@
 
 ## 本地开发
 
+主线通过 `modules/battle-report` 嵌入[独立战报 1.0.0](https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/battle-report-v1.0.0)。首次构建及切换主线提交后，运行 `git submodule update --init modules/battle-report` 获取锁定的源码。Windows 从顶栏「战报」进入，安卓从底栏「战报」进入。
+
+战报功能在 `battle-report` 分支维护，独立包使用 `battle-report-vX.Y.Z` 标签。主线升级时，将子模块切换到所选战报标签并提交新的指针，随下一版主程序交付。
+
 使用 Node.js 22.12 或更新的受支持版本。运行 `npm ci` 安装依赖，再用 `npm run dev` 打开网页预览。`npm run lint` 检查类型，`npm run build` 生成前端产物。
 
 Windows 用 `scripts/build-windows-ocr.ps1` 准备 Python 3.12 x64 OCR 运行库。执行 `npm run build` 后运行 `pwsh -File scripts/build-windows.ps1 -Version 1.4.11`，在 `work/windows-1.4.11` 生成带图标和启动画面的便携 EXE。

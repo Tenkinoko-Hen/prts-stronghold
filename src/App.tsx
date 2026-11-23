@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import {
   META_COMPS,
   OperatorPlacement,
@@ -16,7 +16,8 @@ import { useDesktopCovenantScan } from './desktop/covenantOcr';
 import { BanPickState } from './utils/tacticalLogic';
 import './desktop/desktop.css';
 
-type ActiveView = 'tactical' | 'comps' | 'transfers' | 'covenants' | 'calculator';
+type ActiveView = 'tactical' | 'comps' | 'transfers' | 'covenants' | 'calculator' | 'reports';
+const BattleReportsView = lazy(() => import('../modules/battle-report/src/desktop/BattleReportsView'));
 
 const FAV_STORAGE_KEY = 'stronghold_fav_covenants_v1';
 const desktopAPI = window.electronAPI;
@@ -192,6 +193,8 @@ export default function App() {
           >
             叠层计算器
           </a>
+          {desktopAPI?.battleReports && <a href="#reports" aria-current={activeView === 'reports' ? 'page' : undefined}
+            className="py-1 whitespace-nowrap shrink-0" onClick={event => { event.preventDefault(); setActiveView('reports'); }}>战报</a>}
         </nav>
 
         {/* Original image library */}
@@ -270,6 +273,11 @@ export default function App() {
       )}
 
       {activeView === 'calculator' && <StackingCalculatorView />}
+      {desktopAPI?.battleReports && <div hidden={activeView !== 'reports'}>
+        <Suspense fallback={<p>正在打开战报…</p>}>
+          <BattleReportsView api={desktopAPI.battleReports} visible={activeView === 'reports'} />
+        </Suspense>
+      </div>}
 
       {/* 3. High-Resolution Original Image Lightbox Modal */}
       {lightboxImage && (

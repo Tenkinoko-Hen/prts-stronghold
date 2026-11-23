@@ -38,6 +38,18 @@ try {
     foreach($resource in $ocr.Resources) { $linkArgs += @('-R',$resource) }
     $linkArgs += @('-R',"$buildRoot\resources.zip")
     Invoke-BuildTool "$buildTools\aapt2.exe" $linkArgs
+    # 两种安装包各自保存对局，构建时把同一份原生战报代码编入当前应用。
+    $reportAndroid = Join-Path $projectRoot 'modules/battle-report/android'
+    $reportJava = Join-Path $reportAndroid 'src/com/prts/stronghold/mobile'
+    $reportPackage = ([xml](Get-Content "$reportAndroid/AndroidManifest.xml" -Raw)).manifest.package
+    $hostPackage = ([xml](Get-Content 'android/AndroidManifest.xml' -Raw)).manifest.package
+    foreach ($name in @('SessionBridge.java', 'ReportFiles.java')) {
+        $source = [IO.File]::ReadAllText((Join-Path $reportJava $name))
+        $declaration = "package $reportPackage;"
+        if (!$source.StartsWith($declaration)) { throw "战报桥接包名不匹配 $name" }
+        $adapted = "package $hostPackage;" + $source.Substring($declaration.Length)
+        [IO.File]::WriteAllText((Join-Path $projectRoot "$buildRoot/generated/$name"), $adapted, [Text.UTF8Encoding]::new($false))
+    }
     $sources = @(Get-ChildItem -LiteralPath "$projectRoot\android\src", "$buildRoot\generated" -Filter '*.java' -Recurse | Select-Object -ExpandProperty FullName)
     $javacArgs=@('-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options', '-classpath', (($androidJar + ';') + ($ocr.Jars -join ';')), '-d', "$buildRoot\classes") + $sources
     [IO.File]::WriteAllLines((Join-Path $projectRoot "$buildRoot\javac.args"), @($javacArgs | ForEach-Object { '"' + $_.Replace('\','/') + '"' }), [Text.UTF8Encoding]::new($false))

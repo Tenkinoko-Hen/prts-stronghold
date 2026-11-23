@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, net, protocol, desktopCapturer, clipboard, globalShortcut } = require('electron');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
+const { installBattleReports } = require('../modules/battle-report/electron/battle-reports.cjs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -43,8 +44,9 @@ app.whenReady().then(() => {
     return mainWindow.isAlwaysOnTop();
   });
   const scanner = installCovenantOcr({ app, mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut });
-  mainWindow.on('closed', () => scanner.dispose());
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  const reports = process.platform === 'win32' ? installBattleReports({ app, mainWindow, ipcMain }) : null;
+  mainWindow.on('closed', () => { scanner.dispose(); reports?.dispose(); });
+  mainWindow.once('ready-to-show', () => { mainWindow.show(); reports?.start(); });
   mainWindow.loadURL('prts://app/');
 });
 app.on('window-all-closed', () => app.quit());

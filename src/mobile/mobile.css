@@ -180,6 +180,7 @@
 .m-round-controls button { min-height:34px; padding:5px 10px; border-radius:7px; font-size:12px; }
 .m-round-controls .m-primary { background:#9bd7f4; color:#172f3b; border-color:#9bd7f4; border-radius:3px; }
 .m-bottom-nav { grid-template-columns:repeat(4,1fr); padding:2px 4px max(2px,env(safe-area-inset-bottom)); }
+.m-bottom-nav:has(> button:nth-child(5)) { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .m-bottom-nav button { min-height:38px; flex-direction:row; gap:5px; font-size:11px; border-radius:6px; }
 .m-bottom-nav svg { width:16px; height:16px; }
 .m-card { padding:11px; margin:8px 0; border-radius:10px; }

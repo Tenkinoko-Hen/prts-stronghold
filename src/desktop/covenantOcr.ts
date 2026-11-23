@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CovenantScan, parseCovenantScan } from '../mobile/covenantScan';
+import type { BattleReportsBridge } from '../../modules/battle-report/src/desktop/battleReports';
 
 export interface DesktopCovenantScan extends CovenantScan {
   sourceId: string;
@@ -20,7 +21,7 @@ interface DesktopOcrBridge {
 }
 declare global {
   interface Window {
-    electronAPI?: { setAlwaysOnTop(flag: boolean): Promise<boolean>; covenantOcr?: DesktopOcrBridge };
+    electronAPI?: { setAlwaysOnTop(flag: boolean): Promise<boolean>; covenantOcr?: DesktopOcrBridge; battleReports?: BattleReportsBridge };
   }
 }
 export const desktopOcr = window.electronAPI?.covenantOcr;

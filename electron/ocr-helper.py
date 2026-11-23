@@ -5,9 +5,7 @@ import json
 import sys
 import time
 
-import cv2
-import numpy as np
-from rapidocr_onnxruntime import RapidOCR
+from pathlib import Path
 
 NAMES = ["炎", "萨尔贡", "阿戈尔", "叙拉古", "卡西米尔", "维多利亚", "谢拉格", "乌萨斯", "伊比利亚", "莱塔尼亚",
          "精准", "远见", "投资人", "突袭", "不屈", "调和", "协防干员", "独行", "绝技", "聚合", "奥术", "迅捷", "灵巧", "坚守", "助力", "奇迹"]
@@ -113,4 +111,16 @@ def serve():
 
 
 if __name__ == "__main__":
-    serve()
+    if sys.argv[1:] in (["--battle-report"], ["--battle-report-check"]):
+        if not getattr(sys, "frozen", False):
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "modules/battle-report/electron"))
+        from prts_battle_core.live import self_check, serve as serve_report
+        if sys.argv[1] == "--battle-report-check":
+            self_check()
+        else:
+            serve_report()
+    else:
+        import cv2
+        import numpy as np
+        from rapidocr_onnxruntime import RapidOCR
+        serve()

@@ -1,6 +1,6 @@
 import { REPORT_ROUNDS } from '../battleReportData';
 
-export type DemoScene = 'coop_elim' | 'quick_r9' | 'second_screen' | 'settled' | 'assisting' | 'opening' | 'solo_dps' | 'hud_preview';
+export type DemoScene = 'coop_elim' | 'coop_boss' | 'quick_r9' | 'second_screen' | 'settled' | 'assisting' | 'opening' | 'solo_dps' | 'hud_preview';
 const enemies = [
   ['enemy_1002_nsabr', '士兵'], ['enemy_1009_lurker', '潜伏者'], ['enemy_1006_shield', '重装防御者'],
   ['enemy_1023_jmage', '隐形术师'], ['enemy_9034_acblk', '假想敌：影役'], ['enemy_1509_mousek', '鼠王'],
@@ -226,10 +226,11 @@ export function demoReport(scene: DemoScene) {
         },
         2: { round: 5, shop_level: 3, skill_id: 'aceffect_band_103', strategist: '森蚺·暴躁铁皮', piece_count: 0, deployed_count: 0, deployed: [], bench: [], equips: [], shop_goods: [], squad: [] },
         3: {
-          round: 7, shop_level: 5, skill_id: 'aceffect_band_107', strategist: '妮芙·溃心领域', piece_count: 5, deployed_count: 5,
+          round: 7, shop_level: 5, skill_id: 'aceffect_band_107', strategist: '妮芙·溃心领域', piece_count: 5, deployed_count: 3,
           deployed: [
             { inst_id: 31, chess_id: 'chess_char_5_05_b', char_id: 'char_2025_shu', name: '黍', tier: 5, is_golden: true },
             { inst_id: 32, chess_id: 'chess_char_4_01_b', char_id: 'char_4046_ebnhlz', name: '黑键', tier: 4, is_golden: true },
+            { inst_id: 33, chess_id: 'chess_char_5_27_a', char_id: 'char_618_acrbot', name: '“暴躁铁皮”', tier: 5, is_golden: false },
           ],
           bench: [], equips: [], shop_goods: [], squad: [],
         },
@@ -238,6 +239,77 @@ export function demoReport(scene: DemoScene) {
           deployed: [
             { inst_id: 41, chess_id: 'chess_char_4_15_b', char_id: 'char_4064_mlynar', name: '玛恩纳', tier: 4, is_golden: true },
             { inst_id: 42, chess_id: 'chess_char_6_08_a', char_id: 'char_4133_logos', name: '逻各斯', tier: 6, is_golden: false },
+          ],
+          bench: [], equips: [], shop_goods: [], squad: [],
+        },
+      },
+      deck_pool: buildDemoDeckPool(false),
+    };
+  }
+
+  if (scene === 'coop_boss') {
+    const r14Rounds: Record<number, object> = {};
+    for (let n = 1; n <= 13; n++) {
+      r14Rounds[n] = {
+        phase: 'settle',
+        self_leaks: n === 4 || n === 9 ? 1 : 0,
+        leaks: { 1: n <= 10 ? 2 : 0, 2: n === 4 || n === 9 ? 1 : 0, 3: n <= 10 ? 3 : 0, 4: 0 },
+        leaks_status: 'reported',
+        assists_status: 'reported',
+        assists_others: { 1: 0, 2: n === 8 ? 3 : 0, 3: 0, 4: n === 4 ? 1 : 0 },
+      };
+    }
+    r14Rounds[14] = {
+      phase: 'boss',
+      self_leaks: 0,
+      leaks: { 2: 0, 4: 0 },
+      leaks_status: 'reported',
+      assists_status: 'skipped',
+      boss_hp: 7437000,
+      boss_plan: { id: 'boss_1', hidden: false },
+      boss_damage: {},
+      boss_percent: { 2: 20, 4: 4 },
+      boss_status: 'unknown',
+      boss_ended: false,
+      boss_official: [
+        { player: 2, identifier: 267, damage: 3435000, char_id: 'char_618_acrbot', operator_name: '“暴躁铁皮”' },
+        { player: 4, identifier: 108, damage: 196000, char_id: 'char_180_amgoat', operator_name: '艾雅法拉' },
+        { player: 4, identifier: 61, damage: 168000, char_id: 'char_4119_wanqin', operator_name: '折光' },
+      ],
+      boss_uplink: { 2: 3435000 },
+      boss_uplink_rows: [],
+    };
+    return {
+      capture: { match: 3, round: 14, self: 2 },
+      players: { 1: '冰凌', 2: '乌尔比福的安水', 3: '补药迫害冰淇淋', 4: '几许愁' },
+      hp: { 1: 0, 2: 14, 3: 0, 4: 9 },
+      eliminated: { 1: 10, 3: 10 },
+      boss_rounds: [14, 15],
+      defeated_boss_rounds: [],
+      battle_config: { mode_id: 'mode_multi_hard', mode_name: '绝境模拟', boss_id: 'boss_1', hidden_boss_id: 'boss_8' },
+      rounds: r14Rounds,
+      spawn_plan: plans,
+      lineups: {
+        1: { round: 10, shop_level: 4, skill_id: 'aceffect_band_15', strategist: '坎诺特·利滚利', piece_count: 0, deployed_count: 0, deployed: [], bench: [], equips: [], shop_goods: [], squad: [] },
+        2: {
+          round: 14, shop_level: 5, skill_id: 'aceffect_band_103', strategist: '森蚺·暴躁铁皮', piece_count: 5, deployed_count: 5,
+          deployed: [
+            { inst_id: 21, chess_id: 'chess_char_5_27_b', char_id: 'char_618_acrbot', name: '“暴躁铁皮”', tier: 5, is_golden: true },
+            { inst_id: 22, chess_id: 'chess_char_4_15_b', char_id: 'char_4064_mlynar', name: '玛恩纳', tier: 4, is_golden: true },
+            { inst_id: 23, chess_id: 'chess_char_5_05_a', char_id: 'char_2025_shu', name: '黍', tier: 5, is_golden: false },
+            { inst_id: 24, chess_id: 'chess_char_4_01_a', char_id: 'char_4046_ebnhlz', name: '黑键', tier: 4, is_golden: false },
+            { inst_id: 25, chess_id: 'chess_char_2_06_b', char_id: 'char_237_gravel', name: '砾', tier: 2, is_golden: true },
+          ],
+          bench: [], equips: [], shop_goods: [], squad: [],
+        },
+        3: { round: 10, shop_level: 4, skill_id: 'aceffect_band_107', strategist: '妮芙·溃心领域', piece_count: 0, deployed_count: 0, deployed: [], bench: [], equips: [], shop_goods: [], squad: [] },
+        4: {
+          round: 14, shop_level: 5, skill_id: 'aceffect_band_22', strategist: '阿米娅·众志合一', piece_count: 4, deployed_count: 4,
+          deployed: [
+            { inst_id: 41, chess_id: 'chess_char_4_02_b', char_id: 'char_180_amgoat', name: '艾雅法拉', tier: 4, is_golden: true },
+            { inst_id: 42, chess_id: 'chess_char_2_01_b', char_id: 'char_4119_wanqin', name: '折光', tier: 2, is_golden: true },
+            { inst_id: 43, chess_id: 'chess_char_6_08_a', char_id: 'char_4133_logos', name: '逻各斯', tier: 6, is_golden: false },
+            { inst_id: 44, chess_id: 'chess_char_3_01_a', char_id: 'char_4047_pianst', name: '车尔尼', tier: 3, is_golden: false },
           ],
           bench: [], equips: [], shop_goods: [], squad: [],
         },

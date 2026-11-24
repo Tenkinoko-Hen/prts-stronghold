@@ -241,3 +241,21 @@ test('uplink-only round where everyone leaked infers skipped assist and counts n
   assert.equal(exportCount(r.rounds[1].net), '≥1');
   assert.equal(exportCount(r.net), '≥1');
 });
+
+test('exported document embeds inline operator avatar sprite strip, segmented Boss HP bar, and pressure SVG without external src', () => {
+  const r = summary(demoReport('coop_boss'));
+  assert.equal(r.bosses.length, 1);
+  assert.equal(r.bosses[0].operators[0].name, '“暴躁铁皮”');
+  assert.ok(r.players[1].deployed.some(u => u.name === '“暴躁铁皮”'));
+  const html = renderBattleReportHtml(r, css, STRONGHOLD_REPORT_BRAND, {
+    dataUrl: 'data:image/png;base64,AA==',
+    ids: ['enemy_1002_nsabr'],
+    opDataUrl: 'data:image/png;base64,BB==',
+    opNames: ['“暴躁铁皮”', '艾雅法拉'],
+  });
+  assert.match(html, /\.op-ico\{background-image:url\("data:image\/png;base64,BB=="\)/);
+  assert.match(html, /class="op-ico is-md" style="background-position:0% 0"/);
+  assert.match(html, /首领削血分布/);
+  assert.match(html, /各回合漏怪与协防态势/);
+  assert.doesNotMatch(html, /<script\b|<link\b|\bsrc=|https?:\/\//i);
+});

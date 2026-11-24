@@ -17,6 +17,7 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
       round: 1,
       compTitle: '',
       paceTip: '',
+      suggestedOperators: [],
     },
   };
 
@@ -146,7 +147,14 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
       : state.guide.round;
     const compTitle = typeof guidePatch.compTitle === 'string' ? guidePatch.compTitle.slice(0, 120) : state.guide.compTitle;
     const paceTip = typeof guidePatch.paceTip === 'string' ? guidePatch.paceTip.slice(0, 800) : state.guide.paceTip;
-    state = { ...state, guide: { round, compTitle, paceTip } };
+    const suggestedOperators = Array.isArray(guidePatch.suggestedOperators)
+      ? guidePatch.suggestedOperators
+          .filter(x => typeof x === 'string')
+          .map(x => x.trim().slice(0, 32))
+          .filter(Boolean)
+          .slice(0, 16)
+      : state.guide.suggestedOperators;
+    state = { ...state, guide: { round, compTitle, paceTip, suggestedOperators } };
     if (state.open) broadcast();
     return state;
   }

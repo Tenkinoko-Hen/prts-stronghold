@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { ChevronRight, Flame, Trophy } from 'lucide-react';
+import { ChevronRight, Flame, Skull, Trophy } from 'lucide-react';
 import type { BossEncounter } from '../data/bossEncounterData';
 import { REPORT_SEATS, hasBossDamage, isHiddenBossRound, reportBossRounds, type BattleReport, type BattleRound } from './battleReportData';
 import { EnemyAvatar } from './BattleReportSpawns';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { formatTelemetryTotal, isSoloMode } from './combatTelemetry';
+import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
 
 const PHASES: Record<string, string> = {
   loading: '载入', special_prep: '特殊准备', prep: '准备', self: '防守', assist: '协防', boss: 'Boss 战',
@@ -80,6 +81,126 @@ function RoundPreviewLink({ report, number, open }: { report?: BattleReport; num
 }
 
 const bossSourceLabels: Record<number, string> = { 0: '未知', 1: '干员', 2: '法术／陷阱', 3: '无攻击实例' };
+const PEER_PALETTE = ['#3698CC', '#498A9E', '#3FA67A', '#7C85B8'] as const;
+
+function bossSeatColor(seat: number, isSelf: boolean): string {
+  if (isSelf) return PRTS_CHART.ochre;
+  return PEER_PALETTE[(seat - 1) % PEER_PALETTE.length];
+}
+
+interface BossDonutSlice {
+  key: string;
+  label: string;
+  value: number;
+  color: string;
+}
+
+function BossContributionDonut({
+  slices,
+  centerValue,
+  centerSub,
+}: {
+  slices: BossDonutSlice[];
+  centerValue: string;
+  centerSub: string;
+}) {
+  const total = slices.reduce((s, d) => s + d.value, 0);
+  const r = 42;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+
+  return (
+    <svg viewBox="0 0 120 120" className="d-boss-donut-svg" role="img" aria-label={`${centerSub} ${centerValue}`}>
+      {/* Outer precision dashed reticle */}
+      <circle cx="60" cy="60" r="53" fill="none" stroke="#1f2735" strokeWidth="1" strokeDasharray="2 5" />
+      <circle cx="60" cy="60" r={r} fill="none" stroke="#181f2a" strokeWidth="11" />
+      {total > 0 && slices.map(slice => {
+        const ratio = slice.value / total;
+        const dash = Math.max(0, ratio * circ - (slices.length > 1 ? 1.5 : 0));
+        const curOffset = offset;
+        offset += ratio * circ;
+        return (
+          <circle
+            key={slice.key}
+            cx="60"
+            cy="60"
+            r={r}
+            fill="none"
+            stroke={slice.color}
+            strokeWidth="11"
+            strokeDasharray={`${dash} ${circ}`}
+            strokeDashoffset={-curOffset}
+            strokeLinecap="butt"
+            transform="rotate(-90 60 60)"
+          >
+            <title>{`${slice.label}: ${formatTelemetryTotal(slice.value)} (${leaderDigits.format(ratio * 100)}%)`}</title>
+          </circle>
+        );
+      })}
+      <text x="60" y="57" textAnchor="middle" fill={PRTS_CHART.labelStrong} fontSize="15.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+        {centerValue}
+      </text>
+      <text x="60" y="71" textAnchor="middle" fill={PRTS_CHART.labelMuted} fontSize="9.5" fontFamily={PRTS_FONT_SANS}>
+        {centerSub}
+      </text>
+    </svg>
+  );
+}
+
+function BossSeatColumnSvg({
+  rows,
+}: {
+  rows: Array<{ seat: number; label: string; damage: number; color: string; eliminated: boolean }>;
+}) {
+  const maxVal = Math.max(1, ...rows.map(r => r.damage));
+  const scale = niceTicks(maxVal, 4);
+  const w = 440;
+  const h = 148;
+  const padL = 44;
+  const padR = 14;
+  const padT = 18;
+  const padB = 26;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const slotW = plotW / Math.max(1, rows.length);
+  const barW = Math.min(40, Math.max(16, slotW * 0.44));
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="d-prts-svg d-boss-col-svg" role="img" aria-label="各席位首领伤害柱状对比">
+      {scale.ticks.map(t => {
+        const y = padT + plotH - (t / scale.top) * plotH;
+        return (
+          <g key={t}>
+            <line x1={padL} y1={y} x2={w - padR} y2={y} stroke={t === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine} strokeWidth="1" strokeDasharray={t === 0 ? undefined : '2 3'} />
+            <text x={padL - 6} y={y + 3.5} textAnchor="end" fill={PRTS_CHART.labelMuted} fontSize="9.5" fontFamily={PRTS_FONT_NUM}>
+              {formatAxisNumber(t)}
+            </text>
+          </g>
+        );
+      })}
+      {rows.map((row, idx) => {
+        const cx = padL + slotW * (idx + 0.5);
+        const bh = row.damage > 0 ? Math.max(3, (row.damage / scale.top) * plotH) : 0;
+        const y = padT + plotH - bh;
+        return (
+          <g key={row.seat} opacity={row.eliminated && row.damage <= 0 ? 0.45 : 1}>
+            {bh > 0 && (
+              <>
+                <rect x={cx - barW / 2} y={y} width={barW} height={bh} fill={row.color} rx="1" />
+                <text x={cx} y={y - 4} textAnchor="middle" fill={PRTS_CHART.labelStrong} fontSize="10" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+                  {formatTelemetryTotal(row.damage)}
+                </text>
+              </>
+            )}
+            <text x={cx} y={h - 9} textAnchor="middle" fill={PRTS_CHART.labelMuted} fontSize="10" fontFamily={PRTS_FONT_SANS}>
+              {row.label.length > 7 ? `${row.label.slice(0, 6)}…` : row.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 export function BossDamage({ report, seat: perspective = report?.self, number, onRound, reference, onPreview }: {
   report?: BattleReport; seat?: number | null; number: number; onRound(round: number): void; reference: ReactNode; onPreview(round: number): void;
@@ -92,24 +213,38 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     || Object.keys(data.bossUplink).length > 0));
   const recorded = hasBossDamage(data);
   const defeated = Boolean(report?.defeatedBossRounds.includes(number));
+  const bossMaxHp = data?.bossHp ?? null;
 
-  // Aggregate per-seat damage for visual bars (prefer server bossDamage, else official sum, else uplink)
+  // Aggregate per-seat damage (prefer server bossDamage, else official sum, else uplink)
   const seatDamages = seats.map(s => {
     const serverDmg = data?.bossDamage[s];
     const officialSum = (data?.bossOfficial ?? []).filter(h => h.seat === s).reduce((acc, h) => acc + h.damage, 0);
     const uplinkSum = data?.bossUplink[s] ?? (data?.bossUplinkRows ?? []).filter(h => h.seat === s).reduce((acc, h) => acc + h.damage, 0);
     const damage = serverDmg !== undefined ? serverDmg : (officialSum > 0 ? officialSum : (uplinkSum > 0 ? uplinkSum : null));
-    const percent = data?.bossPercent[s] ?? (damage !== null && data?.bossHp ? Math.floor((damage / data.bossHp) * 100) : null);
+    // Avoid mixing stale boss_ratio (366) with newer official rank sum when server settlement hasn't arrived
+    const hpPct = serverDmg !== undefined && data?.bossPercent[s] !== undefined
+      ? data.bossPercent[s]
+      : (damage !== null && bossMaxHp && bossMaxHp > 0 ? (damage / bossMaxHp) * 100 : data?.bossPercent[s] ?? null);
     const elimRound = report?.eliminated[s];
     const eliminated = elimRound !== undefined && number > elimRound;
-    return { seat: s, damage, percent, eliminated, elimRound };
+    const isSelf = report?.self === s;
+    return {
+      seat: s,
+      isSelf,
+      color: bossSeatColor(s, isSelf),
+      label: seatDisplayText(s, report),
+      damage,
+      hpPct,
+      eliminated,
+      elimRound,
+    };
   });
-  const teamTotalDamage = seatDamages.reduce((acc, row) => acc + (row.damage ?? 0), 0);
-  const maxSeatDamage = Math.max(1, ...seatDamages.map(row => row.damage ?? 0));
-  const bossMaxHp = data?.bossHp ?? null;
-  const bossDamagePct = bossMaxHp && bossMaxHp > 0 ? Math.min(100, (teamTotalDamage / bossMaxHp) * 100) : null;
 
-  // Aggregate operator contributions for graphical horizontal bar chart (prefer official, fallback uplink)
+  const teamTotalDamage = seatDamages.reduce((acc, row) => acc + (row.damage ?? 0), 0);
+  const bossDamagePct = bossMaxHp && bossMaxHp > 0 ? Math.min(100, (teamTotalDamage / bossMaxHp) * 100) : null;
+  const bossRemainHp = bossMaxHp !== null ? (defeated ? 0 : Math.max(0, bossMaxHp - teamTotalDamage)) : null;
+
+  // Aggregate operator contributions (prefer official, fallback uplink)
   const rawHits = data?.bossOfficial.length ? data.bossOfficial : (data?.bossUplinkRows ?? []);
   const opAggMap = new Map<string, { key: string; seat: number; name: string; identifier: number; damage: number }>();
   for (const hit of rawHits) {
@@ -126,6 +261,53 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
   const opBars = [...opAggMap.values()].sort((a, b) => b.damage - a.damage);
   const opTotal = opBars.reduce((acc, item) => acc + item.damage, 0);
   const opMax = Math.max(1, ...opBars.map(item => item.damage));
+  const opScale = niceTicks(opMax, 4);
+  const mvpOp = opBars[0] ?? null;
+
+  // Segmented Boss HP Bar slices (proportional to Boss Max HP, scaled down cleanly if overkill)
+  const rawSegTotalPct = bossMaxHp && bossMaxHp > 0
+    ? seatDamages.reduce((sum, r) => sum + ((r.damage ?? 0) > 0 ? ((r.damage ?? 0) / bossMaxHp) * 100 : 0), 0)
+    : 0;
+  const segScale = rawSegTotalPct > 100 ? 100 / rawSegTotalPct : 1;
+  const hpSegments = bossMaxHp && bossMaxHp > 0
+    ? seatDamages
+        .filter(r => (r.damage ?? 0) > 0)
+        .sort((a, b) => (b.damage ?? 0) - (a.damage ?? 0))
+        .map(r => {
+          const truePct = ((r.damage ?? 0) / bossMaxHp) * 100;
+          return { ...r, truePct, widthPct: truePct * segScale };
+        })
+    : [];
+  const usedWidthPct = defeated ? 100 : Math.min(100, hpSegments.reduce((s, seg) => s + seg.widthPct, 0));
+  const remainPct = defeated ? 0 : Math.max(0, 100 - usedWidthPct);
+
+  // Donut data: in solo mode with operator data -> operator share donut; in coop -> seat contribution donut
+  const useSoloOpDonut = solo && opBars.length > 0;
+  const donutSlices: BossDonutSlice[] = useSoloOpDonut
+    ? (() => {
+        const top: BossDonutSlice[] = opBars.slice(0, 4).map((op, i) => ({
+          key: op.key,
+          label: op.name,
+          value: op.damage,
+          color: PRTS_CHART.series[i % PRTS_CHART.series.length],
+        }));
+        const rest = opBars.slice(4).reduce((s, o) => s + o.damage, 0);
+        if (rest > 0) top.push({ key: 'rest', label: `其余 ${opBars.length - 4} 人`, value: rest, color: '#475569' });
+        return top;
+      })()
+    : seatDamages
+        .filter(r => (r.damage ?? 0) > 0)
+        .sort((a, b) => (b.damage ?? 0) - (a.damage ?? 0))
+        .map(r => ({
+          key: `seat-${r.seat}`,
+          label: r.label,
+          value: r.damage ?? 0,
+          color: r.color,
+        }));
+
+  const activeSeatRows = seatDamages.filter(r => !r.eliminated || (r.damage ?? 0) > 0);
+  const deadSeatRows = seatDamages.filter(r => r.eliminated && !(r.damage && r.damage > 0));
+  const seatColorBySeat = new Map<number, string>(seatDamages.map(r => [r.seat, r.color]));
 
   return <div className="d-boss-shell">
     <div className="d-section-head">
@@ -145,102 +327,230 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     {reference}
 
     {data && (recorded || bossMaxHp !== null || defeated) && (
-      <section className="d-boss-visual-card" aria-label={`R${number} 首领伤害可视化`}>
-        <header className="d-boss-vis-head">
-          <div className="d-boss-vis-title">
-            {defeated ? <span className="d-boss-badge is-win"><Trophy size={12} />已击败首领</span>
-              : <span className="d-boss-badge"><Flame size={12} />R{number} 首领战</span>}
-            <span className="d-muted">
-              {data.bossStatus === 'settlement' ? '已取得服务器伤害结算'
-                : data.bossEnded ? '首领阶段已结束'
-                  : data.bossStatus === 'reported' ? '实时伤害快照'
-                    : data.bossOfficial.length ? '已收到榜单，未取得服务器伤害结算'
-                      : hasBreakdown ? '本端上报口径' : '等待伤害入表'}
-              {data.bossRoundInferred ? ' · 回合按最近确认进度关联，等待场景校正' : ''}
-            </span>
-          </div>
-          <div className="d-boss-vis-totals">
-            <span>累计输出 <b>{formatTelemetryTotal(teamTotalDamage)}</b></span>
-            {bossMaxHp !== null && <span>首领血量 <b>{formatTelemetryTotal(bossMaxHp)}</b></span>}
-          </div>
-        </header>
-
-        {bossDamagePct !== null && (
-          <div className="d-boss-hp-progress">
-            <div className="d-boss-hp-labels">
-              <small><b className="d-prts-slash">//</b>首领削血进度</small>
-              <b>{defeated ? '100%（已击破）' : `${leaderDigits.format(bossDamagePct)}%`}</b>
+      <>
+        {/* Tier 1: Compact Hero KPI Strip + Multi-Seat Segmented Boss HP Bar */}
+        <section className="d-boss-hero" aria-label={`R${number} 首领削血总览`}>
+          <header className="d-boss-hero-head">
+            <div className="d-boss-vis-title">
+              {defeated ? <span className="d-boss-badge is-win"><Trophy size={12} />已击败首领</span>
+                : <span className="d-boss-badge"><Flame size={12} />R{number} 首领战</span>}
+              <span className="d-muted">
+                {data.bossStatus === 'settlement' ? '已取得服务器伤害结算'
+                  : data.bossEnded ? '首领阶段已结束'
+                    : data.bossStatus === 'reported' ? '实时伤害快照'
+                      : data.bossOfficial.length ? '已收到榜单，未取得服务器伤害结算'
+                        : hasBreakdown ? '本端上报口径' : '等待伤害入表'}
+                {data.bossRoundInferred ? ' · 回合按最近确认进度关联，等待场景校正' : ''}
+              </span>
             </div>
-            <div className="d-boss-hp-bar">
-              <span style={{ width: `${defeated ? 100 : bossDamagePct}%` }} data-win={defeated} />
-              <i className="d-hp-tick" style={{ left: '25%' }} />
-              <i className="d-hp-tick" style={{ left: '50%' }} />
-              <i className="d-hp-tick" style={{ left: '75%' }} />
+
+            <div className="d-boss-kpi-strip">
+              <div className="d-boss-kpi is-primary">
+                <small>{solo ? '累计输出' : '全队输出'}</small>
+                <b>{formatTelemetryTotal(teamTotalDamage)}</b>
+              </div>
+              {bossMaxHp !== null && (
+                <div className="d-boss-kpi">
+                  <small>首领血量</small>
+                  <b>{formatTelemetryTotal(bossMaxHp)}</b>
+                </div>
+              )}
+              {bossRemainHp !== null && (
+                <div className="d-boss-kpi">
+                  <small>首领剩余</small>
+                  <b className={defeated ? 'is-win' : 'is-alert'}>
+                    {defeated ? '已击破' : formatTelemetryTotal(bossRemainHp)}
+                  </b>
+                </div>
+              )}
+              {mvpOp && (
+                <div className="d-boss-kpi is-mvp">
+                  <small>主力输出</small>
+                  <b>
+                    {mvpOp.name}
+                    <em>{opTotal > 0 ? `${leaderDigits.format((mvpOp.damage / opTotal) * 100)}%` : ''}</em>
+                  </b>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          </header>
 
-        <div className="d-boss-seat-bars">
-          {seatDamages.map(row => {
-            const share = teamTotalDamage > 0 && row.damage !== null ? (row.damage / teamTotalDamage) * 100 : null;
-            const barW = row.damage && row.damage > 0 ? Math.max(4, (row.damage / maxSeatDamage) * 100) : 0;
-            return (
-              <div key={row.seat} className="d-boss-seat-row" data-eliminated={row.eliminated} data-self={report?.self === row.seat}>
-                <span className="d-boss-seat-who">
-                  {seatName(row.seat, report, perspective)}
-                  {row.eliminated && <small className="d-elim-inline">R{row.elimRound}阵亡</small>}
-                </span>
-                <span className="d-bar-track d-bar-axis-grid" aria-hidden="true">
-                  {barW > 0 && <i className={report?.self === row.seat ? 'is-ochre' : `seat-fill-${row.seat}`} style={{ width: `${barW}%` }} />}
-                </span>
-                <span className="d-boss-seat-nums">
-                  <b>{row.damage !== null ? formatTelemetryTotal(row.damage) : '—'}</b>
-                  <small>
-                    {row.percent !== null ? `血量 ${row.percent}%` : share !== null ? `占比 ${leaderDigits.format(share)}%` : '—'}
-                  </small>
-                </span>
+          {bossDamagePct !== null && (
+            <div className="d-boss-hp-segmented">
+              <div className="d-boss-hp-labels">
+                <small><b className="d-prts-slash">//</b>首领削血分布（按席位归因）</small>
+                <b>
+                  {defeated
+                    ? '100% · 已击破'
+                    : `已削血 ${leaderDigits.format(bossDamagePct)}% · 剩余 ${leaderDigits.format(remainPct)}%`}
+                </b>
               </div>
-            );
-          })}
-        </div>
-      </section>
-    )}
+              <div className="d-boss-seg-track" role="img" aria-label={`首领削血 ${leaderDigits.format(bossDamagePct)}%`}>
+                {hpSegments.map(seg => (
+                  <span
+                    key={seg.seat}
+                    className="d-boss-seg-fill"
+                    style={{ width: `${seg.widthPct}%`, background: seg.color }}
+                    title={`${seg.label}: ${formatTelemetryTotal(seg.damage)}（削血 ${leaderDigits.format(seg.truePct)}%）`}
+                  >
+                    {seg.widthPct >= 14 && (
+                      <em>{seg.label} {leaderDigits.format(seg.truePct)}%</em>
+                    )}
+                  </span>
+                ))}
+                {remainPct > 0 && (
+                  <span className="d-boss-seg-remain" style={{ width: `${remainPct}%` }}>
+                    {remainPct >= 14 && <em>剩余 {leaderDigits.format(remainPct)}%</em>}
+                  </span>
+                )}
+              </div>
+              <div className="d-boss-seg-ruler" aria-hidden="true">
+                <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+              </div>
+            </div>
+          )}
+        </section>
 
-    {opBars.length > 0 && (
-      <section className="d-boss-op-chart" aria-label="参战干员首领输出排行">
-        <header className="d-tele-subhead">
-          <span><b className="d-prts-slash">//</b>参战干员首领输出分布（Top {Math.min(12, opBars.length)}）</span>
-          <small>{data?.bossOfficial.length ? '源自官方榜单' : '源自本端上报'} · 合计 {formatTelemetryTotal(opTotal)}</small>
-        </header>
-        <div className="d-boss-op-rows">
-          {opBars.slice(0, 12).map((op, idx) => {
-            const pct = opTotal > 0 ? (op.damage / opTotal) * 100 : 0;
-            const w = Math.max(4, (op.damage / opMax) * 100);
-            return (
-              <div key={op.key} className="d-boss-op-row">
-                <span className="d-tele-rank">#{String(idx + 1).padStart(2, '0')}</span>
-                <CompactOperatorBadge name={op.name} size={24} />
-                <span className="d-boss-op-name">
-                  <strong>{op.name}</strong>
-                  {!solo && <small>{seatDisplayText(op.seat, report)}</small>}
-                </span>
-                <span className="d-bar-track d-bar-axis-grid" aria-hidden="true">
-                  <i className={idx === 0 ? 'is-ochre' : 'is-out'} style={{ width: `${w}%` }} />
-                </span>
-                <span className="d-boss-op-val">
-                  <b>{formatTelemetryTotal(op.damage)}</b>
-                  <small>{leaderDigits.format(pct)}%</small>
-                </span>
+        {/* Tier 2: 2-Column Complementary Multi-Chart Matrix */}
+        <div className="d-boss-charts-grid">
+          {/* Left Panel: Precision Ring Donut + Active Breakdown + Compact Eliminated Footer */}
+          <section className="d-boss-panel" aria-label={useSoloOpDonut ? '干员伤害占比环图' : '团队输出贡献环图'}>
+            <header className="d-tele-subhead">
+              <span><b className="d-prts-slash">//</b>{useSoloOpDonut ? '干员伤害占比' : '团队输出构成'}</span>
+              <small>{useSoloOpDonut ? `${opBars.length} 名干员` : `${activeSeatRows.length} 席参战`}</small>
+            </header>
+
+            <div className="d-boss-donut-wrap">
+              <BossContributionDonut
+                slices={donutSlices}
+                centerValue={
+                  defeated ? '100%'
+                    : bossDamagePct !== null ? `${leaderDigits.format(bossDamagePct)}%`
+                      : formatTelemetryTotal(teamTotalDamage)
+                }
+                centerSub={bossDamagePct !== null ? '削血进度' : '累计输出'}
+              />
+
+              <div className="d-boss-contrib-list">
+                {useSoloOpDonut ? (
+                  donutSlices.map(s => {
+                    const share = opTotal > 0 ? (s.value / opTotal) * 100 : 0;
+                    return (
+                      <div key={s.key} className="d-boss-contrib-item">
+                        <i style={{ background: s.color }} />
+                        <span className="d-boss-contrib-name">{s.label}</span>
+                        <b>{formatTelemetryTotal(s.value)}</b>
+                        <small>{leaderDigits.format(share)}%</small>
+                      </div>
+                    );
+                  })
+                ) : (
+                  activeSeatRows.map(row => {
+                    const teamShare = teamTotalDamage > 0 && row.damage !== null ? (row.damage / teamTotalDamage) * 100 : null;
+                    return (
+                      <div key={row.seat} className="d-boss-contrib-item" data-self={row.isSelf}>
+                        <i style={{ background: row.color }} />
+                        <span className="d-boss-contrib-name">{seatName(row.seat, report, perspective)}</span>
+                        <b>{row.damage !== null ? formatTelemetryTotal(row.damage) : '—'}</b>
+                        <small>
+                          {teamShare !== null ? `队 ${leaderDigits.format(teamShare)}%`
+                            : row.hpPct !== null ? `血 ${leaderDigits.format(row.hpPct)}%` : '—'}
+                        </small>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-            );
-          })}
-          <div className="d-boss-axis-scale" aria-hidden="true">
-            <span /><span /><span />
-            <div><small>0</small><small>{formatTelemetryTotal(opMax * 0.5)}</small><small>{formatTelemetryTotal(opMax)}</small></div>
-            <span />
-          </div>
+            </div>
+
+            {!solo && deadSeatRows.length > 0 && (
+              <div className="d-boss-dead-strip">
+                <span className="d-boss-dead-label"><Skull size={11} />未参战</span>
+                <div className="d-boss-dead-tags">
+                  {deadSeatRows.map(row => (
+                    <span key={row.seat} className="d-boss-dead-chip">
+                      {row.label} <small>R{row.elimRound}阵亡</small>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Right Panel: Micro-Grid Ranked Operator Chart (or Seat Column Chart fallback) */}
+          <section className="d-boss-panel" aria-label={opBars.length > 0 ? '参战干员首领输出排行' : '各席位首领伤害对比'}>
+            {opBars.length > 0 ? (
+              <>
+                <header className="d-tele-subhead">
+                  <span><b className="d-prts-slash">//</b>参战干员首领输出排行（Top {Math.min(10, opBars.length)}）</span>
+                  <small>{data.bossOfficial.length ? '源自官方榜单' : '源自本端上报'} · 合计 {formatTelemetryTotal(opTotal)}</small>
+                </header>
+
+                <div className="d-boss-op-chart-body">
+                  {opBars.slice(0, 10).map((op, idx) => {
+                    const pct = opTotal > 0 ? (op.damage / opTotal) * 100 : 0;
+                    const barW = Math.max(2.5, (op.damage / opScale.top) * 100);
+                    const barColor = solo
+                      ? PRTS_CHART.series[idx % PRTS_CHART.series.length]
+                      : (seatColorBySeat.get(op.seat) ?? (idx === 0 ? PRTS_CHART.ochre : PRTS_CHART.blue));
+                    return (
+                      <div key={op.key} className="d-boss-op-row" data-top={idx === 0}>
+                        <span className="d-tele-rank">#{String(idx + 1).padStart(2, '0')}</span>
+                        <CompactOperatorBadge name={op.name} size={24} />
+                        <span className="d-boss-op-name">
+                          <strong>{op.name}</strong>
+                          {!solo && (
+                            <small>
+                              <em className="d-seat-dot" style={{ background: barColor }} />
+                              {seatDisplayText(op.seat, report)}
+                            </small>
+                          )}
+                        </span>
+                        <span className="d-boss-grid-track" aria-hidden="true">
+                          {opScale.ticks.slice(1, -1).map(t => (
+                            <s key={t} className="d-grid-vtick" style={{ left: `${(t / opScale.top) * 100}%` }} />
+                          ))}
+                          <i className="d-boss-op-fill" style={{ width: `${barW}%`, background: barColor }} />
+                        </span>
+                        <span className="d-boss-op-val">
+                          <b>{formatTelemetryTotal(op.damage)}</b>
+                          <small>{leaderDigits.format(pct)}%</small>
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  <div className="d-boss-axis-scale" aria-hidden="true">
+                    <span /><span /><span />
+                    <div className="d-boss-axis-ticks">
+                      {opScale.ticks.map(t => (
+                        <small key={t}>{formatAxisNumber(t)}</small>
+                      ))}
+                    </div>
+                    <span />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <header className="d-tele-subhead">
+                  <span><b className="d-prts-slash">//</b>各席位首领伤害柱图</span>
+                  <small>合计 {formatTelemetryTotal(teamTotalDamage)}</small>
+                </header>
+                <BossSeatColumnSvg
+                  rows={seatDamages.map(r => ({
+                    seat: r.seat,
+                    label: r.label,
+                    damage: r.damage ?? 0,
+                    color: r.color,
+                    eliminated: r.eliminated,
+                  }))}
+                />
+              </>
+            )}
+          </section>
         </div>
-      </section>
+      </>
     )}
 
     {!recorded && <div className="d-report-empty"><span>{data?.bossEnded ? `R${number} Boss 战斗阶段已结束，但未采到伤害。`

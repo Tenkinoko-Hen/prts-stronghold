@@ -7,17 +7,25 @@ import { computeEquipOdds, computeOperatorOdds, computeWishlistSummary } from '.
 import { EquipIcon } from './EquipIcon';
 import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
 
-interface PersistedWishlist {
+export interface PersistedWishlist {
   chars: string[];
   traps: string[];
 }
 
 const wishlistMemoryCache = new Map<string, PersistedWishlist>();
-const WISHLIST_STORAGE_PREFIX = 'prts:deck-wishlist:v1:';
+export const WISHLIST_STORAGE_PREFIX = 'prts:deck-wishlist:v1:';
 
-function readPersistedWishlist(matchKey: string): PersistedWishlist {
-  const cached = wishlistMemoryCache.get(matchKey);
-  if (cached) return cached;
+export function buildDeckMatchKey(report?: BattleReport | null): string {
+  return report
+    ? `${report.match ?? 'live'}:${report.mode || 'std'}:${report.bannedCovenants.slice().sort().join(',')}`
+    : 'none';
+}
+
+export function readPersistedWishlist(matchKey: string, forceFresh = false): PersistedWishlist {
+  if (!forceFresh) {
+    const cached = wishlistMemoryCache.get(matchKey);
+    if (cached) return cached;
+  }
   try {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(WISHLIST_STORAGE_PREFIX + matchKey);
@@ -34,7 +42,9 @@ function readPersistedWishlist(matchKey: string): PersistedWishlist {
   } catch {
     // ignore storage errors
   }
-  return { chars: [], traps: [] };
+  const empty: PersistedWishlist = { chars: [], traps: [] };
+  if (forceFresh) wishlistMemoryCache.set(matchKey, empty);
+  return empty;
 }
 
 function writePersistedWishlist(matchKey: string, data: PersistedWishlist): void {
@@ -109,9 +119,7 @@ export function BattleReportDeckPool({
     ?? 1;
 
   const gridId = useId();
-  const matchKey = report
-    ? `${report.match ?? 'live'}:${report.mode || 'std'}:${report.bannedCovenants.slice().sort().join(',')}`
-    : 'none';
+  const matchKey = buildDeckMatchKey(report);
   const [manualLevel, setManualLevel] = useState<number | null>(null);
   const [wishChars, setWishChars] = useState<string[]>(() => readPersistedWishlist(matchKey).chars);
   const [wishTraps, setWishTraps] = useState<string[]>(() => readPersistedWishlist(matchKey).traps);

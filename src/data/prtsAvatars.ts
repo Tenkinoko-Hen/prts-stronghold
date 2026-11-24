@@ -403,6 +403,7 @@ const ALIAS_MAP: Record<string, string> = {
   '奇迹干员': '矩',
   '远见干员': '渡桥',
   '卡西米尔替补': '耀骑士临光',
+  '盟约·辅助干员': 'Pith',
 };
 
 export interface ResolvedOperatorAvatar {
@@ -413,33 +414,40 @@ export interface ResolvedOperatorAvatar {
 }
 
 const localAvatarUrl = (sourceUrl: string) => `/assets/avatars/${sourceUrl.split('/').at(-1)}`;
+const stripOperatorQuotes = (raw: string) => raw.replace(/["“”'‘’「」『』]/g, '').trim();
 
 /**
- * Strips parenthetical notes, star/count suffixes, and splits slash-separated combo names
+ * Strips parenthetical notes, quotation marks, star/count suffixes, and splits slash-separated combo names
  * so every operator card can render 1 or 2 crisp PRTS avatars with their canonical tier.
  */
 export function resolveOperatorAvatars(rawName: string): ResolvedOperatorAvatar[] {
   if (!rawName) return [];
 
-  if (PRTS_OPERATOR_AVATARS[rawName]) {
+  const unquoted = stripOperatorQuotes(rawName);
+  const directKey = PRTS_OPERATOR_AVATARS[rawName]
+    ? rawName
+    : PRTS_OPERATOR_AVATARS[unquoted]
+      ? unquoted
+      : null;
+  if (directKey) {
     return [
       {
         name: rawName,
-        cleanName: rawName,
-        avatarUrl: localAvatarUrl(PRTS_OPERATOR_AVATARS[rawName]),
-        canonicalTier: PRTS_OPERATOR_TIERS[rawName],
+        cleanName: directKey,
+        avatarUrl: localAvatarUrl(PRTS_OPERATOR_AVATARS[directKey]),
+        canonicalTier: PRTS_OPERATOR_TIERS[directKey],
       },
     ];
   }
 
-  if (ALIAS_MAP[rawName] && PRTS_OPERATOR_AVATARS[ALIAS_MAP[rawName]]) {
-    const mapped = ALIAS_MAP[rawName];
+  const aliasTarget = ALIAS_MAP[rawName] || ALIAS_MAP[unquoted];
+  if (aliasTarget && PRTS_OPERATOR_AVATARS[aliasTarget]) {
     return [
       {
         name: rawName,
-        cleanName: mapped,
-        avatarUrl: localAvatarUrl(PRTS_OPERATOR_AVATARS[mapped]),
-        canonicalTier: PRTS_OPERATOR_TIERS[mapped],
+        cleanName: aliasTarget,
+        avatarUrl: localAvatarUrl(PRTS_OPERATOR_AVATARS[aliasTarget]),
+        canonicalTier: PRTS_OPERATOR_TIERS[aliasTarget],
       },
     ];
   }
@@ -452,10 +460,11 @@ export function resolveOperatorAvatars(rawName: string): ResolvedOperatorAvatar[
   const results: ResolvedOperatorAvatar[] = [];
 
   for (const part of parts.slice(0, 2)) {
-    const cleaned = part
-      .replace(/（.*?）|\(.*?\)/g, '')
-      .replace(/\s*x\d+$/i, '')
-      .trim();
+    const cleaned = stripOperatorQuotes(
+      part
+        .replace(/（.*?）|\(.*?\)/g, '')
+        .replace(/\s*x\d+$/i, ''),
+    );
 
     const canonical = ALIAS_MAP[cleaned] || ALIAS_MAP[part] || cleaned;
     const url =

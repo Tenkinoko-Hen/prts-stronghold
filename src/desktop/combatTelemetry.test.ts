@@ -23,6 +23,7 @@ import {
 } from './deckPoolMath';
 import { buildSmoothSplinePath, formatAxisNumber, niceTicks } from './prtsChartKit';
 import { resolveEquipIconIndex } from './EquipIcon';
+import { resolveOperatorAvatars } from '../data/prtsAvatars';
 import { isSecondScreenActive } from '../mobile/MobileLanPanel';
 import { demoReport } from './demo/battleReportFixture';
 import { computeEffectiveDps } from '../mobile/MobileDpsEstimator';
@@ -236,6 +237,9 @@ test('coop_elim tracks eliminated seat, clean board lineup, and deck pool hyperg
   assert.notEqual(resolveEquipIconIndex('trap_1041_acarm041', '维式重锤'), undefined);
   assert.notEqual(resolveEquipIconIndex('trap_1066_acarm066', '盟约之币'), undefined);
   assert.notEqual(resolveEquipIconIndex('trap_1048_acarm048', '奥术法阵'), undefined);
+  assert.ok(resolveOperatorAvatars('“暴躁铁皮”')[0]?.avatarUrl?.includes('%E6%9A%B4%E8%BA%81%E9%93%81%E7%9A%AE'));
+  assert.ok(resolveOperatorAvatars('"暴躁铁皮"')[0]?.avatarUrl?.includes('%E6%9A%B4%E8%BA%81%E9%93%81%E7%9A%AE'));
+  assert.ok(resolveOperatorAvatars('盟约·辅助干员')[0]?.avatarUrl?.includes('Pith'));
   assert.equal(isSecondScreenActive(null), false);
   assert.equal(
     isSecondScreenActive({

@@ -96,14 +96,19 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25（新增手机默认横屏无线副屏 + 136 枚 PRTS 装备离线图标 + 牌库心仪持久化 + 承压趋势图精简，待用户确认界面后打包）
+- **最后更新**：2026-11-25（完成悬浮窗双页模式 + Boss 伤害多图组合看板 + 导出战报文档样式重构与干员头像内嵌 + 实测 2 处修复，166/166 测试通过，待用户确认界面后打包）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最近一次本地实测出包版本**：
   - Windows 便携包：`PRTS-Stronghold-1.4.22-Windows-x64.exe`（239.9 MB，SHA-256: `81e3b074…5cbca4`，已内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
   - Android 攻略随行包：`PRTS-Stronghold-1.4.13-Android.apk`（148.4 MB，SHA-256: `17d7e912…747f4`，v2/v3 签名校验通过）
-  - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`
+  - 注意：因修改了 `electron/prts_battle_core/stats.py`，下次打包 Windows `v1.4.23` 前须先执行 `scripts/build-windows-worker.ps1 -Product stronghold` 重建 `PRTS-Worker.exe`。
 - **近期已完成里程碑**：
-  - **手机专用横屏无线副屏 + PRTS Wiki 装备全图标 + 实测体验优化**（165/165 测试全绿，双产品构建通过，待确认打包）：
+  - **Boss 伤害多图组合看板 + 导出战报文档重构与干员头像内嵌 + 悬浮窗双页模式**（166/166 测试全绿，双产品构建通过，待确认打包）：
+    - `BattleReportPanels.tsx` / `battleReports.css` 重构 `BossDamage` 为 2 层互补图看板：顶部 4 格 KPI 速读 + 按席位归因分段首领削血条（修复未结算时混用旧 `boss_ratio` 导致的占比冲突）；下方双栏组合「SVG 环形占比图 + 紧凑阵亡未参战标签」与「规整刻度微网格参战干员输出排行（带头像与席位同色标识）」。
+    - `battleReportExport.ts` / `battleReportPortraits.ts` / `battleReportDocument.ts` / `battleReportDocument.css` 全面重构离线 HTML / PNG 导出文档为 PRTS × 终末地 `// 简报` 工业 BI 版式：新增离线 `data:image/png` 干员头像精灵图拼接（零外链、零 `src=`、100% 满足原 CSP 规范），覆盖席位阵容头像、Boss 干员排行与算力明细；同步新增内嵌 SVG 回合承压柱图与 Boss 分段血条/环形图组合。
+    - `HudStripApp.tsx` 普通波次升级为解锁态可切换双页（`牌池+出怪` ↔ `队友态势`），自动记忆偏好并锁定穿透态保持所选页；跨窗口监听 `localStorage` 同步「当局牌库」心仪目标（无心仪时自动追踪 `hud.syncGuide` 同步的当前阵容核心干员），实时显示余量/单刷率/`在售`/红警`池空` + 带头像本波/下波出怪预告；首领战自动切参战干员伤害条 + DPS。
+    - 修复 `electron/prts_battle_core/stats.py` `deployed_count` 混入装备/陷阱坐标导致 `在场 > 持有` 的溢出 bug，以及 `src/data/prtsAvatars.ts` `resolveOperatorAvatars` 未剥离引号导致 `“暴躁铁皮”` 显示文字回退的问题（补齐双端回归测试）。
+  - **手机专用横屏无线副屏 + PRTS Wiki 装备全图标 + 实测体验优化**（`bb9f2ae`，165/165 测试全绿，双产品构建通过）：
     - 安卓原生新增 `PRTSDisplay.setSecondScreenMode` 桥接（`MainActivity.java` / `GuideWebView.java` / `LanSyncBridge.java`）：配对连接电脑后自动收起悬浮窗并切入全屏沉浸横屏 + 屏幕常亮，断开即自动恢复竖屏回到手机攻略界面；前端新建 `MobileSecondScreen.tsx` / `secondScreen.css`（支持 `态势总览` / `阵容攻略` / `当局牌库` / `战报兜底` / `算力/Boss` 自由切换及待开局态）；`lan-sync.cjs` 局末保留最后战报防白屏。
     - 离线合入 PRTS Wiki 全部 136 枚卫戍协议道具官方图标（`src/desktop/equipPortraits.png` + `equipPortraits.json` + `EquipIcon.tsx`），65/65 商店装备 100% 匹配。
     - 修复 `BattleReportDeckPool.tsx` 切页重置心仪干员/装备问题（按对局键持久化，新局自动重置）。

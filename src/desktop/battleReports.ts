@@ -53,13 +53,14 @@ export interface HudOverlayState {
     round: number;
     compTitle: string;
     paceTip: string;
+    suggestedOperators?: string[];
   };
 }
 export interface HudOverlayBridge {
   getState(): Promise<HudOverlayState>;
   setOpen(flag: boolean): Promise<HudOverlayState>;
   setLocked(locked: boolean): Promise<HudOverlayState>;
-  syncGuide(guide: { round?: number; compTitle?: string; paceTip?: string }): Promise<HudOverlayState>;
+  syncGuide(guide: { round?: number; compTitle?: string; paceTip?: string; suggestedOperators?: string[] }): Promise<HudOverlayState>;
   onState(callback: (state: HudOverlayState) => void): () => void;
 }
 

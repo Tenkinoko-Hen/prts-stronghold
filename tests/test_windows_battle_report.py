@@ -1072,13 +1072,15 @@ class CombatMeterAndInspectorTests(unittest.TestCase):
                 ],
             },
             'shops': [
-                {'seat': 1, 'round': 5, 'shop_level': 4, 'skill_id': 'aceffect_band_22', 'pieces': {10: 4}, 'positions': {10: 3}, 'equips': {20: 311}, 'traps': {}, 'shop': [{'slot': 0, 'price': 2, 'chess_id': 4, 'frozen': 0}]},
+                {'seat': 1, 'round': 5, 'shop_level': 4, 'skill_id': 'aceffect_band_22', 'pieces': {10: 4}, 'positions': {10: 3, 20: 5, 999: 8}, 'equips': {20: 311}, 'traps': {}, 'shop': [{'slot': 0, 'price': 2, 'chess_id': 4, 'frozen': 0}]},
                 {'seat': 2, 'round': 5, 'shop_level': 4, 'skill_id': 'aceffect_band_22', 'pieces': {11: 5}, 'positions': {11: 3}, 'equips': {}, 'traps': {}, 'shop': []},
             ],
             'player_status': {1: {'hp': 10, 'finished': True}, 2: {'hp': 5, 'finished': True}, 3: {'hp': 15, 'finished': True}, 4: {'hp': 20, 'finished': True}},
         })
         snap_alive = analyzer.snapshot()
         self.assertEqual(snap_alive['lineups'][1]['strategist'], '阿米娅·众志合一')
+        self.assertEqual(snap_alive['lineups'][1]['piece_count'], 1)
+        self.assertEqual(snap_alive['lineups'][1]['deployed_count'], 1)
         self.assertEqual(len(snap_alive['lineups'][1]['deployed']), 1)
         self.assertEqual(snap_alive['lineups'][1]['deployed'][0]['name'], '黑键')
         self.assertEqual(snap_alive['lineups'][1]['equips'][0]['name'], '维式重锤')

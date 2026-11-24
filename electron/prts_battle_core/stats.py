@@ -208,13 +208,14 @@ class MatchStats:
             traps = dict(shop.get("traps") or {})
             goods = list(shop.get("shop") or ())
             skill_id = str(shop.get("skill_id") or "")
+            deployed_piece_count = sum(1 for inst_id in pieces if inst_id in positions)
             summary = {
                 "round": int(round_no) if isinstance(round_no, int) and 1 <= round_no <= 15 else self.current_round,
                 "shop_level": int(shop.get("shop_level") or 0),
                 "skill_id": skill_id,
                 "strategist": resolve_strategist_name(skill_id),
                 "piece_count": len(pieces),
-                "deployed_count": len(positions),
+                "deployed_count": deployed_piece_count,
                 "pieces": pieces,
                 "positions": positions,
                 "equips": equips,
@@ -918,8 +919,8 @@ class MatchStats:
                 "shop_level": loadout.get("shop_level") or None,
                 "skill_id": loadout.get("skill_id") or "",
                 "strategist": loadout.get("strategist") or "",
-                "piece_count": loadout.get("piece_count", 0),
-                "deployed_count": loadout.get("deployed_count", 0),
+                "piece_count": len(deployed) + len(bench),
+                "deployed_count": len(deployed),
                 "deployed": deployed,
                 "bench": bench,
                 "equips": seat_equips,

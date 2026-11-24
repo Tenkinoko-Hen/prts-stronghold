@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Calculator, Cpu, Grid, Images, Pin, Repeat2, Smartphone } from 'lucide-react';
 import {
   META_COMPS,
@@ -172,6 +172,18 @@ export default function App() {
     };
   }, []);
 
+  const suggestedOperatorNames = useMemo(
+    () => [
+      ...new Set(
+        activeComp.phases.flatMap(p => [
+          ...p.fieldOperators.map(o => o.name),
+          ...p.benchOperators.map(o => o.name),
+        ]),
+      ),
+    ],
+    [activeComp],
+  );
+
   useEffect(() => {
     const pace = getRecommendedPaceForRound(activeComp, currentRound);
     const fullAction = pace.currentAction || activeComp.strategistTip;
@@ -180,6 +192,7 @@ export default function App() {
       round: currentRound,
       compTitle: activeComp.title,
       paceTip,
+      suggestedOperators: suggestedOperatorNames,
     }).catch(() => {});
     void desktopAPI?.lanSync?.syncGuide({
       bannedCovenants: banState.bannedCovenants,
@@ -188,7 +201,7 @@ export default function App() {
       compTitle: activeComp.title,
       paceTip,
     }).catch(() => {});
-  }, [activeComp, banState.bannedCovenants, currentRound, selectedCompId]);
+  }, [activeComp, banState.bannedCovenants, currentRound, selectedCompId, suggestedOperatorNames]);
 
   const telemetryTone = banSync.npcapInstalled === false ? 'warn'
     : banSync.status === 'listening' ? 'live'
@@ -355,14 +368,7 @@ export default function App() {
               api={desktopAPI.battleReports}
               visible={activeDomain === 'reports'}
               compTitle={activeComp.title}
-              suggestedOperatorNames={[
-                ...new Set(
-                  activeComp.phases.flatMap(p => [
-                    ...p.fieldOperators.map(o => o.name),
-                    ...p.benchOperators.map(o => o.name),
-                  ]),
-                ),
-              ]}
+              suggestedOperatorNames={suggestedOperatorNames}
               suggestedEquipNames={activeComp.equipmentTips}
             />
           </Suspense>

@@ -132,7 +132,33 @@ function describeBoss(row: BattleRound, report: BattleReport) {
       source: official.length ? '榜单明细' : local !== undefined ? '本端上报' : row.bossPercent[seat] !== undefined ? '仅血量比例' : '未记录' };
   });
   const total = sumMetrics(seats.map(s => s.damage));
+  const rawHits = row.bossOfficial.length ? row.bossOfficial : row.bossUplinkRows;
+  const opMap = new Map<string, { name: string; seat: number; damage: number }>();
+  for (const hit of rawHits) {
+    if (hit.damage <= 0) continue;
+    const key = `${hit.seat}:${hit.charId || hit.identifier}`;
+    const name = hit.operatorName || `干员 #${hit.identifier}`;
+    const prev = opMap.get(key);
+    if (!prev) opMap.set(key, { name, seat: hit.seat, damage: hit.damage });
+    else prev.damage += hit.damage;
+  }
+  const opList = [...opMap.values()].sort((a, b) => b.damage - a.damage);
+  const opTotal = sum(opList.map(o => o.damage));
+  const operators = opList.slice(0, 8).map(op => {
+    const share = opTotal > 0 ? (op.damage / opTotal) * 100 : 0;
+    return {
+      name: op.name,
+      seat: op.seat,
+      damage: op.damage,
+      damageText: formatTelemetryTotal(op.damage),
+      share,
+      shareText: `${ratio.format(share)}%`,
+    };
+  });
   return { number, name: leader?.name ?? '未识别首领', inferred: row.bossRoundInferred, total,
+    bossHp: row.bossHp ?? null,
+    defeated: report.defeatedBossRounds.includes(number),
+    operators,
     seats: seats.map(s => {
       // 采集字段 bossPercent 的分母是 Boss 血量，不是四人总伤。
       const share = total && !total.quality && s.damage ? (total.value ? s.damage.value / total.value * 100 : 0) : null;
@@ -164,10 +190,20 @@ export function summarizeBattleReport(
       .map(row => row.lanes[i]);
     const confirmed = activeLanes.filter(lane => lane.leaks && !lane.leaks.quality);
     const clean = confirmed.filter(lane => lane.leaks!.value === 0).length;
+    const lineup = report.lineups[seat];
+    const deployed = [...(lineup?.deployed ?? [])]
+      .sort((a, b) => Number(b.isGolden) - Number(a.isGolden) || b.tier - a.tier)
+      .slice(0, 6)
+      .map(u => ({ name: u.name, isGolden: u.isGolden }));
     return { seat, name: report.names[seat] || '未记录昵称', self: seat === report.self,
       eliminatedRound: elimRound,
+      hp: report.hp[seat] ?? null,
+      shopLevel: lineup?.shopLevel ?? null,
+      strategist: lineup?.strategist || '',
+      deployed,
       leaks: sumMetrics(activeLanes.map(lane => lane.leaks)),
       helps: sumMetrics(activeLanes.map(lane => lane.helps)), boss: sumMetrics(bosses.map(boss => boss.seats[i].damage)),
+      cleanPct: confirmed.length ? (clean / confirmed.length) * 100 : null,
       cleanRatio: confirmed.length ? `${ratio.format(clean / confirmed.length * 100)}%（${clean}/${confirmed.length}）` : '—' };
   });
   const most = Math.max(...players.map(p => p.helps?.value ?? 0));
@@ -200,7 +236,7 @@ export function summarizeBattleReport(
   const title = soloStage
     ? `${report.difficulty || '单人作战关卡'} · 算力遥测战报`
     : '卫戍协议 · 局内详情战报';
-  return { title, name: entry.label, start: localTime(new Date(entry.seenAt)), exported: localTime(at),
+  return { title, name: entry.label, difficulty: report.difficulty || '', start: localTime(new Date(entry.seenAt)), exported: localTime(at),
     filename: `${brand.exportPrefix}_${safeName}_${year}${month}${day}-${hour}${minute}`, rounds, bosses, hasPartial,
     solo, soloStage, telemetryOperators,
     players: players.map(p => ({ ...p, top: most > 0 && p.helps?.value === most ? (allHelpsKnown ? '协防最多' : '已记录协防最多') : '' })),

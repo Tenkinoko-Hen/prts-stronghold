@@ -11,6 +11,7 @@ import './battleReportDemo.css';
 
 const scenes: Record<DemoScene, string> = {
   coop_elim: '多人淘汰+牌库',
+  coop_boss: '多人R14 Boss组合图',
   quick_r9: '极速R9 Boss+图表',
   second_screen: '手机横屏副屏',
   hud_preview: '悬浮窗预览',
@@ -93,9 +94,9 @@ export default function BattleReportDemo() {
           </div>
         </main>
       ) : scene === 'hud_preview' ? (
-        <main style={{ display: 'grid', gap: '20px', padding: '24px', background: '#0b0e14', minHeight: '100%' }}>
+        <main style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(456px, 1fr))', alignContent: 'start', gap: '18px 22px', padding: '20px 24px', background: '#0b0e14', minHeight: '100%' }}>
           <div>
-            <h3 style={{ margin: '0 0 8px', fontSize: '13px', color: '#ffe600' }}>① Boss 战悬浮窗（440×176 克制尺寸 · 全量攻略文本 + 参战干员当前回合输出/DPS 统一平滑向下滚动）</h3>
+            <h3 style={{ margin: '0 0 8px', fontSize: '12.5px', color: '#ffe600' }}>① Boss 战悬浮窗（440×176 · 自动切参战干员头像 + 伤害条 + DPS）</h3>
             <HudStripApp
               previewState={{
                 open: true,
@@ -107,14 +108,36 @@ export default function BattleReportDemo() {
                 guide: {
                   round: 9,
                   compTitle: '森蚺沙砾机 · 不屈卡西',
-                  paceTip: '推荐 5 本 · 资金够再升五本，优先补齐乌啾、奥尔佳、玛恩纳与黑键；若本轮经济不足可顺延一回合，先锁核心输出装备（高能瞄准镜 / 维式重锤）并预留首领战前排抗伤站位。',
+                  paceTip: '推荐 5 本 · 资金够再升五本，优先补齐乌啾、奥尔佳、玛恩纳与黑键；若本轮经济不足可顺延一回合，先锁核心输出装备并预留首领战前排抗伤站位。',
+                  suggestedOperators: ['黑键', '逻各斯', '玛恩纳', '车尔尼', '黍'],
                 },
               }}
             />
           </div>
           <div>
-            <h3 style={{ margin: '0 0 8px', fontSize: '13px', color: '#00e5ff' }}>② 普通回合悬浮窗（锁定鼠标点击穿透状态 · 实时展示本路漏怪/血量/在场干员）</h3>
+            <h3 style={{ margin: '0 0 8px', fontSize: '12.5px', color: '#3698cc' }}>② 普通回合 · 页 1「牌池+出怪」（解锁态可点击切页 · 核心余量/在售/池空红警 + 本波出怪）</h3>
             <HudStripApp
+              initialPage="intel"
+              previewState={{
+                open: true,
+                locked: false,
+                shortcut: 'Ctrl+Shift+F10',
+                shortcutAvailable: true,
+                status: 'listening',
+                report: demoReport('coop_elim'),
+                guide: {
+                  round: 7,
+                  compTitle: '莱塔尼亚奥术核心',
+                  paceTip: '推荐 4 本 · 四本搜黑键与车尔尼三连，顺带拿玛恩纳补清杂；2号队友已淘汰，留技能帮 3 号位兜底。',
+                  suggestedOperators: ['黑键', '玛恩纳', '维什戴尔', '黍', '车尔尼', '逻各斯'],
+                },
+              }}
+            />
+          </div>
+          <div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '12.5px', color: '#d8bf4b' }}>③ 普通回合 · 页 2「队友态势」（锁定穿透态 · 四席血量/本数/淘汰灰态 + 在场干员含“暴躁铁皮”）</h3>
+            <HudStripApp
+              initialPage="peers"
               previewState={{
                 open: true,
                 locked: true,
@@ -125,7 +148,8 @@ export default function BattleReportDemo() {
                 guide: {
                   round: 7,
                   compTitle: '莱塔尼亚奥术核心',
-                  paceTip: '推荐 4 本 · 四本搜黑键与车尔尼三连，顺带拿玛恩纳补清杂；2号队友已淘汰，注意留技能帮 3 号位兜底右路高威胁术师。',
+                  paceTip: '推荐 4 本 · 四本搜黑键与车尔尼三连，顺带拿玛恩纳补清杂；2号队友已淘汰，留技能帮 3 号位兜底。',
+                  suggestedOperators: ['黑键', '玛恩纳', '维什戴尔', '黍', '车尔尼', '逻各斯'],
                 },
               }}
             />

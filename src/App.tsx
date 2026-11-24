@@ -174,7 +174,8 @@ export default function App() {
 
   useEffect(() => {
     const pace = getRecommendedPaceForRound(activeComp, currentRound);
-    const paceTip = pace.currentAction || activeComp.strategistTip;
+    const fullAction = pace.currentAction || activeComp.strategistTip;
+    const paceTip = `推荐 ${pace.recommendedTier} 本 · ${fullAction}`;
     void desktopAPI?.hud?.syncGuide({
       round: currentRound,
       compTitle: activeComp.title,
@@ -350,7 +351,20 @@ export default function App() {
       {desktopAPI?.battleReports && (
         <div hidden={activeDomain !== 'reports'}>
           <Suspense fallback={activeDomain === 'reports' && <main className="desktop-page d-muted">正在打开战报…</main>}>
-            <BattleReportsView api={desktopAPI.battleReports} visible={activeDomain === 'reports'} />
+            <BattleReportsView
+              api={desktopAPI.battleReports}
+              visible={activeDomain === 'reports'}
+              compTitle={activeComp.title}
+              suggestedOperatorNames={[
+                ...new Set(
+                  activeComp.phases.flatMap(p => [
+                    ...p.fieldOperators.map(o => o.name),
+                    ...p.benchOperators.map(o => o.name),
+                  ]),
+                ),
+              ]}
+              suggestedEquipNames={activeComp.equipmentTips}
+            />
           </Suspense>
         </div>
       )}

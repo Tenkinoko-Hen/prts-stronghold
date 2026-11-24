@@ -244,7 +244,14 @@ def _preparation(reader: _Reader, shops=None) -> tuple:
         inst, = reader.read('i')
         reader.ints()
         pieces[inst] = reader.read('HBBB')[0]
-    _skip(reader, (('list', _EQUIP_OR_TRAP), ('list', _EQUIP_OR_TRAP)))
+    equips = {}
+    for _ in range(reader.count()):
+        inst, chess_ident = reader.read('iH')
+        equips[inst] = chess_ident
+    traps = {}
+    for _ in range(reader.count()):
+        inst, chess_ident = reader.read('iH')
+        traps[inst] = chess_ident
     positions = {}
     for _ in range(reader.count()):
         inst, position, _, _ = reader.read('iiBB')
@@ -262,7 +269,7 @@ def _preparation(reader: _Reader, shops=None) -> tuple:
     skill_id = reader.string()
     reader.take(13)
     if shops is not None:
-        shops.append(dict(seat=player, round=number, shop_level=level, refresh_seq=sequence, shop=goods, pieces=pieces, positions=positions, effects=effects, goods_type=goods_type, special_refresh=special, skill_id=skill_id, miracle_inactive=[bond.hex() for bond in bonds if bond[5] == 17] == ['00000000001100']))
+        shops.append(dict(seat=player, round=number, shop_level=level, refresh_seq=sequence, shop=goods, pieces=pieces, equips=equips, traps=traps, positions=positions, effects=effects, goods_type=goods_type, special_refresh=special, skill_id=skill_id, miracle_inactive=[bond.hex() for bond in bonds if bond[5] == 17] == ['00000000001100']))
     return (player, hp, number, tuple(enemies), effects)
 def _boss_round(reader: _Reader) -> dict:
     hidden = reader.boolean()
@@ -304,12 +311,15 @@ def _scene(reader: _Reader, header: tuple[int, int] | None = None) -> dict:
     last_hp_cost = dict((reader.read('Bh') for _ in range(reader.count())))
     boss_record_rounds = []
     defeated_boss_rounds = []
+    boss_records_raw = []
     for _ in range(reader.count()):
         reader.take(1)
         for _ in range(reader.count()):
             reader.take(reader.count())
             defeated = reader.boolean()
-            boss_round = 15 if reader.boolean() else 14
+            is_hidden = reader.boolean()
+            boss_records_raw.append((is_hidden, defeated))
+            boss_round = 15 if is_hidden else 14
             boss_record_rounds.append(boss_round)
             if defeated:
                 defeated_boss_rounds.append(boss_round)
@@ -330,12 +340,14 @@ def _scene(reader: _Reader, header: tuple[int, int] | None = None) -> dict:
         'last_hp_cost': last_hp_cost,
         'boss_record_rounds': tuple(boss_record_rounds),
         'defeated_boss_rounds': tuple(defeated_boss_rounds),
+        'boss_records_raw': tuple(boss_records_raw),
         'boss_hp': boss_hp,
         'spawn_preview': spawn_preview,
         'preparations': preparations,
         'global_effects': global_effects,
         'shops': shops,
-        'boss_plan': next((plan for plan in boss_rounds if plan['hidden'] == (round_number == 15)), None),
+        'boss_plan': next((plan for plan in boss_rounds if plan['hidden'] == (round_number == 15)), boss_rounds[0] if boss_rounds else None),
+        'boss_plans': boss_rounds,
         'spawn_groups': spawn_groups,
         'boss_spawns': tuple(boss_spawns),
         'escaped_details': escaped_enemies,

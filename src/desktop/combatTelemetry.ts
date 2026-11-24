@@ -78,6 +78,38 @@ export interface SquadSlot {
   isBanned: boolean;
 }
 
+export interface PieceUnit {
+  instId: number;
+  chessId: string;
+  charId: string;
+  name: string;
+  tier: number;
+  isGolden: boolean;
+}
+
+export interface EquipUnit {
+  instId: number;
+  identifier: number;
+  chessId: string;
+  trapId: string;
+  name: string;
+  tier: number;
+  isGolden: boolean;
+  itemType: string;
+}
+
+export interface ShopGood {
+  kind: 'operator' | 'equip';
+  slot: number;
+  price: number;
+  frozen: boolean;
+  charId?: string;
+  trapId?: string;
+  chessId?: string;
+  name: string;
+  tier: number;
+}
+
 export interface SeatLineup {
   seat: number;
   round: number | null;
@@ -86,7 +118,59 @@ export interface SeatLineup {
   strategist: string;
   pieceCount: number;
   deployedCount: number;
+  deployed: PieceUnit[];
+  bench: PieceUnit[];
+  equips: EquipUnit[];
+  shopGoods: ShopGood[];
   squad: SquadSlot[];
+}
+
+export interface TimelinePoint {
+  t: number;
+  dps: number;
+  total: number;
+}
+
+export interface DeckPoolOperator {
+  charId: string;
+  name: string;
+  tier: number;
+  covenants: string[];
+  totalCopies: number;
+  takenBy: Record<number, number>;
+  takenTotal: number;
+  remaining: number;
+  inShopSeats: number[];
+}
+
+export interface DeckPoolEquip {
+  trapId: string;
+  chessId: string;
+  name: string;
+  tier: number;
+  itemType: string;
+  giveBondId: string;
+  takenBy: Record<number, number>;
+  takenTotal: number;
+  inShopSeats: number[];
+}
+
+export interface DeckPoolTierSummary {
+  tier: number;
+  operatorKinds: number;
+  totalCopies: number;
+  takenCopies: number;
+  remainingCopies: number;
+  equipKinds: number;
+}
+
+export interface DeckPoolSnapshot {
+  modeId: string;
+  isSingle: boolean;
+  shopSlots: Record<number, { char: number; item: number; upgradePrice: number }>;
+  tierSummary: DeckPoolTierSummary[];
+  operators: DeckPoolOperator[];
+  equips: DeckPoolEquip[];
 }
 
 export interface CombatTelemetrySnapshot {
@@ -103,6 +187,7 @@ export interface CombatTelemetrySnapshot {
   operators: OperatorTelemetry[];
   stageDevices: StageDeviceTelemetry[];
   enemyPool: EnemyPoolTelemetry | null;
+  timeline: TimelinePoint[];
   rounds: Record<number, CombatTelemetrySnapshot>;
 }
 
@@ -233,6 +318,14 @@ export function readCombatTelemetry(raw: unknown, allowNested = true): CombatTel
   const operators = asArr(obj.operators).flatMap(item => readOperator(item) ?? []);
   const stageDevices = asArr(obj.stage_devices).flatMap(item => readDevice(item) ?? []);
   const enemyPool = readEnemyPool(obj.enemy_pool);
+  const timeline: TimelinePoint[] = asArr(obj.timeline).flatMap(item => {
+    const pt = asObj(item);
+    const t = asNum(pt?.t);
+    const dps = asNum(pt?.dps);
+    const total = asNum(pt?.total);
+    if (t === null || dps === null || total === null) return [];
+    return [{ t, dps, total }];
+  });
   const roundsObj = allowNested ? asObj(obj.rounds) : null;
   const rounds: Record<number, CombatTelemetrySnapshot> = {};
   if (roundsObj) {
@@ -262,8 +355,63 @@ export function readCombatTelemetry(raw: unknown, allowNested = true): CombatTel
     operators,
     stageDevices,
     enemyPool,
+    timeline,
     rounds,
   };
+}
+
+function readPieces(raw: unknown): PieceUnit[] {
+  return asArr(raw).flatMap(item => {
+    const row = asObj(item);
+    const charId = asStr(row?.char_id);
+    if (!row || !charId) return [];
+    return [{
+      instId: Math.trunc(asNum(row.inst_id) ?? 0),
+      chessId: asStr(row.chess_id),
+      charId,
+      name: asStr(row.name) || charId,
+      tier: Math.trunc(asNum(row.tier) ?? 0),
+      isGolden: row.is_golden === true,
+    }];
+  });
+}
+
+function readEquips(raw: unknown): EquipUnit[] {
+  return asArr(raw).flatMap(item => {
+    const row = asObj(item);
+    const name = asStr(row?.name);
+    if (!row || !name) return [];
+    return [{
+      instId: Math.trunc(asNum(row.inst_id) ?? 0),
+      identifier: Math.trunc(asNum(row.identifier) ?? 0),
+      chessId: asStr(row.chess_id),
+      trapId: asStr(row.trap_id),
+      name,
+      tier: Math.trunc(asNum(row.tier) ?? 0),
+      isGolden: row.is_golden === true,
+      itemType: asStr(row.item_type) || 'EQUIP',
+    }];
+  });
+}
+
+function readShopGoods(raw: unknown): ShopGood[] {
+  return asArr(raw).flatMap(item => {
+    const row = asObj(item);
+    const name = asStr(row?.name);
+    if (!row || !name) return [];
+    const kind = row.kind === 'equip' ? 'equip' : 'operator';
+    return [{
+      kind,
+      slot: Math.trunc(asNum(row.slot) ?? 0),
+      price: Math.trunc(asNum(row.price) ?? 0),
+      frozen: row.frozen === true,
+      ...(asStr(row.char_id) ? { charId: asStr(row.char_id) } : {}),
+      ...(asStr(row.trap_id) ? { trapId: asStr(row.trap_id) } : {}),
+      ...(asStr(row.chess_id) ? { chessId: asStr(row.chess_id) } : {}),
+      name,
+      tier: Math.trunc(asNum(row.tier) ?? 0),
+    }];
+  });
 }
 
 export function readSeatLineups(raw: unknown): Record<number, SeatLineup> {
@@ -295,10 +443,107 @@ export function readSeatLineups(raw: unknown): Record<number, SeatLineup> {
       strategist: asStr(entry.strategist),
       pieceCount: Math.trunc(asNum(entry.piece_count) ?? 0),
       deployedCount: Math.trunc(asNum(entry.deployed_count) ?? 0),
+      deployed: readPieces(entry.deployed),
+      bench: readPieces(entry.bench),
+      equips: readEquips(entry.equips),
+      shopGoods: readShopGoods(entry.shop_goods),
       squad,
     };
   }
   return result;
+}
+
+function readSeatCountMap(raw: unknown): Record<number, number> {
+  const obj = asObj(raw);
+  if (!obj) return {};
+  const out: Record<number, number> = {};
+  for (const s of [1, 2, 3, 4]) {
+    const n = asNum(obj[s] ?? obj[String(s)]);
+    if (n !== null && n > 0) out[s] = Math.trunc(n);
+  }
+  return out;
+}
+
+export function readDeckPool(raw: unknown): DeckPoolSnapshot | null {
+  const obj = asObj(raw);
+  if (!obj) return null;
+  const operators: DeckPoolOperator[] = asArr(obj.operators).flatMap(item => {
+    const row = asObj(item);
+    const charId = asStr(row?.char_id);
+    if (!row || !charId) return [];
+    const tier = Math.trunc(asNum(row.tier) ?? 0);
+    if (tier < 1 || tier > 6) return [];
+    const totalCopies = Math.trunc(asNum(row.total_copies) ?? 0);
+    const takenTotal = Math.trunc(asNum(row.taken_total) ?? 0);
+    const remaining = Math.trunc(asNum(row.remaining) ?? Math.max(0, totalCopies - takenTotal));
+    return [{
+      charId,
+      name: asStr(row.name) || charId,
+      tier,
+      covenants: mapBannedBondsToCovenants(row.bonds),
+      totalCopies,
+      takenBy: readSeatCountMap(row.taken_by),
+      takenTotal,
+      remaining,
+      inShopSeats: asArr(row.in_shop_seats).flatMap(v => {
+        const s = asSeat(v);
+        return s === null ? [] : [s];
+      }),
+    }];
+  });
+  const equips: DeckPoolEquip[] = asArr(obj.equips).flatMap(item => {
+    const row = asObj(item);
+    const trapId = asStr(row?.trap_id);
+    if (!row || !trapId) return [];
+    const tier = Math.trunc(asNum(row.tier) ?? 0);
+    if (tier < 1 || tier > 6) return [];
+    return [{
+      trapId,
+      chessId: asStr(row.chess_id),
+      name: asStr(row.name) || trapId,
+      tier,
+      itemType: asStr(row.item_type) || 'EQUIP',
+      giveBondId: asStr(row.give_bond_id),
+      takenBy: readSeatCountMap(row.taken_by),
+      takenTotal: Math.trunc(asNum(row.taken_total) ?? 0),
+      inShopSeats: asArr(row.in_shop_seats).flatMap(v => {
+        const s = asSeat(v);
+        return s === null ? [] : [s];
+      }),
+    }];
+  });
+  if (!operators.length && !equips.length) return null;
+  const slotsObj = asObj(obj.shop_slots);
+  const shopSlots: DeckPoolSnapshot['shopSlots'] = {};
+  for (let lv = 1; lv <= 6; lv++) {
+    const s = asObj(slotsObj?.[lv] ?? slotsObj?.[String(lv)]);
+    shopSlots[lv] = {
+      char: Math.trunc(asNum(s?.char) ?? (lv === 1 ? 3 : lv <= 3 ? 4 : 5)),
+      item: Math.trunc(asNum(s?.item) ?? 1),
+      upgradePrice: Math.trunc(asNum(s?.upgrade_price) ?? 0),
+    };
+  }
+  const tierSummary: DeckPoolTierSummary[] = asArr(obj.tier_summary).flatMap(item => {
+    const row = asObj(item);
+    const tier = Math.trunc(asNum(row?.tier) ?? 0);
+    if (!row || tier < 1 || tier > 6) return [];
+    return [{
+      tier,
+      operatorKinds: Math.trunc(asNum(row.operator_kinds) ?? 0),
+      totalCopies: Math.trunc(asNum(row.total_copies) ?? 0),
+      takenCopies: Math.trunc(asNum(row.taken_copies) ?? 0),
+      remainingCopies: Math.trunc(asNum(row.remaining_copies) ?? 0),
+      equipKinds: Math.trunc(asNum(row.equip_kinds) ?? 0),
+    }];
+  });
+  return {
+    modeId: asStr(obj.mode_id),
+    isSingle: obj.is_single === true,
+    shopSlots,
+    tierSummary,
+    operators,
+    equips,
+  };
 }
 
 export function operatorRateForCaliber(

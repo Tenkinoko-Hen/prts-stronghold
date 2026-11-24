@@ -260,7 +260,7 @@ function installLanSync({ mainWindow, ipcMain, product }) {
           ? guidePatch.compTitle.slice(0, 80)
           : payload.guide.compTitle,
         paceTip: typeof guidePatch.paceTip === 'string'
-          ? guidePatch.paceTip.slice(0, 160)
+          ? guidePatch.paceTip.slice(0, 600)
           : payload.guide.paceTip,
       },
     };

@@ -23,7 +23,7 @@ function playerTable(r: ReportSummary) {
   const rows = r.solo ? r.players.slice(0, 1) : r.players;
   return `<table class="players${showBoss ? '' : ' no-boss'}" aria-label="${r.solo ? '单兵战绩总览' : '四人战绩总览'}"><colgroup><col class="identity-col"><col><col><col class="ratio-col">${showBoss ? '<col class="damage-col">' : ''}</colgroup>
 <thead><tr><th scope="col">席位与干员</th><th scope="col">累计漏怪</th><th scope="col">累计协防</th><th scope="col">零漏占比</th>${showBoss ? '<th scope="col">Boss 输出</th>' : ''}</tr></thead>
-<tbody>${rows.map(p => `<tr data-seat="${p.seat}"><th scope="row"><div class="identity"><span class="seat-index">${p.seat}号</span><bdi>${html(p.name)}</bdi>${p.self ? '<small class="self-mark">我</small>' : ''}${p.top ? `<small class="top-mark">${html(p.top)}</small>` : ''}</div></th>
+<tbody>${rows.map(p => `<tr data-seat="${p.seat}"><th scope="row"><div class="identity"><span class="seat-index">${p.seat}号</span><bdi>${html(p.name)}</bdi>${p.self ? '<small class="self-mark">我</small>' : ''}${p.eliminatedRound !== undefined ? `<small class="top-mark">R${p.eliminatedRound}阵亡</small>` : ''}${p.top ? `<small class="top-mark">${html(p.top)}</small>` : ''}</div></th>
 <td>${leakValue(p.leaks)}</td><td>${exportCount(p.helps)}</td><td>${html(p.cleanRatio).replace(/（\d+\/\d+）$/, '<wbr><span class="ratio-base">$&</span>')}</td>${showBoss ? `<td>${exportCount(p.boss)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
 }
 

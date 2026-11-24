@@ -138,6 +138,8 @@ class Analyzer:
                 if not data and direction == 'down' and stream.pending:
                     start, pending = stream.contiguous_after_gap()
                     anchor = find_downstream_phase(pending, conn.model.current_round)
+                    if anchor is None and conn.model.current_round > 1:
+                        anchor = find_downstream_phase(pending, 1)
                     if anchor is not None:
                         offset, _number, _phase = anchor
                         data = stream.resume_at(start + offset)
@@ -231,7 +233,7 @@ class Analyzer:
         self.message_count += 1
         if message_id in (300, 302, 303, 311, 313):
             self.report_events[message_id] += 1
-        if event['kind'] == 'phase' and event['round'] in BOSS_ROUNDS:
+        if event['kind'] == 'phase' and (event['phase'] == 'boss' or conn.model.is_boss_round(event['round'])):
             if event['phase'] == 'boss':
                 self.boss_events['phase'] += 1
             elif event['phase'] in ('settle', 'end'):
@@ -365,11 +367,12 @@ class Analyzer:
         if conn.last_phase is None:
             return None
         number, phase = conn.last_phase
-        if number not in BOSS_ROUNDS or number != conn.model.current_round:
+        if not conn.model.is_boss_round(number) or number != conn.model.current_round:
             return None
         if phase == 'boss' and conn.boss_round == number:
             return number
-        if allow_terminal and phase in ('settle', 'end') and conn.model.rounds[number].boss_ended:
+        row = conn.model.rounds.get(number)
+        if allow_terminal and phase in ('settle', 'end') and row is not None and row.boss_ended:
             return number
         return None
 
@@ -381,9 +384,11 @@ class Analyzer:
         if conn.last_phase is None:
             return None, False
         number, _phase = conn.last_phase
-        if number == 13:
-            return 14, True
-        if number == 14:
+        expected = conn.model.expected_boss_rounds()
+        first_boss = expected[0] if expected else 14
+        if number == first_boss - 1:
+            return first_boss, True
+        if number == first_boss:
             return number, True
         return None, False
 
@@ -401,10 +406,12 @@ class Analyzer:
         )
         if not has_hit:
             return None, False
+        expected = conn.model.expected_boss_rounds()
+        first_boss = expected[0] if expected else 14
         latest_round = max(conn.model.rounds, default=0)
-        if latest_round in (13, 14):
-            conn.model.observe_round(14)
-            return 14, True
+        if latest_round in (first_boss - 1, first_boss):
+            conn.model.observe_round(first_boss)
+            return first_boss, True
         return None, False
 
     def _apply(self, conn, event):
@@ -474,9 +481,13 @@ class Analyzer:
                         conn.model.set_roster_squads(event.get('squads'), event.get('banned_units'))
                     if event.get('shops'):
                         conn.model.set_shops(event['shops'])
-                    if event.get('defeated_boss_rounds'):
+                    if event.get('boss_records_raw'):
+                        for is_hidden, defeated in event['boss_records_raw']:
+                            if defeated:
+                                conn.model.defeated_boss_rounds.add(conn.model.resolve_boss_record_round(is_hidden))
+                    elif event.get('defeated_boss_rounds'):
                         conn.model.defeated_boss_rounds.update(
-                            round_no for round_no in event['defeated_boss_rounds'] if round_no in BOSS_ROUNDS
+                            round_no for round_no in event['defeated_boss_rounds'] if conn.model.is_boss_round(round_no)
                         )
                     if event.get('enemy_types'):
                         conn.model.enemy_types = event['enemy_types']
@@ -521,19 +532,24 @@ class Analyzer:
                         if phase in ['prep', 'special_prep']:
                             for preparation in event['preparations']:
                                 conn.model.set_prep_extras(number, preparation, event['player_status'])
-                        if number in BOSS_ROUNDS and event['boss_plan']:
+                        if (phase == 'boss' or conn.model.is_boss_round(number)) and event.get('boss_plan'):
                             conn.model.set_boss_plan(number, event['boss_plan'])
                         if event.get('escaped_players') is not None:
                             conn.model.set_leaks(number, event['escaped_players'], escaped_enemies=event['escaped_enemies'], escaped_details=event['escaped_details'])
                         if previous_boss is not None and (number != previous_boss or terminal):
                             conn.model.finish_boss_round(previous_boss)
                             conn.boss_round = None
-                        if phase == 'boss' and number in BOSS_ROUNDS:
+                        if phase == 'boss':
                             conn.boss_round = number
                             conn.model.set_boss_hp(number, event.get('boss_hp'))
-                        if terminal and number in BOSS_ROUNDS:
+                        if terminal and (conn.model.is_boss_round(number) or number == previous_boss or continued_terminal or (event.get('boss_hp') or 0) > 0):
+                            record_rounds = (
+                                tuple(conn.model.resolve_boss_record_round(is_hidden) for is_hidden, _ in event['boss_records_raw'])
+                                if event.get('boss_records_raw')
+                                else event.get('boss_record_rounds', ())
+                            )
                             boss_linked = (number == previous_boss or continued_terminal
-                                           or number in event.get('boss_record_rounds', ())
+                                           or number in record_rounds
                                            or (event.get('boss_hp') or 0) > 0)
                             if boss_linked:
                                 conn.model.set_boss_hp(number, event.get('boss_hp'))
@@ -541,7 +557,7 @@ class Analyzer:
                                 conn.model.finish_boss_round(number)
                 model = conn.model
                 if kind in ('phase', 'runtime') and event.get('player_status'):
-                        model.set_player_status(model.current_round, event['player_status'])
+                        model.set_player_status(model.current_round, event['player_status'], phase=event.get('phase', '') if kind == 'phase' else '')
                 if kind in ('phase', 'runtime') and event.get('runtime'):
                         model.set_players(dict.fromkeys(event['runtime'], ''))
                         if kind == 'runtime' and any(damage > 0 for damage in event['runtime'].values()):
@@ -590,6 +606,9 @@ class Analyzer:
                                           escaped_enemies=event.get('escaped_enemies', ()))
                 if kind == 'self_finish' and 1 <= event['round'] <= 15:
                     number = event['round']
+                    # Once local player is eliminated in an earlier round, ignore spectator-mode self_finish packets
+                    if conn.player in model.eliminated and number > model.eliminated[conn.player]:
+                        return None
                     forward_rejoin = (event['from_rejoin'] and bool(model.rounds)
                                       and number > max(model.rounds) and number not in conn.local_finishes)
                     if not event['from_rejoin'] or forward_rejoin:

@@ -17,6 +17,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Worker build dependency installation failed.' }
 
     $reportCatalog = Join-Path $root 'electron/prts_battle_core/enemy_power.json'
+    $strongholdCatalog = Join-Path $root 'electron/prts_battle_core/stronghold_catalog.json'
     $workerName = $productConfig.desktop.workerName
     $runtimeDir = $productConfig.desktop.workerRuntimeDir
     $distDir = Split-Path -Parent $runtimeDir
@@ -26,6 +27,7 @@ try {
         --distpath $distDir --workpath "$buildRoot/pyinstaller" --specpath $buildRoot `
         --paths (Join-Path $root 'electron') `
         --add-data "$($reportCatalog):prts_battle_core" `
+        --add-data "$($strongholdCatalog):prts_battle_core" `
         --exclude-module cv2 --exclude-module numpy --exclude-module onnxruntime `
         --exclude-module rapidocr_onnxruntime --exclude-module PIL --exclude-module shapely `
         --exclude-module yaml --exclude-module sympy --exclude-module tkinter `

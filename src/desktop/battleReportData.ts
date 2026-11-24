@@ -1,5 +1,5 @@
 import { BOSS_ENCOUNTERS } from '../data/bossEncounterData';
-import { readCombatTelemetry, readSeatLineups, type CombatTelemetrySnapshot, type SeatLineup } from './combatTelemetry';
+import { readCombatTelemetry, readDeckPool, readSeatLineups, type CombatTelemetrySnapshot, type DeckPoolSnapshot, type SeatLineup } from './combatTelemetry';
 import { mapBannedBondsToCovenants } from './covenantBonds';
 
 export const REPORT_SEATS = [1, 2, 3, 4] as const;
@@ -9,6 +9,8 @@ export type PreviewRoundFilter = ReportRoundFilter | 'follow';
 
 const modes: Readonly<Record<string, string>> = {
   mode_solo_stage: '单人作战关卡',
+  mode_training_2: '入门协议',
+  mode_single_funny: '极速模拟',
   mode_multi_funny: '标准模拟', mode_multi_normal: '险境模拟', mode_multi_hard: '绝境模拟', mode_multi_abyss: '终极模拟',
 };
 const bossIds = [
@@ -21,8 +23,12 @@ const bossToken = (id: string) => {
   const match = /^boss_([1-9]\d?)$/.exec(id);
   return match ? bossIds[Number(match[1]) - 1] ?? '' : id;
 };
-const bossEncounter = (id: string, round: 14 | 15) => BOSS_ENCOUNTERS.find(encounter =>
-  encounter.rounds[round] && (round === 15 ? `${encounter.id}_2` : encounter.id) === bossToken(id));
+const bossEncounter = (id: string, isHidden: boolean) => {
+  const token = bossToken(id);
+  return BOSS_ENCOUNTERS.find(encounter =>
+    encounter.rounds[isHidden ? 15 : 14] && (isHidden ? `${encounter.id}_2` : encounter.id) === token)
+    ?? (!isHidden ? BOSS_ENCOUNTERS.find(encounter => encounter.id === token) : undefined);
+};
 const spawnKey = (round: number, action: number | null, id: string, count: number | null) =>
   `${round}:${action}:${id}:${count}`;
 
@@ -122,6 +128,7 @@ export interface BattleReport {
   difficulty: string;
   boss: string;
   hiddenBoss: string;
+  bossRounds: number[];
   bannedCovenants: string[];
   defeatedBossRounds: number[];
   names: Record<number, string>;
@@ -130,6 +137,7 @@ export interface BattleReport {
   rounds: BattleRound[];
   preview: Spawn[];
   lineups: Record<number, SeatLineup>;
+  deckPool: DeckPoolSnapshot | null;
   telemetry: CombatTelemetrySnapshot | null;
 }
 
@@ -212,7 +220,8 @@ export function readBattleReport(input: unknown): BattleReport {
         unpriced: number(wave.unpriced) ?? 0, enemies: array(wave.enemies).flatMap(value => readEnemy(value) ?? []) }];
     });
     const bossPlanId = text(object(row.boss_plan)?.id);
-    const encounter = index === 14 || index === 15 ? bossEncounter(bossPlanId, index) : undefined;
+    const isBossCandidate = index >= 14 || row.phase === 'boss' || row.boss_ended === true || Boolean(bossPlanId);
+    const encounter = isBossCandidate ? bossEncounter(bossPlanId, index === 15) : undefined;
     if (encounter) {
       const id = bossToken(bossPlanId);
       if (!preview.some(item => item.round === index && item.id === id)) {
@@ -295,25 +304,48 @@ export function readBattleReport(input: unknown): BattleReport {
   }
   const bannedCovenants = mapBannedBondsToCovenants(config?.banned_bonds);
   const defeatedBossRounds = [...new Set(array(root.defeated_boss_rounds)
-    .flatMap(value => value === 14 || value === 15 ? [value] : []))].sort((a, b) => a - b);
+    .flatMap(value => {
+      const r = round(value);
+      return r === null ? [] : [r];
+    }))].sort((a, b) => a - b);
   const lineups = readSeatLineups(root.lineups);
+  const deckPool = readDeckPool(root.deck_pool);
   const telemetry = readCombatTelemetry(root.telemetry);
-  if (!result.length && !preview.length && !mode && !bannedCovenants.length && !telemetry && !Object.keys(lineups).length) {
+  const declaredBossRounds = [...new Set(array(root.boss_rounds).flatMap(v => {
+    const r = round(v);
+    return r === null ? [] : [r];
+  }))];
+  const observedBossRounds = result
+    .filter(r => r.phase === 'boss' || r.bossEnded || hasBossDamage(r) || Boolean(r.bossPlanId))
+    .map(r => r.number);
+  const defaultModeBossRounds = mode === 'mode_single_funny' ? [9]
+    : mode === 'mode_training_2' ? [4]
+    : mode === 'mode_multi_funny' || /^mode_single_[1-4]$/.test(mode) ? [14]
+    : [14, 15];
+  const bossRounds = [...new Set([
+    ...(declaredBossRounds.length ? declaredBossRounds : defaultModeBossRounds),
+    ...observedBossRounds,
+    ...defeatedBossRounds,
+  ])].sort((a, b) => a - b);
+  if (!result.length && !preview.length && !mode && !bannedCovenants.length && !telemetry && !Object.keys(lineups).length && !deckPool) {
     throw new Error('战报里没有对局数据。');
   }
   const single = /^mode_single_(\d+)$/.exec(mode);
+  const modeName = text(config?.mode_name);
   const stageName = text(config?.stage_name);
   const self = seat(capture?.self);
   return { match: number(capture?.match), current: round(capture?.round), self, mode,
     selfBySettlement: self !== null && capture?.self_basis === 'help',
     selfManual: false,
-    difficulty: single ? `单人规程 Lv.${single[1]}` : stageName || (Object.hasOwn(modes, mode) ? modes[mode] : ''),
+    difficulty: modeName || (single ? `单人规程 Lv.${single[1]}` : stageName || (Object.hasOwn(modes, mode) ? modes[mode] : '')),
     boss: text(config?.boss_id), hiddenBoss: text(config?.hidden_boss_id),
+    bossRounds,
     bannedCovenants, defeatedBossRounds,
     names: Object.fromEntries(REPORT_SEATS.map(id => [id, text(players[id]).trim()])),
     hp: numberTable(root.hp), eliminated: numberTable(root.eliminated), rounds: result,
     preview: preview.sort((a, b) => a.round - b.round),
     lineups,
+    deckPool,
     telemetry,
   };
 }
@@ -415,11 +447,32 @@ export function mergeBossRound(old: BattleRound, row: BattleRound): BattleRound 
     bossRoundInferred: inferred, bossEnded: ended, bossHp: hp };
 }
 
-export function defaultBossRound(report: BattleReport | undefined): 14 | 15 {
-  const hidden = report?.rounds.find(row => row.number === 15);
-  if (hasBossDamage(hidden)) return 15;
-  if (hasBossDamage(report?.rounds.find(row => row.number === 14))) return 14;
-  return hidden?.bossEnded || hidden?.phase === 'boss' || report?.current === 15 ? 15 : 14;
+export function reportBossRounds(report: BattleReport | undefined): number[] {
+  if (!report) return [14, 15];
+  if (report.bossRounds.length) return report.bossRounds;
+  return [14, 15];
+}
+
+export function isHiddenBossRound(report: BattleReport | undefined, roundNo: number): boolean {
+  if (roundNo === 15) return true;
+  const list = reportBossRounds(report);
+  return list.length >= 2 && list.indexOf(roundNo) > 0;
+}
+
+export function defaultBossRound(report: BattleReport | undefined): number {
+  const candidates = reportBossRounds(report);
+  // Prefer the latest Boss round that actually has recorded damage
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const r = candidates[i];
+    if (hasBossDamage(report?.rounds.find(row => row.number === r))) return r;
+  }
+  // Next prefer a Boss round currently fighting, ended, or matching current round
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const r = candidates[i];
+    const row = report?.rounds.find(item => item.number === r);
+    if (row?.bossEnded || row?.phase === 'boss' || report?.current === r) return r;
+  }
+  return candidates[0] ?? 14;
 }
 
 interface Metric { value: number; quality?: 'partial' | 'estimated' | 'minimum' }
@@ -465,13 +518,14 @@ export function waveOwner(player: number | null, bossGroups: boolean) {
   return player === null ? '公共编排' : bossGroups ? `战区 ${player}` : `${player} 号`;
 }
 
-export function reportLeader(report: BattleReport, round: 14 | 15) {
+export function reportLeader(report: BattleReport, round: number) {
   const data = report.rounds.find(row => row.number === round);
-  const known = (id: string) => bossEncounter(id, round);
+  const hidden = isHiddenBossRound(report, round);
+  const known = (id: string) => bossEncounter(id, hidden);
   // R15 的计划有时沿用 R14 普通领袖。只认该回合有效的模板。
   const plan = known(data?.bossPlanId ?? '');
   if (plan) return plan;
-  const configured = known(round === 15 ? report.hiddenBoss : report.boss);
+  const configured = known(hidden ? report.hiddenBoss : report.boss);
   const candidatesFor = (ids: string[]) => [...new Set(ids.flatMap(id => known(id) ?? []))];
   const recorded = candidatesFor((data?.rows ?? []).filter(row => row.seat !== null)
     .flatMap(row => row.enemies.map(enemy => enemy.id)));

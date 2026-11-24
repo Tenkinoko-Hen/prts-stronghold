@@ -10,8 +10,17 @@ const DETAILS = /^PRTS_REPORT_DETAIL(?: [0-9]{1,12}){10}$/;
 const BOSS_DETAILS = /^PRTS_REPORT_BOSS(?: [0-9]{1,12}){6,7}$/;
 const UNKNOWN_DETAILS = /^PRTS_REPORT_UNKNOWN(?: [01] [0-9]{1,5} [0-9]{1,12}){0,12}$/;
 
-function bossSummary(rounds) {
-  return [14, 15].map(round => {
+function bossSummary(report) {
+  const rounds = report?.rounds ?? {};
+  const configured = Array.isArray(report?.boss_rounds) && report.boss_rounds.length
+    ? report.boss_rounds
+    : Object.entries(rounds)
+        .filter(([r, row]) => Number(r) >= 14 || row?.phase === 'boss' || row?.boss_ended === true
+          || [row?.boss_damage, row?.boss_percent, row?.boss_uplink].some(table => Object.keys(table ?? {}).length > 0)
+          || (Array.isArray(row?.boss_official) && row.boss_official.length > 0))
+        .map(([r]) => Number(r));
+  const list = [...new Set(configured.length ? configured : [14, 15])].sort((a, b) => a - b);
+  return list.map(round => {
     const row = rounds[round];
     const damage = [row?.boss_damage, row?.boss_percent, row?.boss_uplink].some(table => Object.keys(table ?? {}).length > 0)
       || (Array.isArray(row?.boss_official) && row.boss_official.length > 0);
@@ -146,7 +155,7 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
           publish({ status: message.status });
         } else if (message?.kind === 'report'
           && (message.report === null || (message.report?.rounds && message.report?.capture))) {
-          if (message.report) lastBossSummary = bossSummary(message.report.rounds);
+          if (message.report) lastBossSummary = bossSummary(message.report);
           publish({ report: message.report, reportRun: childRun });
         }
       }
@@ -188,11 +197,25 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
     }
     if (snapshot) {
       const self = snapshot.capture?.self;
+      const modeId = snapshot.battle_config?.mode_id || '';
+      const modeName = snapshot.battle_config?.mode_name || '';
+      const bossRounds = Array.isArray(snapshot.boss_rounds) ? snapshot.boss_rounds : [];
       const named = Object.values(snapshot.players ?? {}).filter(name => typeof name === 'string' && name.trim()).length;
       const latestHelp = Object.entries(snapshot.rounds ?? {}).reverse().find(([round, row]) =>
         /^(?:[1-9]|1[0-5])$/.test(round) && ['reported', 'observed'].includes(row?.assists_status));
+      if (modeId || bossRounds.length) {
+        detail += `\n模式：${modeName ? `${modeName} (${modeId})` : modeId || '未确认'}`
+          + (bossRounds.length ? ` · 首领回合：${bossRounds.map(r => `R${r}`).join('/')}` : '');
+      }
       detail += `\n本路席位：${Number.isInteger(self) && self >= 1 && self <= 4 ? `${self} 号${snapshot.capture.self_basis === 'help' ? '（结算关联）' : ''}` : '未确认'}`
         + ` · 已记录玩家 ID：${named} 个`;
+      const elimEntries = Object.entries(snapshot.eliminated ?? {});
+      const hpEntries = Object.entries(snapshot.hp ?? {});
+      if (hpEntries.length || elimEntries.length) {
+        const hpStr = hpEntries.map(([s, v]) => `${s}号:${v}`).join(' ');
+        const elimStr = elimEntries.map(([s, r]) => `${s}号(R${r})`).join(' ');
+        detail += `\n血量与淘汰：${hpStr || '—'}${elimStr ? ` · 已淘汰：${elimStr}` : ''}`;
+      }
       if (latestHelp) {
         const row = latestHelp[1];
         const assigned = (Array.isArray(row.assist_pairs) ? row.assist_pairs : []).reduce((sum, item) =>
@@ -213,7 +236,7 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
       detail += `\n本次采集命中的 ${diagnostics[0]} 个下行数据段各只有 1 字节。已记录的本路结算仍可查阅或导出。`;
     if (bossDetails) {
       const [stage, terminal, runtime, rank, ratio, unassigned, inferred = 0] = bossDetails;
-      detail += `\n\nBoss 采集累计：开战场景 ${stage} · R14/R15 结算或结束场景 ${terminal} · 非零伤害快照 ${runtime}`
+      detail += `\n\nBoss 采集累计：开战场景 ${stage} · 结算或结束场景 ${terminal} · 非零伤害快照 ${runtime}`
         + `\n榜单候选 ${rank} · 达标信号 ${ratio} · 推定回合关联 ${inferred} · 未能归入回合 ${unassigned}`;
     }
     if (unknownDetails) {

@@ -1010,6 +1010,103 @@ class CombatMeterAndInspectorTests(unittest.TestCase):
         self.assertIsNone(torn)
         self.assertEqual(inspector.torn_reads, 1)
 
+    def test_quick_mode_r9_boss_capture_and_protocol_telemetry(self):
+        from electron.prts_battle_core.combat_meter import ArenaTelemetryCoordinator
+
+        analyzer = Analyzer()
+        analyzer.accept(segment(OLD, 1, syn=True), 'up')
+        # Mode: mode_single_funny (极速模拟, R9 Boss)
+        opening_event = {
+            **phase(8, 'self', seed=99),
+            'mode_id': 'mode_single_funny',
+            'players': {1: '单人玩家'},
+            'boss_id': 'boss_3',
+        }
+        analyzer._record_event(analyzer.connections[OLD], OLD, 300, opening_event)
+        # R9 boss phase + official rank (op=20, chess_id=4 -> 黑键 char_4046_ebnhlz) + ratio + terminal
+        analyzer._record_event(analyzer.connections[OLD], OLD, 302, {
+            **phase(9, 'boss'),
+            'boss_hp': 4200000,
+        })
+        analyzer._record_event(analyzer.connections[OLD], OLD, 348, {
+            'kind': 'step',
+            'steps': ((1, ((20, (1, 4, 180000, 1, 2, 95000)),)),),
+        })
+        analyzer._record_event(analyzer.connections[OLD], OLD, 366, {
+            'kind': 'boss_ratio', 'uid': 1, 'ratio': 0.2,
+        })
+        analyzer._record_event(analyzer.connections[OLD], OLD, 302, {
+            **phase(9, 'end'),
+            'runtime': {1: 275000},
+            'boss_hp': 4200000,
+            'boss_records_raw': ((False, True),),
+        })
+        snap = analyzer.snapshot()
+        self.assertEqual(snap['boss_rounds'], [9])
+        self.assertEqual(snap['defeated_boss_rounds'], [9])
+        self.assertEqual(snap['battle_config']['mode_name'], '极速模拟')
+        r9 = snap['rounds'][9]
+        self.assertEqual(r9['boss_damage'], {1: 275000})
+        self.assertEqual(r9['boss_official'][0]['operator_name'], '黑键')
+        self.assertEqual(r9['boss_official'][1]['operator_name'], '车尔尼')
+        self.assertEqual(analyzer.boss_events['unassigned'], 0)
+
+        coord = ArenaTelemetryCoordinator()
+        enriched = coord.enrich_report(snap)
+        ops = enriched['telemetry']['operators']
+        self.assertEqual(ops[0]['name'], '黑键')
+        self.assertEqual(ops[0]['total_damage'], 180000.0)
+        self.assertEqual(ops[1]['name'], '车尔尼')
+
+    def test_eliminated_seat_returns_cards_to_deck_pool_and_blocks_spectator_leaks(self):
+        analyzer = Analyzer()
+        analyzer.accept(segment(OLD, 1, syn=True), 'up')
+        conn = analyzer.connections[OLD]
+        analyzer._record_event(conn, OLD, 300, {
+            **phase(5, 'prep', seed=55),
+            'players': {1: '我', 2: '队友2', 3: '队友3', 4: '队友4'},
+            'squads': {
+                1: [
+                    {'chess_id': 'chess_char_4_01_a', 'char_id': 'char_4046_ebnhlz', 'bonds': ('leithanienShip',), 'is_banned': False},
+                    {'chess_id': 'chess_char_1_09_a', 'char_id': 'char_4166_varkis', 'bonds': ('minosShip',), 'is_banned': False},
+                ],
+            },
+            'shops': [
+                {'seat': 1, 'round': 5, 'shop_level': 4, 'skill_id': 'aceffect_band_22', 'pieces': {10: 4}, 'positions': {10: 3}, 'equips': {20: 311}, 'traps': {}, 'shop': [{'slot': 0, 'price': 2, 'chess_id': 4, 'frozen': 0}]},
+                {'seat': 2, 'round': 5, 'shop_level': 4, 'skill_id': 'aceffect_band_22', 'pieces': {11: 5}, 'positions': {11: 3}, 'equips': {}, 'traps': {}, 'shop': []},
+            ],
+            'player_status': {1: {'hp': 10, 'finished': True}, 2: {'hp': 5, 'finished': True}, 3: {'hp': 15, 'finished': True}, 4: {'hp': 20, 'finished': True}},
+        })
+        snap_alive = analyzer.snapshot()
+        self.assertEqual(snap_alive['lineups'][1]['strategist'], '阿米娅·众志合一')
+        self.assertEqual(len(snap_alive['lineups'][1]['deployed']), 1)
+        self.assertEqual(snap_alive['lineups'][1]['deployed'][0]['name'], '黑键')
+        self.assertEqual(snap_alive['lineups'][1]['equips'][0]['name'], '维式重锤')
+        ebn_alive = next(o for o in snap_alive['deck_pool']['operators'] if o['char_id'] == 'char_4046_ebnhlz')
+        # Seat 1 holds 1 normal copy (1), Seat 2 holds 1 golden copy (3) -> taken 4, remaining 12 of 16
+        self.assertEqual(ebn_alive['taken_total'], 4)
+        self.assertEqual(ebn_alive['remaining'], 12)
+
+        # Round 6 prep: Seat 2 is eliminated (hp=0 -> eliminated at R5); Seat 2's golden copy returns to pool!
+        analyzer._record_event(conn, OLD, 302, {
+            **phase(6, 'prep'),
+            'player_status': {1: {'hp': 3, 'finished': True}, 2: {'hp': 0, 'finished': True}, 3: {'hp': 8, 'finished': True}, 4: {'hp': 13, 'finished': True}},
+        })
+        analyzer._record_event(conn, OLD, 302, {
+            **phase(6, 'settle', escaped=(1,)),
+            'player_status': {1: {'hp': 0, 'finished': True}, 2: {'hp': 0, 'finished': True}, 3: {'hp': 8, 'finished': True}, 4: {'hp': 13, 'finished': True}},
+        })
+        # Round 7 spectator self_finish must be ignored since self (seat 1) died at R6
+        analyzer._record_event(conn, OLD, 311, settle(7, 12))
+        snap_after = analyzer.snapshot()
+        self.assertEqual(snap_after['eliminated'][2], 5)
+        self.assertEqual(snap_after['eliminated'][1], 6)
+        self.assertNotIn(2, snap_after['rounds'][6]['leaks'])
+        self.assertNotIn(7, snap_after['rounds'])
+        ebn_after = next(o for o in snap_after['deck_pool']['operators'] if o['char_id'] == 'char_4046_ebnhlz')
+        self.assertEqual(ebn_after['taken_total'], 0)
+        self.assertEqual(ebn_after['remaining'], 16)
+
 
 if __name__ == '__main__':
     unittest.main()

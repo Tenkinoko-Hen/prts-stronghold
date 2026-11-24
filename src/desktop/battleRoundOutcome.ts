@@ -1,5 +1,6 @@
-import { confirmedCurrent, groupEnemyOutcomes, ownLeakKinds, REPORT_SEATS, roundMetrics,
+import { confirmedCurrent, groupEnemyOutcomes, hasBossDamage, ownLeakKinds, REPORT_SEATS, roundMetrics,
   type BattleReport, type BattleRound, type EnemyOutcome } from './battleReportData';
+import { isSoloMode } from './combatTelemetry';
 
 export type LaneMetric = ReturnType<typeof roundMetrics>[number];
 export type OutcomeTone = 'clean' | 'assisting' | 'covered' | 'partial' | 'breached' | 'unknown';
@@ -84,40 +85,71 @@ export function isSkippedAssistInferred(row: BattleRound, report: BattleReport) 
     && report.rounds.some(other => other.assistsStatus === 'reported');
 }
 
+export function isSeatEliminatedInRound(report: BattleReport | undefined, seat: number, roundNumber: number): boolean {
+  const elim = report?.eliminated[seat];
+  return elim !== undefined && roundNumber > elim;
+}
+
 export function roundOutcome(row: BattleRound, report: BattleReport, seat: number | null, live: boolean): Outcome {
-  const complete = row.leaksStatus === 'reported' && REPORT_SEATS.every(id => row.leaks[id] !== undefined)
-    && !(row.selfLeaks !== null && (report.self === null ? row.selfLeaks > Math.max(...Object.values(row.leaks))
-      : row.leaks[report.self] !== row.selfLeaks));
+  const solo = isSoloMode(report.mode);
+  if (solo) {
+    const isBoss = row.phase === 'boss' || row.bossEnded || hasBossDamage(row) || report.bossRounds.includes(row.number);
+    if (isBoss) {
+      if (report.defeatedBossRounds.includes(row.number)) {
+        return { tone: 'clean', label: '已击败首领', note: `R${row.number} 首领战通关` };
+      }
+      if (hasBossDamage(row) || row.phase === 'boss' || row.bossEnded) {
+        return { tone: row.bossEnded ? 'covered' : 'assisting', label: row.bossEnded ? '首领已结算' : '首领攻坚中', note: `R${row.number} 首领战记录` };
+      }
+    }
+    const own = laneLeaks(row, report, 1);
+    if (own && own.value === 0 && own.quality !== 'minimum') {
+      return { tone: 'clean', label: '本路零漏', note: '单兵完美守住本波' };
+    }
+    if (own && own.value > 0) {
+      return { tone: 'breached', label: `本路漏 ${own.quality === 'minimum' ? '≥' : ''}${own.value} 只`, note: '单兵防守漏怪' };
+    }
+    return { tone: 'unknown', label: live && confirmedCurrent(report) === row.number ? '作战进行中' : '战况未确认', note: '等待本回合结算' };
+  }
+  const aliveSeats = REPORT_SEATS.filter(id => !isSeatEliminatedInRound(report, id, row.number));
+  const checkSeats: readonly number[] = aliveSeats.length ? aliveSeats : REPORT_SEATS;
+  const complete = row.leaksStatus === 'reported' && checkSeats.every(id => row.leaks[id] !== undefined)
+    && !(row.selfLeaks !== null && (report.self === null ? row.selfLeaks > Math.max(0, ...Object.values(row.leaks))
+      : (!isSeatEliminatedInRound(report, report.self, row.number) && row.leaks[report.self] !== row.selfLeaks)));
   const initial = Object.values(row.leaks).reduce((a, b) => a + b, 0);
   const remaining = Object.values(row.uncoveredLeaks).reduce((a, b) => a + b, 0);
   const covered = row.assistPairs.reduce((sum, pair) => sum + pair.count, row.unattributedAssists);
   const exactRemaining = row.uncoveredStatus === 'reported';
   const count = (n: number) => `${exactRemaining ? '' : '≥'}${n} 只`;
-  if (row.allPlayersLeaked || (row.assistsStatus === 'skipped' && complete && REPORT_SEATS.every(id => row.leaks[id] > 0))) {
-    const minimum = REPORT_SEATS.reduce((sum, id) => sum + Math.max(1, row.leaks[id] ?? 0,
+  if (row.allPlayersLeaked || (row.assistsStatus === 'skipped' && complete && checkSeats.every(id => (row.leaks[id] ?? 0) > 0))) {
+    const minimum = checkSeats.reduce((sum, id) => sum + Math.max(1, row.leaks[id] ?? 0,
       row.leakMinimums[id] ?? 0, id === report.self ? row.selfLeaks ?? 0 : 0), 0);
-    return { tone: 'breached', label: '全队均漏', note: `全员失守 · 共漏 ${complete ? initial : `≥${minimum}`} 只 · 无人可协防` };
+    return { tone: 'breached', label: '全队均漏', note: `存活席位全员失守 · 共漏 ${complete ? initial : `≥${minimum}`} 只 · 无人可协防` };
   }
   if (complete && initial === 0 && !covered && !remaining && !Object.values(row.hpCosts).some(n => n > 0))
-    return { tone: 'clean', label: '全队无漏', note: '全员守住 · 无需协防' };
+    return { tone: 'clean', label: '全队无漏', note: '存活席位全员守住 · 无需协防' };
   const hasLeaks = initial > 0 || (row.selfLeaks ?? 0) > 0 || covered > 0 || remaining > 0;
   const own = laneLeaks(row, report, seat);
+  const seatEliminated = seat !== null && isSeatEliminatedInRound(report, seat, row.number);
   const saved = row.assistPairs.reduce((n, pair) => n + (pair.owner === seat ? pair.count : 0), 0);
   const left = seat === null ? undefined : row.uncoveredLeaks[seat] ?? (exactRemaining ? 0 : undefined);
-  if (left && (saved > 0 || (own && !own.quality && exactRemaining && left < own.value)))
+  if (!seatEliminated && left && (saved > 0 || (own && !own.quality && exactRemaining && left < own.value)))
     return { tone: 'partial', label: `本路未兜住 ${count(left)}`, note: '本路部分兜住' };
-  if (left && own && !own.quality && exactRemaining && left === own.value && !saved)
+  if (!seatEliminated && left && own && !own.quality && exactRemaining && left === own.value && !saved)
     return { tone: 'breached', label: '本路无人兜底', note: `本路未兜住 ${count(left)}` };
   if (live && confirmedCurrent(report) === row.number && row.phase === 'assist' && hasLeaks && !remaining
       && !['reported', 'observed'].includes(row.uncoveredStatus) && !['reported', 'skipped'].includes(row.assistsStatus))
     return { tone: 'assisting', label: '协防中', note: '协防进行中 · 待结算' };
-  if (own && own.value > 0 && ((exactRemaining && left === 0) || (!own.quality && saved === own.value && !left)))
+  if (!seatEliminated && own && own.value > 0 && ((exactRemaining && left === 0) || (!own.quality && saved === own.value && !left)))
     return { tone: 'covered', label: '本路已兜住', note: '本路漏怪已全额兜住' };
   if (remaining > 0 && (covered > 0 || (complete && exactRemaining && remaining < initial)))
     return { tone: 'partial', label: '队伍部分兜住', note: `全队未兜住 ${count(remaining)}` };
   if (hasLeaks && exactRemaining && !remaining)
     return { tone: 'covered', label: '全队已兜住', note: '全队漏怪已全额兜住' };
   if (remaining) return { tone: 'unknown', label: `未兜住 ${count(remaining)}`, note: '已记录队伍漏怪，兜底情况未确认' };
+  if (seatEliminated) {
+    return { tone: 'unknown', label: `已淘汰 (R${report.eliminated[seat!]})`, note: `该席位已于 R${report.eliminated[seat!]} 阵亡` };
+  }
   if (isSkippedAssistInferred(row, report)) {
     return { tone: 'breached', label: '未进协防 · 本路净漏',
       note: '本路漏怪且本回合未触发协防结算（全队均漏时会跳过协防；安装 Npcap 获取下行场景后可确认全队扣血）' };

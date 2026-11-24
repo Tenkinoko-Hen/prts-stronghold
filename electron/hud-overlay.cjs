@@ -57,8 +57,9 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     if (hudWindow && !hudWindow.isDestroyed()) return hudWindow;
     const display = screen.getPrimaryDisplay();
     const workArea = display.workArea;
-    const width = 460;
-    const height = 88;
+    // 严格克制悬浮窗体积，绝不遮挡核心棋盘；超出内容在主体区统一平滑向下滚动
+    const width = 440;
+    const height = 176;
     const x = Math.max(workArea.x + 12, workArea.x + Math.round((workArea.width - width) / 2));
     const y = workArea.y + 16;
 
@@ -68,8 +69,10 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
       y,
       width,
       height,
-      minWidth: 340,
-      minHeight: 72,
+      minWidth: 360,
+      minHeight: 112,
+      maxWidth: 540,
+      maxHeight: 240,
       frame: false,
       transparent: true,
       resizable: false,
@@ -141,8 +144,8 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     const round = Number.isInteger(guidePatch.round) && guidePatch.round >= 1 && guidePatch.round <= 15
       ? guidePatch.round
       : state.guide.round;
-    const compTitle = typeof guidePatch.compTitle === 'string' ? guidePatch.compTitle.slice(0, 80) : state.guide.compTitle;
-    const paceTip = typeof guidePatch.paceTip === 'string' ? guidePatch.paceTip.slice(0, 140) : state.guide.paceTip;
+    const compTitle = typeof guidePatch.compTitle === 'string' ? guidePatch.compTitle.slice(0, 120) : state.guide.compTitle;
+    const paceTip = typeof guidePatch.paceTip === 'string' ? guidePatch.paceTip.slice(0, 800) : state.guide.paceTip;
     state = { ...state, guide: { round, compTitle, paceTip } };
     if (state.open) broadcast();
     return state;

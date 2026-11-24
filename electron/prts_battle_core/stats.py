@@ -8,8 +8,20 @@ from collections import Counter
 from dataclasses import dataclass, field
 from math import floor
 import struct
+from time import monotonic
 from typing import Iterable, Mapping
-from .operator_catalog import resolve_char_by_numeric_id, resolve_operator_name, resolve_strategist_name
+from .operator_catalog import (
+    POOL_COPIES_BY_TIER,
+    SHOP_EQUIPS,
+    get_shop_slots,
+    resolve_char_by_numeric_id,
+    resolve_chess_identifier,
+    resolve_chess_tier,
+    resolve_mode_info,
+    resolve_operator_name,
+    resolve_strategist_name,
+    resolve_trap_identifier,
+)
 from .wave_power import EnemyInstance, _enemy, _power, player_for_escapes, resolve_enemy_id, wave_report
 from .wire import EscapedEnemy, SpawnGroup, SpawnPreview
 BOSS_ROUNDS = (14, 15)
@@ -73,6 +85,9 @@ class RoundStats:
     boss_rank_sequence: tuple[int, int] = ((-1), (-1))
     boss_uplink: Counter[tuple[int, int, int]] = field(default_factory=Counter)
     boss_uplink_seen: set[tuple[int, int | None, tuple[StepAction, ...]]] = field(default_factory=set)
+    boss_started_at: float | None = None
+    boss_last_at: float | None = None
+    boss_timeline: list[tuple[float, float]] = field(default_factory=list)
     seat_loadouts: dict[int, dict] = field(default_factory=dict)
 
     def observe_enemy_id(self, owner: int, instance: int, is_token: bool, enemy_id: str) -> None:
@@ -111,9 +126,56 @@ class MatchStats:
         self.battle_config = {}
         self.banned_bonds: tuple[str, ...] = ()
         self.defeated_boss_rounds: set[int] = set()
+        self.observed_boss_rounds: set[int] = set()
         self.squads: dict[int, list[dict]] = {}
         self.banned_units: dict[int, list[dict]] = {}
         self.seat_loadouts: dict[int, dict] = {}
+
+    def expected_boss_rounds(self) -> tuple[int, ...]:
+        mode_id = str(self.battle_config.get("mode_id") or "")
+        base = tuple(resolve_mode_info(mode_id).get("boss_rounds") or BOSS_ROUNDS) if mode_id else BOSS_ROUNDS
+        combined = sorted(set(base) | self.observed_boss_rounds)
+        return tuple(combined)
+
+    def is_boss_round(self, round_number: int) -> bool:
+        if not 1 <= round_number <= 15:
+            return False
+        if round_number in self.observed_boss_rounds or round_number in self.expected_boss_rounds():
+            return True
+        row = self.rounds.get(round_number)
+        return bool(row and (row.phase == "boss" or row.boss_ended or row.boss_plan or row.boss_spawns))
+
+    def resolve_boss_record_round(self, is_hidden: bool) -> int:
+        mode_id = str(self.battle_config.get("mode_id") or "")
+        base = tuple(resolve_mode_info(mode_id).get("boss_rounds") or BOSS_ROUNDS) if mode_id else BOSS_ROUNDS
+        if not base:
+            return 15 if is_hidden else 14
+        if not is_hidden:
+            return base[0]
+        return base[1] if len(base) >= 2 else min(15, base[0] + 1)
+
+    def _note_boss_progress(self, data: RoundStats) -> None:
+        now = monotonic()
+        if data.boss_started_at is None:
+            data.boss_started_at = now
+        data.boss_last_at = now
+        elapsed = max(0.0, round(now - data.boss_started_at, 2))
+        total_official = sum(int(r.get("damage") or 0) for r in data.boss_official)
+        total_uplink = sum(data.boss_uplink.values())
+        total_runtime = sum(data.boss_totals.values())
+        total_settle = sum(data.boss_settlement.values())
+        current_total = float(max(total_settle, total_runtime, total_official, total_uplink))
+        if current_total <= 0:
+            return
+        if not data.boss_timeline:
+            data.boss_timeline.append((elapsed, current_total))
+        elif elapsed - data.boss_timeline[-1][0] >= 0.75:
+            if len(data.boss_timeline) < 90:
+                data.boss_timeline.append((elapsed, current_total))
+            else:
+                data.boss_timeline[-1] = (elapsed, current_total)
+        elif current_total > data.boss_timeline[-1][1]:
+            data.boss_timeline[-1] = (elapsed, current_total)
 
     def set_roster_squads(self, squads: Mapping | None, banned_units: Mapping | None = None) -> None:
         if squads:
@@ -142,6 +204,9 @@ class MatchStats:
                 continue
             pieces = dict(shop.get("pieces") or {})
             positions = dict(shop.get("positions") or {})
+            equips = dict(shop.get("equips") or {})
+            traps = dict(shop.get("traps") or {})
+            goods = list(shop.get("shop") or ())
             skill_id = str(shop.get("skill_id") or "")
             summary = {
                 "round": int(round_no) if isinstance(round_no, int) and 1 <= round_no <= 15 else self.current_round,
@@ -151,6 +216,10 @@ class MatchStats:
                 "piece_count": len(pieces),
                 "deployed_count": len(positions),
                 "pieces": pieces,
+                "positions": positions,
+                "equips": equips,
+                "traps": traps,
+                "shop": goods,
                 "chess_ids": sorted({int(cid) for cid in pieces.values() if isinstance(cid, int) and cid > 0}),
             }
             prev = self.seat_loadouts.get(seat)
@@ -159,32 +228,42 @@ class MatchStats:
             if isinstance(round_no, int) and 1 <= round_no <= 15:
                 self.rounds.setdefault(round_no, RoundStats()).seat_loadouts[seat] = summary
 
-    def resolve_boss_attacker(self, player: int, attacker: int, source: int | None = None) -> tuple[str, str]:
-        if player not in range(1, 5) or attacker <= 0 or (source is not None and source not in (0, 1)):
+    def resolve_boss_attacker(self, player: int, attacker: int, source: int | None = None, *, official: bool = False) -> tuple[str, str]:
+        if player not in range(1, 5) or attacker < 0 or (source is not None and source not in (0, 1)):
             return ("", "")
         slots = self.squads.get(player) or ()
         squad_chars = tuple(s["char_id"] for s in slots if s.get("char_id"))
-        # 1. Check board instance -> chess_id or direct numeric char_id match inside player's own squad
         pieces = (self.seat_loadouts.get(player) or {}).get("pieces") or {}
-        candidate_num = pieces.get(attacker, attacker)
-        char_id, name = resolve_char_by_numeric_id(candidate_num, squad_chars)
-        if char_id:
-            return (char_id, name)
-        if candidate_num != attacker:
-            char_id, name = resolve_char_by_numeric_id(attacker, squad_chars)
+        mapped_ident = pieces.get(attacker)
+        # 1. Exact V3_1 chess identifier lookup:
+        #    - For official rank rows (op=20), `attacker` IS the chess identifier (0..309).
+        #    - For uplink hit rows (341 op=3), `attacker` is a board instance ID that must map via `pieces`.
+        if mapped_ident is not None:
+            info = resolve_chess_identifier(mapped_ident, slots)
+            if info and info.get("char_id"):
+                return (info["char_id"], info["name"])
+        elif official:
+            info = resolve_chess_identifier(attacker, slots)
+            if info and info.get("char_id"):
+                return (info["char_id"], info["name"])
+        # 2. Numeric char_id / squad fallback (only when matched against player's known squad or mapped piece)
+        candidate_num = mapped_ident if mapped_ident is not None else attacker
+        if candidate_num > 0 and (mapped_ident is not None or squad_chars):
+            char_id, name = resolve_char_by_numeric_id(candidate_num, squad_chars)
             if char_id:
                 return (char_id, name)
-        # 2. Check chess_id trailing number match if unique within player's squad
-        chess_matches = [
-            s["char_id"]
-            for s in slots
-            if s.get("char_id")
-            and s.get("chess_id")
-            and any(part.isdigit() and int(part) == candidate_num for part in s["chess_id"].split("_"))
-        ]
-        if len(set(chess_matches)) == 1:
-            cid = chess_matches[0]
-            return (cid, resolve_operator_name(cid))
+        # 3. Trailing numeric segment match in chess_id if unique within player's squad
+        if candidate_num > 0 and slots:
+            chess_matches = [
+                s["char_id"]
+                for s in slots
+                if s.get("char_id")
+                and s.get("chess_id")
+                and any(part.isdigit() and int(part) == candidate_num for part in s["chess_id"].split("_"))
+            ]
+            if len(set(chess_matches)) == 1:
+                cid = chess_matches[0]
+                return (cid, resolve_operator_name(cid))
         return ("", "")
     def add_spawn_plan(self, previews: Iterable[SpawnPreview], source: str, seen_round: int=0) -> None:
         """Keep every previewed batch under its own round, with the earliest round it was seen in.\n\n        seen_round 0 means loading, before the first round.\n        """
@@ -206,8 +285,11 @@ class MatchStats:
             self.current_round = round_number
             data = self.rounds.setdefault(round_number, RoundStats())
             data.phase = phase
-            if round_number in BOSS_ROUNDS and phase == 'boss':
+            if phase == 'boss':
+                self.observed_boss_rounds.add(round_number)
                 data.boss_round_basis = 'confirmed'
+                if data.boss_started_at is None:
+                    data.boss_started_at = monotonic()
 
     def observe_round(self, round_number: int) -> None:
         """Record an observed round even if its sender's seat is still unknown."""
@@ -219,6 +301,12 @@ class MatchStats:
         if observed.banned_bonds and not self.banned_bonds:
             self.banned_bonds = observed.banned_bonds
         self.defeated_boss_rounds.update(observed.defeated_boss_rounds)
+        self.observed_boss_rounds.update(observed.observed_boss_rounds)
+        for p, v in observed.hp.items():
+            self.hp.setdefault(p, v)
+        for p, r in observed.eliminated.items():
+            if p not in self.eliminated or r < self.eliminated[p]:
+                self.eliminated[p] = r
         for seat, slots in observed.squads.items():
             self.squads.setdefault(seat, slots)
         for seat, items in observed.banned_units.items():
@@ -410,7 +498,7 @@ class MatchStats:
             if data.skipped_hp_costs is not None:
                 data.skipped_hp_costs[player] = max(data.skipped_hp_costs.get(player, 0), cost)
 
-    def set_player_status(self, round_number: int, status: Mapping[int, Mapping]) -> None:
+    def set_player_status(self, round_number: int, status: Mapping[int, Mapping], *, phase: str = "") -> None:
         """未结算的零血不覆盖观测值；后续正血量撤销淘汰标记。"""
         for player, entry in status.items():
             if not 1 <= player <= 4:
@@ -422,7 +510,8 @@ class MatchStats:
             if hp > 0:
                 self.eliminated.pop(player, None)
             elif round_number > 0:
-                self.eliminated.setdefault(player, round_number)
+                elim_round = max(1, round_number - 1) if phase in ('prep', 'special_prep') and round_number > 1 else round_number
+                self.eliminated.setdefault(player, elim_round)
     def set_help_skipped(self, round_number: int, hp_costs: Mapping[int, int]) -> None:
         # irreducible cflow, using cdg fallback
         data = self.rounds[round_number]
@@ -435,11 +524,12 @@ class MatchStats:
             self.set_players(dict.fromkeys(data.skipped_hp_costs, ''))
     def set_boss_totals(self, round_number: int, totals: Mapping[int, int], *, at_settlement: bool = False, inferred: bool = False) -> None:
         """Keep combat totals and the same-round settlement packet separately."""
-        if round_number not in BOSS_ROUNDS:
+        if not self.is_boss_round(round_number):
             return None
         clean = {uid: damage for uid, damage in totals.items() if 1 <= uid <= 4 and damage >= 0}
         if not clean:
             return None
+        self.observed_boss_rounds.add(round_number)
         data = self.rounds.setdefault(round_number, RoundStats())
         target = data.boss_settlement if at_settlement else data.boss_totals
         # End/refresh can reset the runtime fields without correcting any damage.
@@ -450,26 +540,32 @@ class MatchStats:
         if not at_settlement:
             for player in clean:
                 data.boss_ratios.pop(player, None)
+        self._note_boss_progress(data)
         self.set_players(dict.fromkeys(clean, ""))
 
     def set_boss_hp(self, round_number: int, hp: int | None) -> None:
         if hp is None:
             return
-        # ***<module>.MatchStats.set_boss_hp: Failure: Different control flow
-        if hp is None or hp > 0:
-                self.rounds[round_number].boss_hp = hp
+        if hp > 0:
+            self.observed_boss_rounds.add(round_number)
+            self.rounds.setdefault(round_number, RoundStats()).boss_hp = hp
+
     def set_boss_ratio(self, round_number: int, uid: int, ratio: float, *, inferred: bool = False) -> None:
-        if round_number in BOSS_ROUNDS:
+        if self.is_boss_round(round_number):
             if 1 <= uid <= 4:
-                self.rounds[round_number].boss_ratios[uid] = ratio
-                data = self.rounds[round_number]
+                self.observed_boss_rounds.add(round_number)
+                data = self.rounds.setdefault(round_number, RoundStats())
+                data.boss_ratios[uid] = ratio
                 data.boss_round_basis = "inferred" if inferred and data.boss_round_basis != "confirmed" else "confirmed"
                 self.set_players({uid: ''})
+
     def finish_boss_round(self, round_number: int) -> None:
-        self.rounds[round_number].boss_ended = True
+        self.observed_boss_rounds.add(round_number)
+        self.rounds.setdefault(round_number, RoundStats()).boss_ended = True
+
     def add_step(self, round_number: int, seq: int, actions: Iterable[StepAction], *, uplink: bool=False, uid: int | None=None, inferred: bool=False) -> None:
         data = self.rounds.get(round_number)
-        if round_number not in BOSS_ROUNDS or data is None or (uplink and not inferred and data.phase != 'boss'):
+        if not self.is_boss_round(round_number) or data is None or (uplink and not inferred and data.phase != 'boss'):
             return None
         else:
             if uplink:
@@ -484,7 +580,9 @@ class MatchStats:
                             self.set_players({player: ''})
                             recorded = True
                     if recorded:
+                        self.observed_boss_rounds.add(round_number)
                         data.boss_round_basis = "inferred" if inferred and data.boss_round_basis != "confirmed" else "confirmed"
+                        self._note_boss_progress(data)
                 return None
             else:
                 for index, (op, params) in enumerate(actions):
@@ -492,9 +590,11 @@ class MatchStats:
                     if op != 20 or not params or len(params) % 3 or (sequence <= data.boss_rank_sequence):
                         continue
                     else:
+                        self.observed_boss_rounds.add(round_number)
                         data.boss_official = [{'player': player, 'identifier': identifier, 'damage': damage} for player, identifier, damage in zip(params[::3], params[1::3], params[2::3])]
                         data.boss_rank_sequence = sequence
                         data.boss_round_basis = "inferred" if inferred and data.boss_round_basis != "confirmed" else "confirmed"
+                        self._note_boss_progress(data)
                         self.set_players(dict.fromkeys(params[::3], ''))
     def snapshot(self) -> dict:
         players = dict(sorted(self.players.items()))
@@ -559,11 +659,27 @@ class MatchStats:
             for (player, _attacker, _source), damage in data.boss_uplink.items():
                 if player in players:
                     uplink[player] += damage
+            mode_id = str(self.battle_config.get("mode_id") or "")
+            is_single_mode = bool(mode_id and resolve_mode_info(mode_id).get("is_single"))
+            active_seats = [1] if is_single_mode else [
+                p for p in range(1, 5)
+                if p not in self.eliminated or round_number <= self.eliminated[p]
+            ]
+            if not active_seats:
+                active_seats = [1] if is_single_mode else list(range(1, 5))
             if data.leaks is not None:
-                leaks = {p: data.leaks[p] for p in range(1, 5)}
+                leaks = {
+                    p: data.leaks[p]
+                    for p in range(1, 5)
+                    if p in active_seats or data.leaks[p] > 0
+                }
                 leaks_status = "reported"
             elif help_leaks_complete:
-                leaks = {p: help_leaks[p] for p in range(1, 5)}
+                leaks = {
+                    p: help_leaks[p]
+                    for p in range(1, 5)
+                    if p in active_seats or help_leaks[p] > 0
+                }
                 leaks_status = "reported"
             else:
                 leaks = dict(data.local_leaks)
@@ -596,7 +712,7 @@ class MatchStats:
                         **dict(row),
                         **(
                             {"char_id": cid, "operator_name": op_name}
-                            if (cid_pair := self.resolve_boss_attacker(row["player"], row["identifier"]))[0]
+                            if (cid_pair := self.resolve_boss_attacker(row["player"], row["identifier"], official=True))[0]
                             and (cid := cid_pair[0]) and (op_name := cid_pair[1])
                             else {}
                         ),
@@ -665,16 +781,20 @@ class MatchStats:
                         minimums[p] = max(minimums.get(p, 0), 1)
                 result["skipped_hp_costs"] = dict(costs)
                 result["leak_minimums"] = minimums
-                result["all_players_leaked"] = all(
-                    exact.get(p, minimums.get(p, 0)) > 0 for p in range(1, 5)
+                result["all_players_leaked"] = (not is_single_mode) and bool(active_seats) and all(
+                    exact.get(p, minimums.get(p, 0)) > 0 for p in active_seats
                 )
-            if round_number not in BOSS_ROUNDS:
+            if not self.is_boss_round(round_number):
                 continue
             result["boss_settlement"] = dict(data.boss_settlement)
             result["boss_ended"] = data.boss_ended
             result["boss_round_basis"] = data.boss_round_basis
             result["boss_hp"] = data.boss_hp
             result["boss_ratios"] = dict(data.boss_ratios)
+            if data.boss_started_at is not None and data.boss_last_at is not None:
+                result["boss_duration"] = round(max(1.0, data.boss_last_at - data.boss_started_at), 2)
+            if data.boss_timeline:
+                result["boss_timeline"] = [[t, d] for t, d in data.boss_timeline]
             damage, usable_settlement = boss_player_damage(result)
             result["boss_damage"] = damage
             ratios = dict(data.boss_ratios)
@@ -700,12 +820,99 @@ class MatchStats:
                 }
             )
         battle_config = dict(self.battle_config)
+        mode_id = str(battle_config.get("mode_id") or "")
+        mode_info = resolve_mode_info(mode_id) if mode_id else {}
+        if mode_info.get("name"):
+            battle_config["mode_name"] = mode_info["name"]
+        if mode_info.get("max_round"):
+            battle_config["max_round"] = int(mode_info["max_round"])
         if self.banned_bonds:
             battle_config["banned_bonds"] = list(self.banned_bonds)
         lineups = {}
         for seat in sorted(set(self.squads) | set(self.seat_loadouts)):
             loadout = self.seat_loadouts.get(seat) or {}
             slots = self.squads.get(seat) or ()
+            pieces = loadout.get("pieces") or {}
+            positions = loadout.get("positions") or {}
+            raw_equips = loadout.get("equips") or {}
+            raw_traps = loadout.get("traps") or {}
+            raw_shop = loadout.get("shop") or ()
+
+            deployed = []
+            bench = []
+            for inst_id, chess_ident in pieces.items():
+                resolved = resolve_chess_identifier(chess_ident, slots)
+                if resolved is None:
+                    cid, cname = self.resolve_boss_attacker(seat, inst_id)
+                    if not cid and isinstance(chess_ident, int) and chess_ident > 0:
+                        cid, cname = resolve_char_by_numeric_id(chess_ident, tuple(s["char_id"] for s in slots if s.get("char_id")))
+                    resolved = {
+                        "identifier": chess_ident,
+                        "chess_id": "",
+                        "char_id": cid or f"piece_{chess_ident}",
+                        "name": cname or f"干员 #{chess_ident}",
+                        "tier": 0,
+                        "is_golden": False,
+                        "copies": 1,
+                    }
+                item = {
+                    "inst_id": int(inst_id),
+                    "chess_id": resolved["chess_id"],
+                    "char_id": resolved["char_id"],
+                    "name": resolved["name"],
+                    "tier": resolved["tier"],
+                    "is_golden": resolved["is_golden"],
+                }
+                if inst_id in positions:
+                    deployed.append(item)
+                else:
+                    bench.append(item)
+
+            seat_equips = []
+            for inst_id, equip_ident in (*raw_equips.items(), *raw_traps.items()):
+                tinfo = resolve_trap_identifier(equip_ident)
+                if tinfo:
+                    seat_equips.append({
+                        "inst_id": int(inst_id),
+                        "identifier": tinfo["identifier"],
+                        "chess_id": tinfo["chess_id"],
+                        "trap_id": tinfo["trap_id"],
+                        "name": tinfo["name"],
+                        "tier": tinfo["tier"],
+                        "is_golden": tinfo["is_golden"],
+                        "item_type": tinfo["item_type"],
+                    })
+
+            shop_goods = []
+            for g in raw_shop:
+                cid = g.get("chess_id")
+                if not isinstance(cid, int):
+                    continue
+                cinfo = resolve_chess_identifier(cid, slots)
+                if cinfo:
+                    shop_goods.append({
+                        "kind": "operator",
+                        "slot": int(g.get("slot") or 0),
+                        "price": int(g.get("price") or 0),
+                        "frozen": bool(g.get("frozen")),
+                        "char_id": cinfo["char_id"],
+                        "name": cinfo["name"],
+                        "tier": cinfo["tier"],
+                    })
+                    continue
+                tinfo = resolve_trap_identifier(cid)
+                if tinfo:
+                    shop_goods.append({
+                        "kind": "equip",
+                        "slot": int(g.get("slot") or 0),
+                        "price": int(g.get("price") or 0),
+                        "frozen": bool(g.get("frozen")),
+                        "trap_id": tinfo["trap_id"],
+                        "chess_id": tinfo["chess_id"],
+                        "name": tinfo["name"],
+                        "tier": tinfo["tier"],
+                    })
+
             lineups[seat] = {
                 "round": loadout.get("round") or None,
                 "shop_level": loadout.get("shop_level") or None,
@@ -713,6 +920,10 @@ class MatchStats:
                 "strategist": loadout.get("strategist") or "",
                 "piece_count": loadout.get("piece_count", 0),
                 "deployed_count": loadout.get("deployed_count", 0),
+                "deployed": deployed,
+                "bench": bench,
+                "equips": seat_equips,
+                "shop_goods": shop_goods,
                 "squad": [
                     {
                         "chess_id": slot["chess_id"],
@@ -724,6 +935,9 @@ class MatchStats:
                     for slot in slots
                 ],
             }
+
+        boss_rounds = sorted(self.expected_boss_rounds())
+        deck_pool = self._build_deck_pool(lineups, mode_id)
         return {
             "players": players,
             "rounds": rounds,
@@ -732,6 +946,148 @@ class MatchStats:
             "hp": dict(sorted(self.hp.items())),
             "eliminated": dict(sorted(self.eliminated.items())),
             "battle_config": battle_config,
+            "boss_rounds": boss_rounds,
             "defeated_boss_rounds": sorted(self.defeated_boss_rounds),
             "lineups": lineups,
+            **({"deck_pool": deck_pool} if deck_pool is not None else {}),
+        }
+
+    def _build_deck_pool(self, lineups: Mapping[int, Mapping], mode_id: str) -> dict | None:
+        if not self.squads and not self.seat_loadouts:
+            return None
+        mode_info = resolve_mode_info(mode_id) if mode_id else {}
+        is_single = bool(mode_info.get("is_single"))
+        banned_bonds = set(self.banned_bonds)
+
+        # 1. Build unified unbanned operator pool from roster squads
+        op_pool: dict[str, dict] = {}
+        for seat, slots in self.squads.items():
+            for slot in slots:
+                char_id = str(slot.get("char_id") or "")
+                chess_id = str(slot.get("chess_id") or "")
+                if not char_id or slot.get("is_banned"):
+                    continue
+                tier = resolve_chess_tier(chess_id)
+                if tier <= 0:
+                    continue
+                entry = op_pool.get(char_id)
+                if entry is None:
+                    op_pool[char_id] = {
+                        "char_id": char_id,
+                        "name": resolve_operator_name(char_id),
+                        "tier": tier,
+                        "bonds": list(slot.get("bonds") or ()),
+                        "total_copies": POOL_COPIES_BY_TIER.get(tier, 8),
+                        "taken_by": {},
+                        "in_shop_seats": [],
+                    }
+                else:
+                    if not entry["bonds"] and slot.get("bonds"):
+                        entry["bonds"] = list(slot["bonds"])
+
+        # 2. Subtract held pieces of ALIVE players (eliminated players return cards to shared pool)
+        for seat, loadout in self.seat_loadouts.items():
+            if seat in self.eliminated:
+                continue
+            slots = self.squads.get(seat) or ()
+            pieces = loadout.get("pieces") or {}
+            for _inst, chess_ident in pieces.items():
+                resolved = resolve_chess_identifier(chess_ident, slots)
+                if not resolved or not resolved.get("char_id"):
+                    continue
+                cid = resolved["char_id"]
+                tier = resolved["tier"] or 1
+                copies = int(resolved.get("copies") or 1)
+                entry = op_pool.setdefault(
+                    cid,
+                    {
+                        "char_id": cid,
+                        "name": resolved["name"],
+                        "tier": tier,
+                        "bonds": [],
+                        "total_copies": POOL_COPIES_BY_TIER.get(tier, 8),
+                        "taken_by": {},
+                        "in_shop_seats": [],
+                    },
+                )
+                entry["taken_by"][seat] = entry["taken_by"].get(seat, 0) + copies
+            for g in (lineups.get(seat) or {}).get("shop_goods") or ():
+                if g.get("kind") == "operator" and g.get("char_id") in op_pool:
+                    if seat not in op_pool[g["char_id"]]["in_shop_seats"]:
+                        op_pool[g["char_id"]]["in_shop_seats"].append(seat)
+
+        operators_out = []
+        tier_stats = {t: {"tier": t, "operator_kinds": 0, "total_copies": 0, "taken_copies": 0, "remaining_copies": 0, "equip_kinds": 0} for t in range(1, 7)}
+        for entry in sorted(op_pool.values(), key=lambda x: (x["tier"], x["char_id"])):
+            taken_total = sum(entry["taken_by"].values())
+            remaining = max(0, entry["total_copies"] - taken_total)
+            operators_out.append({
+                "char_id": entry["char_id"],
+                "name": entry["name"],
+                "tier": entry["tier"],
+                "bonds": entry["bonds"],
+                "total_copies": entry["total_copies"],
+                "taken_by": {str(k): v for k, v in sorted(entry["taken_by"].items())},
+                "taken_total": taken_total,
+                "remaining": remaining,
+                "in_shop_seats": entry["in_shop_seats"],
+            })
+            ts = tier_stats.get(entry["tier"])
+            if ts is not None:
+                ts["operator_kinds"] += 1
+                ts["total_copies"] += entry["total_copies"]
+                ts["taken_copies"] += min(entry["total_copies"], taken_total)
+                ts["remaining_copies"] += remaining
+
+        # 3. Build shop equipment pool and count held equips among ALIVE players
+        equip_taken: dict[str, dict[int, int]] = {}
+        equip_in_shop: dict[str, list[int]] = {}
+        for seat, loadout in self.seat_loadouts.items():
+            if seat in self.eliminated:
+                continue
+            for _inst, ident in (*(loadout.get("equips") or {}).items(), *(loadout.get("traps") or {}).items()):
+                tinfo = resolve_trap_identifier(ident)
+                if not tinfo or not tinfo.get("trap_id"):
+                    continue
+                tid = tinfo["trap_id"]
+                equip_taken.setdefault(tid, {})
+                equip_taken[tid][seat] = equip_taken[tid].get(seat, 0) + int(tinfo.get("copies") or 1)
+            for g in (lineups.get(seat) or {}).get("shop_goods") or ():
+                if g.get("kind") == "equip" and g.get("trap_id"):
+                    lst = equip_in_shop.setdefault(g["trap_id"], [])
+                    if seat not in lst:
+                        lst.append(seat)
+
+        equips_out = []
+        for eq in SHOP_EQUIPS:
+            tid = eq["trap_id"]
+            give_bond = eq.get("give_bond_id") or ""
+            bond_banned = bool(give_bond and give_bond in banned_bonds)
+            if bond_banned:
+                continue
+            taken_by = equip_taken.get(tid) or {}
+            tier = int(eq.get("tier") or 1)
+            equips_out.append({
+                "trap_id": tid,
+                "chess_id": eq["chess_id"],
+                "name": eq["name"],
+                "tier": tier,
+                "item_type": eq.get("item_type") or "EQUIP",
+                "give_bond_id": give_bond,
+                "taken_by": {str(k): v for k, v in sorted(taken_by.items())},
+                "taken_total": sum(taken_by.values()),
+                "in_shop_seats": equip_in_shop.get(tid, []),
+            })
+            ts = tier_stats.get(tier)
+            if ts is not None:
+                ts["equip_kinds"] += 1
+
+        shop_slots = {str(lv): get_shop_slots(mode_id, lv) for lv in range(1, 7)}
+        return {
+            "mode_id": mode_id,
+            "is_single": is_single,
+            "shop_slots": shop_slots,
+            "tier_summary": [tier_stats[t] for t in range(1, 7)],
+            "operators": operators_out,
+            "equips": equips_out,
         }

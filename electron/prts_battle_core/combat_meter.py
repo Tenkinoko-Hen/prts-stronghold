@@ -539,50 +539,118 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
     mode_id = str(config.get("mode_id") or "")
     scope = "solo_stronghold" if mode_id.startswith("mode_single_") else "coop_boss"
 
+    boss_round_candidates = set(match_snapshot.get("boss_rounds") or (14, 15))
+    for k, row in rounds.items():
+        if isinstance(row, Mapping) and (
+            row.get("boss_uplink_rows") or row.get("boss_official") or row.get("phase") == "boss" or row.get("boss_ended")
+        ):
+            if str(k).isdigit():
+                boss_round_candidates.add(int(k))
+
     operator_totals: dict[tuple[int, str], dict] = {}
-    for round_no in (14, 15):
+    round_snaps: dict[str, dict] = {}
+    latest_duration: float | None = None
+    latest_timeline: list[dict] = []
+    latest_boss_hp: float | None = None
+
+    for round_no in sorted(boss_round_candidates):
         row = rounds.get(round_no) or rounds.get(str(round_no))
-        if not row:
+        if not isinstance(row, Mapping):
             continue
-        for hit in row.get("boss_uplink_rows") or ():
-            char_id = hit.get("char_id") or f"slot_{hit.get('attacker', 0)}"
+        duration = row.get("boss_duration")
+        dur_sec = float(duration) if isinstance(duration, (int, float)) and duration > 0 else None
+        raw_tl = row.get("boss_timeline") or ()
+        if dur_sec is not None:
+            latest_duration = dur_sec
+        if isinstance(row.get("boss_hp"), (int, float)) and row["boss_hp"] > 0:
+            latest_boss_hp = float(row["boss_hp"])
+
+        # Build per-round timeline points (t, dps, total)
+        round_tl: list[dict] = []
+        prev_t, prev_v = 0.0, 0.0
+        for pt in raw_tl:
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                t, v = float(pt[0]), float(pt[1])
+                dt = max(0.5, t - prev_t) if round_tl else max(1.0, t)
+                inst_dps = round(max(0.0, (v - prev_v) / dt), 1)
+                round_tl.append({"t": round(t, 1), "dps": inst_dps, "total": round(v, 1)})
+                prev_t, prev_v = t, v
+        if round_tl:
+            latest_timeline = round_tl
+
+        # Prefer official ranked rows per (seat, identifier) when present; otherwise use uplink hits
+        round_ops: dict[tuple[int, str], dict] = {}
+        official_rows = list(row.get("boss_official") or ())
+        uplink_rows = list(row.get("boss_uplink_rows") or ())
+        source_rows = official_rows if official_rows else uplink_rows
+        is_official = bool(official_rows)
+
+        for hit in source_rows:
+            ident = hit.get("identifier") if is_official else hit.get("attacker")
+            char_id = hit.get("char_id") or f"slot_{ident or 0}"
             seat = int(hit.get("player") or 0)
             dmg = float(hit.get("damage") or 0.0)
             if dmg <= 0 or seat not in range(1, 5):
                 continue
-            entry = operator_totals.setdefault(
-                (seat, char_id),
-                {
-                    "char_id": char_id,
-                    "name": hit.get("operator_name") or resolve_operator_name(char_id, f"编号 #{hit.get('attacker')}"),
-                    "seat": seat,
-                    "on_field": False,
-                    "total_damage": 0.0,
-                    "summon_damage": 0.0,
-                    "physical": 0.0,
-                    "arts": 0.0,
-                    "true": 0.0,
-                    "elemental": 0.0,
-                    "healing": 0.0,
-                    "active_dps": None,
-                    "pulse_dps": None,
-                    "span_dps": None,
-                    "active_hps": None,
-                    "pulse_hps": None,
-                    "span_hps": None,
-                    "active_seconds": None,
-                    "presence_seconds": None,
-                    "shield_guarded": None,
-                    "overkill_trimmed": None,
-                    "skill_damage": None,
-                    "mitigation_ratio": None,
-                    "hits": 0,
-                    "share_ratio": 0.0,
-                    "children": [],
-                },
-            )
-            entry["total_damage"] = round(entry["total_damage"] + dmg, 1)
-            entry["hits"] = (entry["hits"] or 0) + 1
+            name = hit.get("operator_name") or resolve_operator_name(char_id, f"干员 #{ident}")
+            for target_map in (operator_totals, round_ops):
+                entry = target_map.setdefault(
+                    (seat, char_id),
+                    {
+                        "char_id": char_id,
+                        "name": name,
+                        "seat": seat,
+                        "on_field": False,
+                        "total_damage": 0.0,
+                        "summon_damage": 0.0,
+                        "physical": 0.0,
+                        "arts": 0.0,
+                        "true": 0.0,
+                        "elemental": 0.0,
+                        "healing": 0.0,
+                        "active_dps": None,
+                        "pulse_dps": None,
+                        "span_dps": None,
+                        "active_hps": None,
+                        "pulse_hps": None,
+                        "span_hps": None,
+                        "active_seconds": dur_sec,
+                        "presence_seconds": dur_sec,
+                        "shield_guarded": None,
+                        "overkill_trimmed": None,
+                        "skill_damage": None,
+                        "mitigation_ratio": None,
+                        "hits": 0,
+                        "share_ratio": 0.0,
+                        "children": [],
+                    },
+                )
+                entry["total_damage"] = round(entry["total_damage"] + dmg, 1)
+                entry["hits"] = (entry["hits"] or 0) + 1
+                if dur_sec and dur_sec > 0:
+                    est_dps = round(entry["total_damage"] / dur_sec, 1)
+                    entry["active_dps"] = est_dps
+                    entry["span_dps"] = est_dps
+
+        if round_ops:
+            r_list = sorted(round_ops.values(), key=lambda r: (-r["total_damage"], r["char_id"]))
+            r_total = round(sum(r["total_damage"] for r in r_list), 1)
+            for r in r_list:
+                r["share_ratio"] = round(r["total_damage"] / r_total, 4) if r_total > 0 else 0.0
+            round_snaps[str(round_no)] = {
+                "scope": scope,
+                "source": "protocol_wire",
+                "coverage": "protocol",
+                "retained_round": None,
+                "logic_seconds": dur_sec,
+                "team_total_damage": r_total,
+                "team_total_healing": None,
+                "operators": r_list,
+                "stage_devices": [],
+                "enemy_pool": None,
+                "timeline": round_tl,
+                "rounds": {},
+            }
 
     if not operator_totals and not lineups:
         return None
@@ -592,18 +660,36 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
     for r in operators:
         r["share_ratio"] = round(r["total_damage"] / total_dmg, 4) if total_dmg > 0 else 0.0
 
+    enemy_pool = None
+    if latest_boss_hp and latest_boss_hp > 0:
+        remain = max(0.0, latest_boss_hp - total_dmg)
+        enemy_pool = {
+            "active_count": 1 if remain > 0 else 0,
+            "defeated_count": 1 if remain <= 0 and total_dmg > 0 else 0,
+            "respawn_resets": 0,
+            "live_hp": round(remain, 1),
+            "live_max_hp": round(latest_boss_hp, 1),
+            "boss": {
+                "enemy_id": str(config.get("boss_id") or ""),
+                "name": "本局首领",
+                "hp": round(remain, 1),
+                "max_hp": round(latest_boss_hp, 1),
+            },
+        }
+
     return {
         "scope": scope,
         "source": "protocol_wire",
         "coverage": "protocol",
         "retained_round": None,
-        "logic_seconds": None,
+        "logic_seconds": latest_duration,
         "team_total_damage": total_dmg,
         "team_total_healing": None,
         "operators": operators,
         "stage_devices": [],
-        "enemy_pool": None,
-        "rounds": {},
+        "enemy_pool": enemy_pool,
+        "timeline": latest_timeline,
+        "rounds": round_snaps,
     }
 
 
@@ -724,7 +810,8 @@ class ArenaTelemetryCoordinator:
         proto = build_protocol_telemetry(report)
         if proto is not None:
             proto["inspector_status"] = inspector_status
-            proto["rounds"] = {str(k): v for k, v in sorted(self._round_archives.items())}
+            if self._round_archives:
+                proto["rounds"] = {**(proto.get("rounds") or {}), **{str(k): v for k, v in sorted(self._round_archives.items())}}
             report["telemetry"] = proto
         return report
 

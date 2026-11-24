@@ -189,13 +189,36 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
           assistsPartial: old.assistsPartial, assistPairs: old.assistPairs, assistEnemies: old.assistEnemies,
           unattributedAssists: old.unattributedAssists };
       }
-      if (row.number >= 14) row = mergeBossRound(old, row);
+      const isBossRow = row.number >= 14 || row.phase === 'boss' || old.phase === 'boss'
+        || row.bossEnded || old.bossEnded
+        || incoming.bossRounds.includes(row.number) || previous.bossRounds.includes(row.number);
+      if (isBossRow) row = mergeBossRound(old, row);
     }
     if (rounds.get(old.number) !== row) {
       rounds.set(old.number, row);
       changed = true;
     }
   }
+  const hp = { ...previous.hp, ...incoming.hp };
+  const eliminated = { ...previous.eliminated };
+  for (const seat of REPORT_SEATS) {
+    if (incoming.eliminated[seat] !== undefined) {
+      eliminated[seat] = eliminated[seat] !== undefined
+        ? Math.min(eliminated[seat], incoming.eliminated[seat])
+        : incoming.eliminated[seat];
+    } else if (incoming.hp[seat] !== undefined && incoming.hp[seat] > 0) {
+      delete eliminated[seat];
+    }
+  }
+  if (Object.keys(eliminated).length !== Object.keys(incoming.eliminated).length
+    || REPORT_SEATS.some(s => eliminated[s] !== incoming.eliminated[s] || hp[s] !== incoming.hp[s])) {
+    changed = true;
+  }
+  const bossRoundSet = new Set([...previous.bossRounds, ...incoming.bossRounds]);
+  const bossRounds = bossRoundSet.size > incoming.bossRounds.length
+    ? [...bossRoundSet].sort((a, b) => a - b)
+    : incoming.bossRounds;
+  if (bossRounds !== incoming.bossRounds) changed = true;
   let bannedCovenants = incoming.bannedCovenants;
   if (!bannedCovenants.length && previous.bannedCovenants.length) {
     bannedCovenants = previous.bannedCovenants;
@@ -211,12 +234,17 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
     lineups = previous.lineups;
     changed = true;
   }
+  let deckPool = incoming.deckPool;
+  if (!deckPool && previous.deckPool) {
+    deckPool = previous.deckPool;
+    changed = true;
+  }
   let telemetry = incoming.telemetry;
   if (!telemetry && previous.telemetry) {
     telemetry = previous.telemetry;
     changed = true;
   }
-  return changed ? { ...incoming, names, bannedCovenants, defeatedBossRounds, lineups, telemetry, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
+  return changed ? { ...incoming, names, hp, eliminated, bossRounds, bannedCovenants, defeatedBossRounds, lineups, deckPool, telemetry, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
 }
 
 export function updateLiveReport(records: ReportRecords, report: BattleReport | null, run: number, now: number): ReportRecords {

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { readBattleReport } from './battleReportData';
+import { defaultBossRound, readBattleReport, reportBossRounds, reportLeader } from './battleReportData';
 import { renderBattleReportHtml } from './battleReportDocument';
 import { summarizeBattleReport } from './battleReportExport';
+import { isSeatEliminatedInRound, roundOutcome } from './battleRoundOutcome';
 import {
   formatTelemetryRate,
   formatTelemetryTotal,
@@ -11,8 +12,15 @@ import {
   isSoloStageMode,
   operatorRateForCaliber,
   readCombatTelemetry,
+  readDeckPool,
   readSeatLineups,
 } from './combatTelemetry';
+import {
+  computeEquipOdds,
+  computeOperatorOdds,
+  computeWishlistSummary,
+  hypergeometricAtLeastOne,
+} from './deckPoolMath';
 import { demoReport } from './demo/battleReportFixture';
 import { computeEffectiveDps } from '../mobile/MobileDpsEstimator';
 import { parseSettlementQuickText } from '../mobile/settlementQuickParse';
@@ -129,4 +137,83 @@ test('mobile effective DPS estimator flags physical polishing and mobile quick-f
   });
   assert.deepEqual(synced.bans.bannedCovenants, ['阿戈尔', '奥术']);
   assert.equal(synced.scanComplete, true);
+});
+
+test('quick_r9 solo mode detects dynamic R9 Boss, solo round outcomes, and translated operators/strategist', () => {
+  const report = readBattleReport(demoReport('quick_r9'));
+  assert.equal(report.difficulty, '极速模拟');
+  assert.equal(isSoloMode(report.mode), true);
+  assert.deepEqual(reportBossRounds(report), [9]);
+  assert.equal(defaultBossRound(report), 9);
+  assert.equal(reportLeader(report, 9)?.name, '假想敌：管');
+
+  const r3 = report.rounds.find(r => r.number === 3)!;
+  const r9 = report.rounds.find(r => r.number === 9)!;
+  assert.equal(roundOutcome(r3, report, 1, false).label, '本路零漏');
+  assert.equal(roundOutcome(r9, report, 1, true).label, '首领攻坚中');
+  assert.equal(roundOutcome(r9, { ...report, defeatedBossRounds: [9] }, 1, false).label, '已击败首领');
+  assert.equal(report.lineups[1].strategist, '阿米娅·众志合一');
+  assert.equal(report.lineups[1].deployed.some(u => u.name === '黑键'), true);
+  assert.equal(report.lineups[1].deployed.some(u => u.name === '车尔尼'), true);
+  assert.equal(report.telemetry?.operators[0].name, '黑键');
+  assert.ok((report.telemetry?.timeline.length ?? 0) >= 4);
+});
+
+test('coop_elim tracks eliminated seat, clean board lineup, and deck pool hypergeometric roll probabilities', () => {
+  const report = readBattleReport(demoReport('coop_elim'));
+  assert.equal(report.eliminated[2], 5);
+  assert.equal(isSeatEliminatedInRound(report, 2, 5), false);
+  assert.equal(isSeatEliminatedInRound(report, 2, 6), true);
+  assert.equal(report.lineups[1].strategist, '阿米娅·众志合一');
+  assert.equal(report.lineups[1].deployed.length, 4);
+  assert.equal(report.lineups[1].bench.length, 1);
+  assert.equal(report.lineups[1].equips.length, 1);
+
+  const pool = report.deckPool ?? readDeckPool(null);
+  assert.ok(pool);
+  assert.equal(report.lineups[1].shopLevel, 4);
+  assert.ok(pool.operators.length >= 6);
+
+  // Exact hypergeometric check: 4 copies in 10 cards, 2 draws -> 1 - (6/10)*(5/9) = 2/3
+  assert.ok(Math.abs(hypergeometricAtLeastOne(10, 4, 2) - 2 / 3) < 1e-12);
+
+  const wisdel = pool.operators.find(o => o.name === '维什戴尔');
+  assert.ok(wisdel);
+  assert.equal(wisdel.remaining, 0);
+  // At shop level 6 wisdel is unlocked but empty; at level 4 wisdel is tier 6 (locked)
+  assert.equal(computeOperatorOdds(pool, wisdel, 4).status, 'locked');
+  assert.equal(computeOperatorOdds(pool, wisdel, 6).status, 'empty');
+  assert.equal(computeOperatorOdds(pool, wisdel, 6).perRollProb, 0);
+
+  const ebnhlz = pool.operators.find(o => o.name === '黑键');
+  assert.ok(ebnhlz);
+  const ebOdds = computeOperatorOdds(pool, ebnhlz, 4);
+  assert.equal(ebOdds.unlocked, true);
+  assert.ok(ebOdds.perRollProb > 0 && ebOdds.perRollProb < 1);
+  assert.ok(ebOdds.fiveRollProb > ebOdds.perRollProb);
+  assert.ok(ebOdds.expectedRolls !== null && ebOdds.expectedRolls > 1);
+
+  const shu = pool.operators.find(o => o.name === '黍');
+  assert.ok(shu);
+  // Tier 5 at level 4: locked for normal roll, but eligible for triple discover (discoverTier = 5)
+  const shuOdds = computeOperatorOdds(pool, shu, 4);
+  assert.equal(shuOdds.unlocked, false);
+  assert.ok(shuOdds.tripleDiscoverProb !== null && shuOdds.tripleDiscoverProb > 0);
+
+  if (pool.equips.length > 0) {
+    const eqOdds = computeEquipOdds(pool, pool.equips[0], 4);
+    assert.equal(eqOdds.unlocked, true);
+    assert.ok(eqOdds.perRollProb > 0);
+  }
+
+  const summary = computeWishlistSummary(
+    pool,
+    4,
+    new Set([ebnhlz.charId, shu.charId]),
+    new Set(pool.equips.slice(0, 1).map(e => e.trapId)),
+  );
+  assert.equal(summary.shopLevel, 4);
+  assert.equal(summary.nextLevelShopLevel, 5);
+  assert.ok(summary.anyWishOperatorPerRoll > 0);
+  assert.ok(summary.nextLevelAnyWishPerRoll !== null && summary.nextLevelAnyWishPerRoll > 0);
 });

@@ -119,7 +119,7 @@ function describeRound(row: BattleRound, report: BattleReport, live: boolean) {
 
 function describeBoss(row: BattleRound, report: BattleReport) {
   const number = row.number;
-  const leader = number === 14 || number === 15 ? reportLeader(report, number) : null;
+  const leader = reportLeader(report, number);
   const seats = REPORT_SEATS.map(seat => {
     const server = row.bossDamage[seat];
     if (server !== undefined) return { seat, damage: exact(server), source: row.bossStatus === 'settlement' ? '服务器结算' : '服务器记录' };
@@ -155,14 +155,19 @@ export function summarizeBattleReport(
 ) {
   const combat = report.rounds.filter(isCombatRound).sort((a, b) => a.number - b.number);
   const rounds = combat.map(row => describeRound(row, report, live));
-  const bosses = combat.filter(row => row.phase === 'boss' || row.bossEnded || hasBossDamage(row) || row.number >= 14)
+  const bosses = combat.filter(row => row.phase === 'boss' || row.bossEnded || hasBossDamage(row) || report.bossRounds.includes(row.number))
     .map(row => describeBoss(row, report));
   const players = REPORT_SEATS.map((seat, i) => {
-    const lanes = rounds.map(row => row.lanes[i]);
-    const confirmed = lanes.filter(lane => lane.leaks && !lane.leaks.quality);
+    const elimRound = report.eliminated[seat];
+    const activeLanes = rounds
+      .filter(row => elimRound === undefined || row.number <= elimRound)
+      .map(row => row.lanes[i]);
+    const confirmed = activeLanes.filter(lane => lane.leaks && !lane.leaks.quality);
     const clean = confirmed.filter(lane => lane.leaks!.value === 0).length;
-    return { seat, name: report.names[seat] || '未记录昵称', self: seat === report.self, leaks: sumMetrics(lanes.map(lane => lane.leaks)),
-      helps: sumMetrics(lanes.map(lane => lane.helps)), boss: sumMetrics(bosses.map(boss => boss.seats[i].damage)),
+    return { seat, name: report.names[seat] || '未记录昵称', self: seat === report.self,
+      eliminatedRound: elimRound,
+      leaks: sumMetrics(activeLanes.map(lane => lane.leaks)),
+      helps: sumMetrics(activeLanes.map(lane => lane.helps)), boss: sumMetrics(bosses.map(boss => boss.seats[i].damage)),
       cleanRatio: confirmed.length ? `${ratio.format(clean / confirmed.length * 100)}%（${clean}/${confirmed.length}）` : '—' };
   });
   const most = Math.max(...players.map(p => p.helps?.value ?? 0));

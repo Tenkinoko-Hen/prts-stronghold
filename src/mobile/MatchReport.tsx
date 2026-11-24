@@ -4,6 +4,7 @@ import {RoundSync, type RoundSyncProgress} from './RoundSync';
 import {MobileLanPanel} from './MobileLanPanel';
 import {parseSettlementQuickText} from './settlementQuickParse';
 import type {BattleReport} from '../desktop/battleReportData';
+import {isSeatEliminatedInRound} from '../desktop/battleRoundOutcome';
 import {seatDisplayText} from '../desktop/BattleReportPanels';
 import {formatTelemetryRate, formatTelemetryTotal} from '../desktop/combatTelemetry';
 import atlas from '../desktop/enemyPortraits.json';
@@ -271,9 +272,12 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
     const inTotals = new Map<number, number>();
 
     for (const r of pcReport.rounds) {
+      const selfElim = selfSeat ? isSeatEliminatedInRound(pcReport, selfSeat, r.number) : false;
       const teamLeaks = Object.values(r.leaks).reduce((a, b) => a + b, 0);
       const myHelps = selfSeat ? (r.assists[selfSeat] ?? 0) : Object.values(r.assists).reduce((a, b) => a + b, 0);
-      const teamBoss = Object.values(r.bossDamage).reduce((a, b) => a + b, 0);
+      const bossDamageSum = Object.values(r.bossDamage).reduce((a, b) => a + b, 0);
+      const bossOfficialSum = r.bossOfficial.reduce((a, b) => a + b.damage, 0);
+      const teamBoss = bossOfficialSum > 0 ? bossOfficialSum : bossDamageSum;
       if (selfSeat) {
         for (const p of r.assistPairs) {
           if (p.killer === selfSeat && p.owner !== selfSeat) outTotals.set(p.owner, (outTotals.get(p.owner) ?? 0) + p.count);
@@ -284,11 +288,12 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
       const teleSummary = roundTeleOps.length
         ? roundTeleOps.map(o => `${o.name} ${formatTelemetryTotal(o.totalDamage)}${o.activeDps != null ? `(${formatTelemetryRate(o.activeDps)})` : ''}`).join(' · ')
         : '';
+      const note = [selfElim ? '已淘汰' : '', teleSummary].filter(Boolean).join(' · ');
       roundsPayload[String(r.number)] = {
-        leaks: r.selfLeaks ?? (selfSeat ? r.leaks[selfSeat] : undefined) ?? teamLeaks,
+        ...(selfElim ? {} : { leaks: r.selfLeaks ?? (selfSeat ? r.leaks[selfSeat] : undefined) ?? teamLeaks }),
         helps: myHelps,
         ...(teamBoss > 0 ? { boss: teamBoss } : {}),
-        ...(teleSummary ? { note: teleSummary } : {}),
+        ...(note ? { note } : {}),
       };
     }
 

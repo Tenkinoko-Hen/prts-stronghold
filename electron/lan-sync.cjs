@@ -69,6 +69,7 @@ function installLanSync({ mainWindow, ipcMain, product }) {
   let payload = {
     status: 'starting',
     report: null,
+    reportEnded: false,
     guide: {
       bannedCovenants: [],
       currentRound: 1,
@@ -185,6 +186,7 @@ function installLanSync({ mainWindow, ipcMain, product }) {
         product: product.id,
         productName: product.name,
         status: payload.status,
+        reportEnded: payload.reportEnded,
         guide: payload.guide,
         report: payload.report,
       });
@@ -234,10 +236,13 @@ function installLanSync({ mainWindow, ipcMain, product }) {
   function updateBattleFeed(feed) {
     if (!feed || disposed) return;
     seq += 1;
+    const hasIncomingReport = feed.report !== undefined && feed.report !== null;
     payload = {
       ...payload,
       status: feed.status || payload.status,
-      report: feed.report !== undefined ? feed.report : payload.report,
+      // Keep last finished report on secondary display until a brand-new live match arrives
+      report: hasIncomingReport ? feed.report : payload.report,
+      reportEnded: hasIncomingReport ? false : Boolean(payload.report),
     };
   }
 

@@ -59,19 +59,20 @@ function RoundTrendBarChart({
   const hasAny = points.some(p => p.leak > 0 || p.help > 0);
   if (!hasAny) return null;
 
-  const { top: yTop, ticks } = niceTicks(maxVal, 3);
-  const width = 560;
-  const height = 138;
-  const padL = 32;
-  const padR = 12;
-  const padT = 18;
-  const padB = 24;
+  const { top: yTop, ticks } = niceTicks(maxVal, 2);
+  const width = 640;
+  const height = 84;
+  const padL = 26;
+  const padR = 10;
+  const padT = 14;
+  const padB = 18;
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
   const baseY = padT + innerH;
   const slotW = innerW / points.length;
-  const barW = solo ? Math.min(18, Math.max(8, slotW * 0.34)) : Math.min(12, Math.max(6, slotW * 0.24));
-  const barGap = 3;
+  const bandW = Math.min(44, Math.max(18, slotW - 4));
+  const barW = solo ? Math.min(13, Math.max(7, bandW * 0.36)) : Math.min(10, Math.max(5, bandW * 0.28));
+  const barGap = 2.5;
 
   return (
     <section className="d-round-trend" aria-label="各回合漏怪与兜底趋势图">
@@ -131,22 +132,22 @@ function RoundTrendBarChart({
             >
               <title>{`R${pt.round}${pt.elim ? '（已淘汰）' : ` · 漏 ${pt.leak}${!solo ? ` / 兜 +${pt.help}` : ''}`}`}</title>
               <rect
-                x={x0 + 2}
+                x={cx - bandW / 2}
                 y={padT}
-                width={Math.max(4, slotW - 4)}
+                width={bandW}
                 height={innerH}
-                fill={active ? 'rgba(54, 152, 204, 0.12)' : 'transparent'}
+                fill={active ? 'rgba(54, 152, 204, 0.14)' : 'transparent'}
               />
-              {active && <rect x={x0 + 2} y={padT} width={Math.max(4, slotW - 4)} height="2" fill={PRTS_CHART.ochreBright} />}
+              {active && <rect x={cx - bandW / 2} y={padT} width={bandW} height="2" fill={PRTS_CHART.ochreBright} />}
 
               {pt.elim ? (
-                <line x1={cx - 6} y1={baseY - 4} x2={cx + 6} y2={baseY - 4} stroke={PRTS_CHART.slate} strokeWidth="2" />
+                <line x1={cx - 5} y1={baseY - 4} x2={cx + 5} y2={baseY - 4} stroke={PRTS_CHART.slate} strokeWidth="2" />
               ) : (
                 <>
                   {leakH > 0 && (
                     <>
                       <rect x={leakX} y={baseY - leakH} width={barW} height={leakH} fill={PRTS_CHART.crimson} />
-                      <text x={leakX + barW / 2} y={baseY - leakH - 3.5} textAnchor="middle" fill="#E88B85" fontSize="9.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+                      <text x={leakX + barW / 2} y={baseY - leakH - 2.5} textAnchor="middle" fill="#E88B85" fontSize="9" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
                         {pt.leak}
                       </text>
                     </>
@@ -154,7 +155,7 @@ function RoundTrendBarChart({
                   {!solo && helpH > 0 && (
                     <>
                       <rect x={helpX} y={baseY - helpH} width={barW} height={helpH} fill={PRTS_CHART.blue} />
-                      <text x={helpX + barW / 2} y={baseY - helpH - 3.5} textAnchor="middle" fill="#8CCAE8" fontSize="9.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+                      <text x={helpX + barW / 2} y={baseY - helpH - 2.5} textAnchor="middle" fill="#8CCAE8" fontSize="9" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
                         +{pt.help}
                       </text>
                     </>
@@ -163,10 +164,10 @@ function RoundTrendBarChart({
               )}
               <text
                 x={cx}
-                y={height - 7}
+                y={height - 4}
                 textAnchor="middle"
                 fill={active ? PRTS_CHART.ochreBright : PRTS_CHART.labelMuted}
-                fontSize="10"
+                fontSize="9.5"
                 fontWeight={active ? '700' : '500'}
                 fontFamily={PRTS_FONT_NUM}
               >

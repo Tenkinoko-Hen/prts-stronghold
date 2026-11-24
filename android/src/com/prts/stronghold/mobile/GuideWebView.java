@@ -50,6 +50,7 @@ final class GuideWebView {
         view.addJavascriptInterface(new RoundBridge(context.getApplicationContext()), "PRTSRound");
         view.addJavascriptInterface(new LanSyncBridge(context.getApplicationContext()), "PRTSLan");
         view.addJavascriptInterface(new OverlayBridge(), "PRTSOverlay");
+        view.addJavascriptInterface(new DisplayBridge(context.getApplicationContext()), "PRTSDisplay");
         view.setWebViewClient(new WebViewClient() {
             private boolean local(Uri uri) { return "https".equals(uri.getScheme()) && HOST.equals(uri.getHost()); }
             @Override public boolean shouldOverrideUrlLoading(WebView web, WebResourceRequest request) { return !local(request.getUrl()); }
@@ -134,6 +135,14 @@ final class GuideWebView {
         }
         @JavascriptInterface public void enterStrip(boolean locked) {
             OverlayService.enterStripFromBridge(locked);
+        }
+    }
+
+    private static final class DisplayBridge {
+        private final Context context;
+        DisplayBridge(Context context) { this.context = context; }
+        @JavascriptInterface public void setSecondScreenMode(boolean enabled) {
+            MainActivity.setSecondScreenFromBridge(context, enabled);
         }
     }
 }

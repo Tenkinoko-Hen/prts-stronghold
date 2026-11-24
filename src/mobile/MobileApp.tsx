@@ -7,7 +7,8 @@ import { MobileReference } from './MobileReference';
 import { CovenantScanner, useCovenantScanner } from './CovenantScanner';
 import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
-import { MobileLanPanel } from './MobileLanPanel';
+import { isSecondScreenActive, MobileLanPanel, useMobileLanSync } from './MobileLanPanel';
+import { MobileSecondScreen } from './MobileSecondScreen';
 import type { RoundSyncProgress } from './RoundSync';
 import { StrategyBadge } from '../components/StrategyBadge';
 import { OperatorAvatar } from '../components/OperatorAvatar';
@@ -56,6 +57,11 @@ export default function MobileApp() {
   const handleLanSync = useCallback((data: { bannedCovenants: string[]; round: number; selectedCompId?: string }) => {
     dispatch({ type: 'applyLanSync', ...data });
   }, []);
+  const lanSync = useMobileLanSync(handleLanSync);
+  const secondScreenOn = isSecondScreenActive(lanSync.lan);
+  useEffect(() => {
+    window.PRTSDisplay?.setSecondScreenMode(secondScreenOn);
+  }, [secondScreenOn]);
   const startNewMatch = () => {
     window.PRTSScan?.reset();
     resetRoundSync();
@@ -80,6 +86,15 @@ export default function MobileApp() {
   </div>;
 
   const guiding = session.step === 'guide' && Boolean(comp);
+  if (secondScreenOn && lanSync.lan) {
+    return (
+      <MobileSecondScreen
+        lan={lanSync.lan}
+        onDisconnect={lanSync.disconnect}
+        productMode="full"
+      />
+    );
+  }
   return <div className={`mobile-app ${overlay ? 'is-overlay' : ''}${guiding ? ' is-guiding' : ''}`}>
     {!guiding && <header className="m-workbar"><strong>{session.step === 'ban' ? '识别与推荐' : session.step === 'plans' ? '选择方案' : '随行资料库'}</strong>
       <button className="m-icon-button" aria-label="开始新局" title="开始新局" onClick={() => setResetPrompt(true)}><RotateCcw size={16} /></button><button className="m-icon-button" aria-label="使用帮助" onClick={() => setHelp(true)}><CircleHelp size={17} /></button>
@@ -88,7 +103,11 @@ export default function MobileApp() {
     <main className={`m-scroll ${session.step === 'guide' ? 'is-guide' : session.step === 'ban' ? 'is-scan' : ''}`} ref={scrollRef}>
       {session.step === 'ban' && <div className="m-scan-layout"><section className="m-scan-controls" aria-label="识别与校正">
         <CovenantScanner appliedId={session.scanId} scanner={scanner} />
-        <MobileLanPanel onSyncGuide={handleLanSync} />
+        <MobileLanPanel
+          sharedLan={lanSync.lan}
+          onConnect={lanSync.connect}
+          onDisconnect={lanSync.disconnect}
+        />
         <div className="m-ban-result"><div className="m-result-heading"><strong>{session.scanComplete ? '26 项已确认' : session.scanId ? `已确认 ${session.confirmedCovenants?.length || 0}/26` : '本局条件'} · {session.bans.bannedCovenants.length} 项受限</strong><button className="m-text-button" aria-expanded={correcting} onClick={() => setCorrecting(true)}>补录 / 校正</button></div>
           <div className="m-restricted-chips">{session.bans.bannedCovenants.map(name => <button key={name} onClick={() => dispatch({ type: 'ban', group: 'bannedCovenants', name })} aria-label={`将${name}改为可用`}>{name}<X size={12} /></button>)}</div>
         </div>
@@ -135,7 +154,11 @@ export default function MobileApp() {
       </>}
 
       {guiding && comp && <>
-        <MobileLanPanel onSyncGuide={handleLanSync} />
+        <MobileLanPanel
+          sharedLan={lanSync.lan}
+          onConnect={lanSync.connect}
+          onDisconnect={lanSync.disconnect}
+        />
         <MobileGuide comp={comp} round={round} bans={session.bans} roundSyncProgress={roundSyncProgress} onRound={value => dispatch({ type: 'round', round: value })} onBack={() => dispatch({ type: 'step', step: 'plans' })} onOpenImage={openImage} />
       </>}
       {session.step === 'library' && <MobileReference onOpenImage={openImage} />}

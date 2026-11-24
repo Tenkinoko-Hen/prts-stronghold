@@ -218,8 +218,7 @@ final class LanSyncBridge {
         return true;
     }
 
-    @JavascriptInterface
-    public void disconnect() {
+    static void disconnectStatic() {
         synchronized (LOCK) {
             generation += 1;
             active = false;
@@ -227,6 +226,11 @@ final class LanSyncBridge {
             error = "";
             latestPayloadJson = "null";
         }
+    }
+
+    @JavascriptInterface
+    public void disconnect() {
+        disconnectStatic();
     }
 
     private static void pollLoop(int runGen, String targetHost, int targetPort, String pin) {

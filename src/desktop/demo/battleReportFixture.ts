@@ -1,6 +1,6 @@
 import { REPORT_ROUNDS } from '../battleReportData';
 
-export type DemoScene = 'coop_elim' | 'quick_r9' | 'settled' | 'assisting' | 'opening' | 'solo_dps' | 'hud_preview';
+export type DemoScene = 'coop_elim' | 'quick_r9' | 'second_screen' | 'settled' | 'assisting' | 'opening' | 'solo_dps' | 'hud_preview';
 const enemies = [
   ['enemy_1002_nsabr', '士兵'], ['enemy_1009_lurker', '潜伏者'], ['enemy_1006_shield', '重装防御者'],
   ['enemy_1023_jmage', '隐形术师'], ['enemy_9034_acblk', '假想敌：影役'], ['enemy_1509_mousek', '鼠王'],

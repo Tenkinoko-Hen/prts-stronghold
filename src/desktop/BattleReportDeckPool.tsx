@@ -1,10 +1,52 @@
-import { useId, useMemo, useState } from 'react';
-import { AlertTriangle, Layers, Lock, Package, RefreshCw, Search, Sparkles, Star, Store } from 'lucide-react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { AlertTriangle, Layers, Lock, RefreshCw, Search, Sparkles, Star, Store } from 'lucide-react';
 import { REPORT_SEATS, type BattleReport } from './battleReportData';
 import { seatDisplayText } from './BattleReportPanels';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { computeEquipOdds, computeOperatorOdds, computeWishlistSummary } from './deckPoolMath';
+import { EquipIcon } from './EquipIcon';
 import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
+
+interface PersistedWishlist {
+  chars: string[];
+  traps: string[];
+}
+
+const wishlistMemoryCache = new Map<string, PersistedWishlist>();
+const WISHLIST_STORAGE_PREFIX = 'prts:deck-wishlist:v1:';
+
+function readPersistedWishlist(matchKey: string): PersistedWishlist {
+  const cached = wishlistMemoryCache.get(matchKey);
+  if (cached) return cached;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(WISHLIST_STORAGE_PREFIX + matchKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<PersistedWishlist>;
+        const data: PersistedWishlist = {
+          chars: Array.isArray(parsed.chars) ? parsed.chars.filter((x): x is string => typeof x === 'string') : [],
+          traps: Array.isArray(parsed.traps) ? parsed.traps.filter((x): x is string => typeof x === 'string') : [],
+        };
+        wishlistMemoryCache.set(matchKey, data);
+        return data;
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return { chars: [], traps: [] };
+}
+
+function writePersistedWishlist(matchKey: string, data: PersistedWishlist): void {
+  wishlistMemoryCache.set(matchKey, data);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(WISHLIST_STORAGE_PREFIX + matchKey, JSON.stringify(data));
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+}
 
 const TIER_ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'] as const;
 const pctFmt = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
@@ -67,12 +109,41 @@ export function BattleReportDeckPool({
     ?? 1;
 
   const gridId = useId();
+  const matchKey = report
+    ? `${report.match ?? 'live'}:${report.mode || 'std'}:${report.bannedCovenants.slice().sort().join(',')}`
+    : 'none';
   const [manualLevel, setManualLevel] = useState<number | null>(null);
-  const [wishChars, setWishChars] = useState<string[]>([]);
-  const [wishTraps, setWishTraps] = useState<string[]>([]);
+  const [wishChars, setWishChars] = useState<string[]>(() => readPersistedWishlist(matchKey).chars);
+  const [wishTraps, setWishTraps] = useState<string[]>(() => readPersistedWishlist(matchKey).traps);
   const [browseTab, setBrowseTab] = useState<'operators' | 'equips'>('operators');
   const [tierFilter, setTierFilter] = useState<number | 'all'>('all');
   const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    const saved = readPersistedWishlist(matchKey);
+    setWishChars(saved.chars);
+    setWishTraps(saved.traps);
+  }, [matchKey]);
+
+  const updateWishChars = (updater: (prev: string[]) => string[]) => {
+    setWishChars(prev => {
+      const next = updater(prev);
+      writePersistedWishlist(matchKey, { chars: next, traps: wishTraps });
+      return next;
+    });
+  };
+  const updateWishTraps = (updater: (prev: string[]) => string[]) => {
+    setWishTraps(prev => {
+      const next = updater(prev);
+      writePersistedWishlist(matchKey, { chars: wishChars, traps: next });
+      return next;
+    });
+  };
+  const clearAllWish = () => {
+    setWishChars([]);
+    setWishTraps([]);
+    writePersistedWishlist(matchKey, { chars: [], traps: [] });
+  };
 
   const shopLevel = manualLevel ?? liveShopLevel;
   const wishCharSet = useMemo(() => new Set(wishChars), [wishChars]);
@@ -98,9 +169,9 @@ export function BattleReportDeckPool({
   }
 
   const toggleWishChar = (charId: string) =>
-    setWishChars(prev => (prev.includes(charId) ? prev.filter(id => id !== charId) : [...prev, charId]));
+    updateWishChars(prev => (prev.includes(charId) ? prev.filter(id => id !== charId) : [...prev, charId]));
   const toggleWishTrap = (trapId: string) =>
-    setWishTraps(prev => (prev.includes(trapId) ? prev.filter(id => id !== trapId) : [...prev, trapId]));
+    updateWishTraps(prev => (prev.includes(trapId) ? prev.filter(id => id !== trapId) : [...prev, trapId]));
 
   const importSuggestedTargets = () => {
     const matchedChars = pool.operators
@@ -109,8 +180,11 @@ export function BattleReportDeckPool({
     const matchedTraps = pool.equips
       .filter(eq => suggestedEquipNames.some(n => eq.name === n || n.includes(eq.name)))
       .map(eq => eq.trapId);
-    if (matchedChars.length) setWishChars(prev => [...new Set([...prev, ...matchedChars])]);
-    if (matchedTraps.length) setWishTraps(prev => [...new Set([...prev, ...matchedTraps])]);
+    const nextChars = matchedChars.length ? [...new Set([...wishChars, ...matchedChars])] : wishChars;
+    const nextTraps = matchedTraps.length ? [...new Set([...wishTraps, ...matchedTraps])] : wishTraps;
+    setWishChars(nextChars);
+    setWishTraps(nextTraps);
+    writePersistedWishlist(matchKey, { chars: nextChars, traps: nextTraps });
   };
 
   const canImportSuggested = Boolean(
@@ -183,7 +257,7 @@ export function BattleReportDeckPool({
             <button
               type="button"
               className="d-button d-small"
-              onClick={() => { setWishChars([]); setWishTraps([]); }}
+              onClick={clearAllWish}
             >
               清空心仪 ({wishChars.length + wishTraps.length})
             </button>
@@ -371,7 +445,7 @@ export function BattleReportDeckPool({
               const isWished = (g.charId && wishCharSet.has(g.charId)) || (g.trapId && wishTrapSet.has(g.trapId));
               return (
                 <span key={`${g.slot}-${g.name}`} className={`d-shelf-chip${isWished ? ' is-wished' : ''}`}>
-                  {g.kind === 'operator' ? <CompactOperatorBadge name={g.name} size={18} /> : <Package size={13} />}
+                  {g.kind === 'operator' ? <CompactOperatorBadge name={g.name} size={18} /> : <EquipIcon trapId={g.trapId} name={g.name} size={18} />}
                   <b>{g.name}</b>
                   <small>{g.price}金{g.frozen ? ' · 冻' : ''}</small>
                 </span>
@@ -479,7 +553,7 @@ export function BattleReportDeckPool({
               return (
                 <article key={eq.trapId} className="d-wish-card is-equip" data-status={item.unlocked ? 'healthy' : 'locked'}>
                   <div className="d-wish-top">
-                    <span className="d-equip-icon"><Package size={16} /></span>
+                    <EquipIcon trapId={eq.trapId} name={eq.name} size={28} />
                     <div className="d-wish-ident">
                       <strong>
                         {eq.name}
@@ -599,7 +673,7 @@ export function BattleReportDeckPool({
                   onClick={() => toggleWishTrap(eq.trapId)}
                   title={`${eq.name}（${TIER_ROMAN[eq.tier]}阶装备）· 全队已持 ${eq.takenTotal} 件 · 单刷 ${fmtPct(odds.perRollProb)} · 点击收藏为心仪装备`}
                 >
-                  <span className="d-equip-icon is-sm"><Package size={14} /></span>
+                  <EquipIcon trapId={eq.trapId} name={eq.name} size={26} />
                   <div className="d-pool-card-info">
                     <div className="d-pool-card-top">
                       <strong>{eq.name}</strong>

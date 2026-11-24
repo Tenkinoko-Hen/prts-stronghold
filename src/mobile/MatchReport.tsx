@@ -1,7 +1,8 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {ArrowDownLeft, ArrowUpRight, BookOpen, FileDown, Flag, ImageDown, Plus, ScanText} from 'lucide-react';
 import {RoundSync, type RoundSyncProgress} from './RoundSync';
-import {MobileLanPanel} from './MobileLanPanel';
+import {isSecondScreenActive, MobileLanPanel, useMobileLanSync} from './MobileLanPanel';
+import {MobileSecondScreen} from './MobileSecondScreen';
 import {parseSettlementQuickText} from './settlementQuickParse';
 import type {BattleReport} from '../desktop/battleReportData';
 import {isSeatEliminatedInRound} from '../desktop/battleRoundOutcome';
@@ -351,9 +352,30 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
     window.PRTSRound?.stop();setRound(1);select(0);edit(false);notify('已开始记录本局');refresh();};
   const save=async(kind:'image'|'document')=>{if(!match||busy)return;setBusy(true);try{notify(await exportMatch(match,kind));}catch{notify('战报导出失败，请重试');}finally{setBusy(false);}};
   const standalone = PRODUCT_BRAND.mode === 'telemetry';
+  const lanSync = useMobileLanSync();
+  const secondScreenOn = isSecondScreenActive(lanSync.lan);
+  useEffect(() => {
+    window.PRTSDisplay?.setSecondScreenMode(secondScreenOn);
+  }, [secondScreenOn]);
+
+  if (secondScreenOn && lanSync.lan) {
+    return (
+      <MobileSecondScreen
+        lan={lanSync.lan}
+        onDisconnect={lanSync.disconnect}
+        onImportReport={handleImportLanReport}
+        productMode={standalone ? 'telemetry' : 'full'}
+      />
+    );
+  }
 
   return <main className="match-report"><header>{standalone ? <img src={`${import.meta.env.BASE_URL}${PRODUCT_BRAND.faviconFile}`} width="28" height="28" alt=""/> : <strong>{REPORT_BRAND.name}</strong>}<h1>{REPORT_BRAND.mobileHeaderTitle}</h1>{onGuide && <button onClick={onGuide}><BookOpen size={16}/>游戏攻略</button>}</header>
-    <MobileLanPanel onImportReport={handleImportLanReport} />
+    <MobileLanPanel
+      sharedLan={lanSync.lan}
+      onConnect={lanSync.connect}
+      onDisconnect={lanSync.disconnect}
+      onImportReport={handleImportLanReport}
+    />
     <section>
       <div className="mr-bar"><h2>{live?'本局态势':'历史战报'}</h2>
         {active&&<select aria-label="对局" value={selected} onChange={e=>{select(Number(e.target.value));edit(false);confirm(false);}}>

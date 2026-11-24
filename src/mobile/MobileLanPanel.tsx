@@ -9,6 +9,7 @@ export interface MobileLanPayload {
   product?: string;
   productName?: string;
   status?: string;
+  reportEnded?: boolean;
   guide?: {
     bannedCovenants?: string[];
     currentRound?: number;
@@ -41,21 +42,22 @@ declare global {
       updateStrip(round: number, headline: string, detail: string): void;
       enterStrip(locked: boolean): void;
     };
+    PRTSDisplay?: {
+      setSecondScreenMode(enabled: boolean): void;
+    };
   }
 }
 
-export function MobileLanPanel({
-  onSyncGuide,
-  onImportReport,
-}: {
-  onSyncGuide?: (data: { bannedCovenants: string[]; round: number; selectedCompId?: string }) => void;
-  onImportReport?: (report: BattleReport) => void;
-}) {
+export function isSecondScreenActive(lan: MobileLanBridgeState | null): boolean {
+  if (!lan || !lan.active) return false;
+  return lan.status === 'connected' || (lan.status === 'reconnecting' && Boolean(lan.payload));
+}
+
+export function useMobileLanSync(
+  onSyncGuide?: (data: { bannedCovenants: string[]; round: number; selectedCompId?: string }) => void,
+) {
   const bridge = window.PRTSLan;
   const [lan, setLan] = useState<MobileLanBridgeState | null>(null);
-  const [hostInput, setHostInput] = useState('');
-  const [pinInput, setPinInput] = useState('');
-  const [expanded, setExpanded] = useState(false);
   const lastAppliedSeq = useRef<number>(0);
 
   const poll = useCallback(() => {
@@ -63,7 +65,6 @@ export function MobileLanPanel({
     try {
       const next = JSON.parse(bridge.getState()) as MobileLanBridgeState;
       setLan(next);
-      setHostInput(prev => prev || (next.host ? `${next.host}:${next.port || 39527}` : ''));
       if (next.status === 'connected' && next.payload && next.payload.seq !== lastAppliedSeq.current) {
         lastAppliedSeq.current = next.payload.seq;
         if (onSyncGuide) {
@@ -101,7 +102,51 @@ export function MobileLanPanel({
     return () => clearInterval(timer);
   }, [bridge, poll]);
 
-  if (!bridge) return null;
+  const connect = useCallback((hostPort: string, pin: string) => {
+    if (!bridge) return false;
+    const ok = bridge.connect(hostPort, pin);
+    poll();
+    return ok;
+  }, [bridge, poll]);
+
+  const disconnect = useCallback(() => {
+    if (!bridge) return;
+    bridge.disconnect();
+    window.PRTSDisplay?.setSecondScreenMode(false);
+    poll();
+  }, [bridge, poll]);
+
+  return { lan, supported: Boolean(bridge), connect, disconnect, poll };
+}
+
+export function MobileLanPanel({
+  onSyncGuide,
+  onImportReport,
+  sharedLan,
+  onConnect,
+  onDisconnect,
+}: {
+  onSyncGuide?: (data: { bannedCovenants: string[]; round: number; selectedCompId?: string }) => void;
+  onImportReport?: (report: BattleReport) => void;
+  sharedLan?: MobileLanBridgeState | null;
+  onConnect?: (hostPort: string, pin: string) => boolean;
+  onDisconnect?: () => void;
+}) {
+  const internal = useMobileLanSync(sharedLan === undefined ? onSyncGuide : undefined);
+  const lan = sharedLan !== undefined ? sharedLan : internal.lan;
+  const connect = onConnect ?? internal.connect;
+  const disconnect = onDisconnect ?? internal.disconnect;
+  const [hostInput, setHostInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (lan?.host) {
+      setHostInput(prev => prev || `${lan.host}:${lan.port || 39527}`);
+    }
+  }, [lan?.host, lan?.port]);
+
+  if (!internal.supported && sharedLan === undefined) return null;
 
   let liveReport: BattleReport | null = null;
   try {
@@ -113,11 +158,11 @@ export function MobileLanPanel({
   const connected = lan?.status === 'connected';
 
   return (
-    <section className="m-card" style={{ borderLeft: `3px solid ${connected ? '#34d399' : '#eab308'}` }}>
+    <section className="m-card" style={{ borderLeft: `3px solid ${connected ? '#3fa67a' : '#d8bf4b'}` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
         <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13.5px' }}>
           <Wifi size={15} />
-          {connected ? `已连电脑副屏 · ${lan?.peerProduct || 'PC'}` : '电脑无线副屏同步'}
+          {connected ? `已连电脑副屏 · ${lan?.peerProduct || 'PC'}` : '连接电脑无线副屏（自动横屏）'}
         </strong>
         <button
           type="button"
@@ -159,7 +204,7 @@ export function MobileLanPanel({
       {(expanded || lan?.status === 'error' || lan?.status === 'connecting' || lan?.status === 'reconnecting') && (
         <div style={{ display: 'grid', gap: '8px', marginTop: '8px' }}>
           <p className="m-footnote" style={{ margin: 0 }}>
-            在电脑端顶部点击「无线副屏」，填入电脑内网地址与 4 位配对码即可免 Root 实时同步 Ban、回合与 DPS。
+            在电脑端顶部点击「无线副屏」，填入电脑内网地址与 4 位配对码；连接成功后手机将自动切入全屏横屏专用副屏，断开即自动回到手机攻略界面。
           </p>
           <input
             className="m-input"
@@ -180,16 +225,16 @@ export function MobileLanPanel({
           {lan?.error && <p className="m-warning" style={{ margin: 0 }}>{lan.error}</p>}
           <div className="m-two-buttons">
             {lan?.active ? (
-              <button type="button" className="m-secondary" onClick={() => { bridge.disconnect(); poll(); }}>
+              <button type="button" className="m-secondary" onClick={disconnect}>
                 <Unlink size={15} />断开副屏
               </button>
             ) : (
               <button
                 type="button"
                 className="m-primary"
-                onClick={() => { bridge.connect(hostInput, pinInput); poll(); }}
+                onClick={() => { connect(hostInput, pinInput); }}
               >
-                <Link2 size={15} />配对连接
+                <Link2 size={15} />配对并进入横屏副屏
               </button>
             )}
           </div>

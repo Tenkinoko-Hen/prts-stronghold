@@ -96,13 +96,18 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25（终末地 `// 简报` 图表风格重构 + 悬浮窗角色头像 + 全端思源黑体/DIN 字体统一 + 双端打包完成）
+- **最后更新**：2026-11-25（新增手机默认横屏无线副屏 + 136 枚 PRTS 装备离线图标 + 牌库心仪持久化 + 承压趋势图精简，待用户确认界面后打包）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最近一次本地实测出包版本**：
   - Windows 便携包：`PRTS-Stronghold-1.4.22-Windows-x64.exe`（239.9 MB，SHA-256: `81e3b074…5cbca4`，已内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
   - Android 攻略随行包：`PRTS-Stronghold-1.4.13-Android.apk`（148.4 MB，SHA-256: `17d7e912…747f4`，v2/v3 签名校验通过）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`
 - **近期已完成里程碑**：
+  - **手机专用横屏无线副屏 + PRTS Wiki 装备全图标 + 实测体验优化**（165/165 测试全绿，双产品构建通过，待确认打包）：
+    - 安卓原生新增 `PRTSDisplay.setSecondScreenMode` 桥接（`MainActivity.java` / `GuideWebView.java` / `LanSyncBridge.java`）：配对连接电脑后自动收起悬浮窗并切入全屏沉浸横屏 + 屏幕常亮，断开即自动恢复竖屏回到手机攻略界面；前端新建 `MobileSecondScreen.tsx` / `secondScreen.css`（支持 `态势总览` / `阵容攻略` / `当局牌库` / `战报兜底` / `算力/Boss` 自由切换及待开局态）；`lan-sync.cjs` 局末保留最后战报防白屏。
+    - 离线合入 PRTS Wiki 全部 136 枚卫戍协议道具官方图标（`src/desktop/equipPortraits.png` + `equipPortraits.json` + `EquipIcon.tsx`），65/65 商店装备 100% 匹配。
+    - 修复 `BattleReportDeckPool.tsx` 切页重置心仪干员/装备问题（按对局键持久化，新局自动重置）。
+    - 精简 `BattleReportRounds.tsx` 承压趋势图高度至 `82px` 并限制选中列宽；悬浮窗普通波次增加 `普通波次 · 首领战自动切 DPS` 透明提示。
   - **终末地 `// 简报` 工业 BI 图表重构 + 悬浮窗角色头像 + 全端字体统一 + 双端打包 v1.4.22 / v1.4.13**：
     - 新建 `src/desktop/prtsChartKit.ts`，全量收敛图表为克制哑光终末地工业色板（钢蓝 `#3698CC` / 战术赭黄 `#D8BF4B` / 告警红 `#D64840` + 微网格底纹），实现平滑无过冲单调样条 DPS 趋势图（含均值虚线与峰值直标）、规整坐标轴的 SVG 回合承压分组柱图与各阶牌池「余量蓝 / 消耗黄」堆叠柱图、0–100% 标尺对比条与 5 阶哑光环形图。
     - 悬浮窗（`440×176`）全面补齐干员头像 Icon（首领战每行 18px 头像 + 普通波次在场标签 16px 头像）与统一暗色细滚动条。

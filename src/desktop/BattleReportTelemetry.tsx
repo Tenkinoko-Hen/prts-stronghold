@@ -3,6 +3,7 @@ import { Activity, ChevronDown, ChevronRight, Cpu, Flame, HeartPulse, Shield, Sk
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 import { REPORT_SEATS, type BattleReport } from './battleReportData';
 import { seatDisplayText, seatName } from './BattleReportPanels';
+import { EquipIcon } from './EquipIcon';
 import {
   CALIBER_LABELS,
   formatTelemetryRate,
@@ -452,7 +453,8 @@ function SeatLineupsStrip({ report, lineups, solo }: {
                   <div className="d-tele-squad-chips">
                     {info.equips.map(eq => (
                       <span key={eq.instId} className={`d-tele-equip-pill${eq.isGolden ? ' is-gold' : ''}`}>
-                        {eq.name}{eq.isGolden ? '★' : ''}
+                        <EquipIcon trapId={eq.trapId} name={eq.name} size={16} />
+                        <span>{eq.name}{eq.isGolden ? '★' : ''}</span>
                       </span>
                     ))}
                   </div>

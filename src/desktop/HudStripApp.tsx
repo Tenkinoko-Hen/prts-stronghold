@@ -299,7 +299,8 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
                   </span>
                   {!!selfAssists && <span style={{ color: PRTS_CHART.blue, fontFamily: 'var(--font-mono)' }}>兜底 +{selfAssists}</span>}
                   {selfHp !== undefined && <span style={{ color: selfHp <= 5 ? PRTS_CHART.crimson : '#cbd5e1', fontFamily: 'var(--font-mono)' }}>血量 {selfHp}</span>}
-                  {selfLineup?.deployedCount ? <span style={{ color: '#8894a6' }}>在场 {selfLineup.deployedCount}/{selfLineup.pieceCount}</span> : null}
+                  {selfLineup?.deployedCount ? <span style={{ color: '#8894a6' }}>已购 {selfLineup.pieceCount} 人</span> : null}
+                  <span style={{ marginLeft: 'auto', color: '#6b7888', fontSize: '10px' }}>普通波次 · 首领战自动切 DPS</span>
                 </div>
                 {deployedOps.length > 0 ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', paddingTop: '2px' }}>

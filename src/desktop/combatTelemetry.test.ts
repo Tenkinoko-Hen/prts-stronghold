@@ -22,6 +22,8 @@ import {
   hypergeometricAtLeastOne,
 } from './deckPoolMath';
 import { buildSmoothSplinePath, formatAxisNumber, niceTicks } from './prtsChartKit';
+import { resolveEquipIconIndex } from './EquipIcon';
+import { isSecondScreenActive } from '../mobile/MobileLanPanel';
 import { demoReport } from './demo/battleReportFixture';
 import { computeEffectiveDps } from '../mobile/MobileDpsEstimator';
 import { parseSettlementQuickText } from '../mobile/settlementQuickParse';
@@ -230,4 +232,35 @@ test('coop_elim tracks eliminated seat, clean board lineup, and deck pool hyperg
     { x: 150, y: 20 },
   ]);
   assert.match(spline, /^M 0\.0,100\.0 C /);
+
+  assert.notEqual(resolveEquipIconIndex('trap_1041_acarm041', '维式重锤'), undefined);
+  assert.notEqual(resolveEquipIconIndex('trap_1066_acarm066', '盟约之币'), undefined);
+  assert.notEqual(resolveEquipIconIndex('trap_1048_acarm048', '奥术法阵'), undefined);
+  assert.equal(isSecondScreenActive(null), false);
+  assert.equal(
+    isSecondScreenActive({
+      active: true,
+      status: 'connected',
+      host: '192.168.1.10',
+      port: 39527,
+      error: '',
+      lastSyncAt: Date.now(),
+      peerProduct: 'PRTS',
+      payload: null,
+    }),
+    true,
+  );
+  assert.equal(
+    isSecondScreenActive({
+      active: false,
+      status: 'idle',
+      host: '',
+      port: 39527,
+      error: '',
+      lastSyncAt: 0,
+      peerProduct: '',
+      payload: null,
+    }),
+    false,
+  );
 });

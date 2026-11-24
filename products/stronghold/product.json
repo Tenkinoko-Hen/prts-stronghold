@@ -37,7 +37,7 @@
   },
   "android": {
     "package": "com.prts.stronghold.mobile",
-    "versionCode": 20,
+    "versionCode": 21,
     "versionName": "2.0.0",
     "icon": "@mipmap/ic_prts",
     "roundIcon": "@mipmap/ic_prts",

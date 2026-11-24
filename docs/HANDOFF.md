@@ -100,7 +100,7 @@ npm run build
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最近一次正式发布版本（`v2.0.0`）**：
   - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.3 MiB / 240,483,805 字节，SHA-256: `3afecf46…b532542`，已内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
-  - Android 攻略随行包：`PRTS-Stronghold-2.0.0-Android.apk`（142.1 MiB / 149,025,407 字节，VersionCode `20`，SHA-256: `6884e312…3b5d8fd`，v2/v3 签名校验通过）
+  - Android 攻略随行包：`PRTS-Stronghold-2.0.0-Android.apk`（142.1 MiB / 149,025,407 字节，VersionCode `21`，SHA-256: `d417ba79…de8cc871`，v2/v3 签名校验通过；已修复 Android 11–15 冷启动在 `setContentView` 前调用 `getInsetsController()` 导致的闪退）
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`。
 - **近期已完成里程碑**：

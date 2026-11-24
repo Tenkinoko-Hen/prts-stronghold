@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
                     }
                 } else {
                     MainActivity act = currentInstance;
-                    if (act != null && !act.isFinishing() && !act.isDestroyed()) {
+                    if (act != null && !act.isFinishing() && !act.isDestroyed() && act.secondScreenActive) {
                         act.applySecondScreenMode(false);
                     }
                 }
@@ -124,10 +124,13 @@ public class MainActivity extends Activity {
     }
 
     private void showHome() {
-        applySecondScreenMode(false);
+        boolean wasSecondScreen = secondScreenActive;
         guideControls = null;
         if (guide != null) { guide.destroy(); guide = null; }
         prepareRoot();
+        if (wasSecondScreen) {
+            applySecondScreenMode(false);
+        }
         ScrollView scroll = new ScrollView(this);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -178,43 +181,74 @@ public class MainActivity extends Activity {
             moveTaskToBack(true);
         } catch (RuntimeException error) { Toast.makeText(this, "无法开启悬浮助手，请检查系统后台运行权限", Toast.LENGTH_LONG).show(); }
     }
-    @SuppressWarnings("deprecation")
-    private void applySecondScreenMode(boolean enabled) {
+    private void applySecondScreenMode(final boolean enabled) {
         secondScreenActive = enabled;
-        setRequestedOrientation(enabled
-            ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-        if (enabled) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        } else {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        }
+        try {
+            setRequestedOrientation(enabled
+                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        } catch (RuntimeException ignored) {}
+        try {
+            if (getWindow() != null) {
+                if (enabled) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            }
+        } catch (RuntimeException ignored) {}
         if (guideControls != null) {
             guideControls.setVisibility(enabled ? View.GONE : View.VISIBLE);
         }
-        if (Build.VERSION.SDK_INT >= 30) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                if (enabled) {
-                    controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                    controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+        View anchor = root != null ? root : (getWindow() != null ? getWindow().peekDecorView() : null);
+        if (anchor != null) {
+            anchor.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (!isFinishing() && !isDestroyed()) {
+                        applySystemBars(enabled);
+                    }
+                }
+            });
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void applySystemBars(boolean immersive) {
+        try {
+            if (getWindow() == null) return;
+            View decor = getWindow().peekDecorView();
+            if (decor == null || !decor.isAttachedToWindow()) return;
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController controller = decor.getWindowInsetsController();
+                if (controller != null) {
+                    if (immersive) {
+                        controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                        controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    } else {
+                        controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    }
+                }
+            } else {
+                if (immersive) {
+                    decor.setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    );
                 } else {
-                    controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
                 }
             }
-        } else {
-            View decor = getWindow().getDecorView();
-            if (enabled) {
-                decor.setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                );
-            } else {
-                decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
-            }
+        } catch (Throwable ignored) {}
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && secondScreenActive) {
+            applySystemBars(true);
         }
     }
 

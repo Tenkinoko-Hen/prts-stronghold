@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from './strongholdData';
 
 export const LAST_COMMUNITY_COMPS: MetaCompGuide[] = [

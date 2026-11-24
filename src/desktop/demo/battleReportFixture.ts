@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { REPORT_ROUNDS } from '../battleReportData';
 
 export type DemoScene = 'coop_elim' | 'coop_boss' | 'quick_r9' | 'second_screen' | 'settled' | 'assisting' | 'opening' | 'solo_dps' | 'hud_preview';

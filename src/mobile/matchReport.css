@@ -1,3 +1,4 @@
+/* 青逝痕 Tenkinoko 制作 */
 .match-report{color:#eceff4;background:#0c0e11;height:100dvh;overflow:auto;font:14px/1.45 var(--font-sans,"Source Han Sans CN",sans-serif);font-variant-numeric:tabular-nums;padding:12px 14px;box-sizing:border-box}
 .match-report :is(h1,h2,h3,p){margin:0}.match-report header,.mr-bar,.mr-actions,.match-report footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .match-report header{padding-bottom:9px;border-bottom:2px solid #d8bf4b}.match-report header strong{font:700 20px var(--font-mono);color:#ebd65c}.match-report h1,.match-report h2{font-size:15px}.mr-bar h2,.match-report header h1{margin-right:auto}.match-report section{margin:12px 0}.match-report p{color:#9ca6b5;padding:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}

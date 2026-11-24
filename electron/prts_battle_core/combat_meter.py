@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Clean-room PRTS combat telemetry engine (3-caliber logic-clock DPS & arena scopes)."""
 
 from __future__ import annotations

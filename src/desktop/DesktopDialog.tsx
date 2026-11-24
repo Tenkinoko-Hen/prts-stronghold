@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 

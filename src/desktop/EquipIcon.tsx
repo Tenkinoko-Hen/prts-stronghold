@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { Package } from 'lucide-react';
 import atlasMeta from './equipPortraits.json';
 

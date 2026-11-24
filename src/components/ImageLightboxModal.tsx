@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { useState } from 'react';
 import { ZoomIn, ZoomOut, RotateCcw, X, Images } from 'lucide-react';
 import { UPLOADED_GALLERY_ITEMS, UploadedAssetItem } from '../data/strongholdData';

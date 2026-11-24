@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { mergeBossRound, REPORT_SEATS, type BattleReport, type BattleRound } from './battleReportData';
 
 export type ReportStatus = 'starting' | 'waiting' | 'connecting' | 'listening' | 'permission' | 'paused' | 'unavailable' | 'incompatible' | 'failed';

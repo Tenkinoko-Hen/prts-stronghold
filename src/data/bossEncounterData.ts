@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 // WakingSeasons「卫戍协议·规程 · 盟约与阵容研究」，act3autochess-v3_1。
 // 数值是终极模拟的开场参考；人数指模板的单人场、双人场，不是全队人数。
 export const BOSS_RESEARCH_SOURCE = 'WakingSeasons · 卫戍协议·规程 / 盟约与阵容研究';

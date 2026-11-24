@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Local analyzer from the user-provided ArkLogs Beta 0.2.6 source.
 
 The Windows capture adapter, UI, shop upload, and report persistence are separate.

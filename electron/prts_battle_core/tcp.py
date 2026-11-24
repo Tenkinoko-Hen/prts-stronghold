@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 # Decompiled with PyLingual (https://pylingual.io)
 # Internal filename: 'arklog_beta\\tcp.py'
 # Bytecode version: 3.12.0rc2 (3531)

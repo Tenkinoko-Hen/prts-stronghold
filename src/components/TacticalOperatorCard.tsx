@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 import { loadoutTags, type GuideOperator } from '../mobile/guideContent';
 import { recommendedSkill } from './guidePresentation';

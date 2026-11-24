@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { mkdir, writeFile, stat } from 'node:fs/promises';
 import { PRTS_OPERATOR_AVATARS } from '../src/data/prtsAvatars';
 

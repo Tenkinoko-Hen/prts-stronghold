@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useMemo, useState } from 'react';
 import { FileDown, Hourglass, ImageDown } from 'lucide-react';
 import { DesktopDialog } from './DesktopDialog';

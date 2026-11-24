@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 

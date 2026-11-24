@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { Fragment, useId, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Clock3, Info, Repeat, ShieldAlert, ShieldCheck, ShieldOff, Skull } from 'lucide-react';
 import { REPORT_SEATS, confirmedCurrent, groupEnemyOutcomes, roundMetrics, visibleSpawnRows, waveOwner, type BattleReport,

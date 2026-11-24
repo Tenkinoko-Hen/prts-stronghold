@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useRef, useState } from 'react';
 import { Activity, ChevronDown, Cpu, FileDown, Layers, ListTree, Radio, Swords } from 'lucide-react';
 import { BossRoutes } from '../components/BossRoutes';

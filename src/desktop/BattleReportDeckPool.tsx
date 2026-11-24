@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useId, useMemo, useState } from 'react';
 import { AlertTriangle, Layers, Lock, RefreshCw, Search, Sparkles, Star, Store } from 'lucide-react';
 import { REPORT_SEATS, type BattleReport } from './battleReportData';

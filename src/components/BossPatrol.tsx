@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useId, useState } from 'react';
 import { PATROL_BOARDS, PATROL_SPAWN, PATROL_WAYPOINTS, type PatrolBoard } from '../data/bossPatrolData';
 

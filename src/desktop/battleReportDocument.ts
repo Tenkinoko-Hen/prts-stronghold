@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { exportCount, type ReportSummary } from './battleReportExport';
 import { REPORT_BRAND, type ReportBrand } from '../brand/productBrand';
 import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
@@ -314,6 +315,7 @@ ${bossHtml}
 ${teleHtml}<section>${sectionHead(nextSection, '逐回合实战与协防明细')}<table class="rounds" aria-label="逐回合实战与协防明细"><colgroup><col class="c-round"><col class="c-lanes"><col class="c-links"><col></colgroup>
 <thead><tr><th scope="col">回合</th><th scope="col">战况与席位</th><th scope="col">全部协防链路</th><th scope="col">怪种明细</th></tr></thead><tbody>${r.rounds.map(row => roundRow(row, iconSlots, iconCount)).join('')}</tbody></table></section>`;
   return `<!doctype html>
+<!-- 青逝痕 Tenkinoko 制作 -->
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <title>${html(r.title)} · ${html(r.name)}</title><style>${css}${enemyPortraitCss}${opPortraitCss}</style></head><body><main>

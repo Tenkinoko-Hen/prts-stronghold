@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Clean-room operator, chess piece, equip, strategist, and mode catalog for PRTS telemetry."""
 
 from __future__ import annotations

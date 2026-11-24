@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { COVENANT_NAMES, parseCovenantScan } from './covenantScan';

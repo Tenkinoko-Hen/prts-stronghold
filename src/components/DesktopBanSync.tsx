@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React from 'react';
 import { ClipboardPaste, Radio, RefreshCw, ScanLine } from 'lucide-react';
 import type { BattleBanSyncState } from '../desktop/battleBanSync';

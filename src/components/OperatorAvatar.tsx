@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { useState } from 'react';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 

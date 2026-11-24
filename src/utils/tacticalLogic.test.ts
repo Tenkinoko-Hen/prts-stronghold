@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';

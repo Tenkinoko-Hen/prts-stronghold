@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useState } from 'react';
 import { Heart, RotateCcw, Skull, UserRoundPen } from 'lucide-react';
 import { DesktopDialog } from './DesktopDialog';

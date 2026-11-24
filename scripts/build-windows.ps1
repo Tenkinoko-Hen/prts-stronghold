@@ -1,4 +1,5 @@
-﻿param(
+﻿# 青逝痕 Tenkinoko 制作
+param(
     [Parameter(Mandatory)]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version,

@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { PRTS_OPERATOR_TIERS, resolveOperatorAvatars } from '../data/prtsAvatars';
 import { TRANSFER_ITEM_RECIPES, type CompPhase, type MetaCompGuide } from '../data/strongholdData';
 

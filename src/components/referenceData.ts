@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import reference from '../data/operatorReference.json';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 

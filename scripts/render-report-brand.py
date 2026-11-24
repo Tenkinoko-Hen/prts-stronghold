@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Regenerate telemetry launcher assets from products/telemetry/app-icon.svg (PyMuPDF and Pillow)."""
 import io
 import os

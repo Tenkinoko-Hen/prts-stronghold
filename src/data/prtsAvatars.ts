@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 // ---------------------------------------------------------------------------
 // PRTS Wiki Operator Avatar & Canonical Tier Dictionary for《卫戍协议·规程》
 // Source: https://prts.wiki/w/%E5%8D%AB%E6%88%8D%E5%8D%8F%E8%AE%AE%C2%B7%E8%A7%84%E7%A8%8B

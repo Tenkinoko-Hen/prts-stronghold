@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Calculator, Cpu, Grid, Images, Pin, Repeat2, Smartphone } from 'lucide-react';
 import {

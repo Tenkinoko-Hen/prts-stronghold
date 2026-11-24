@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {

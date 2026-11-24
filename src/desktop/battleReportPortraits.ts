@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 import portraits from './enemyPortraits.json';
 import atlasUrl from './enemyPortraits.webp';

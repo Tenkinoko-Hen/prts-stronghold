@@ -1,3 +1,4 @@
+/* 青逝痕 Tenkinoko 制作 */
 .desktop-page.d-report-page { padding:0; overflow:auto; background:#090b0f; }
 .d-report-shell { container:report / inline-size; width:min(100%,1440px); min-height:100%; margin:0 auto; color:#e8ebef;
   --bg-canvas:#090b0f; --bg-panel:#11151c; --border-hairline:#272e38; --d-muted:#a4acb9;

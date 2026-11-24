@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from '../data/strongholdData';
 import { AEGIR_HUNTERS_ID, AEGIR_PITH_ID } from '../data/aegirErosion';
 

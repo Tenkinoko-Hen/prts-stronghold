@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {ArrowDownLeft, ArrowUpRight, BookOpen, FileDown, Flag, ImageDown, Plus, ScanText} from 'lucide-react';
 import {RoundSync, type RoundSyncProgress} from './RoundSync';

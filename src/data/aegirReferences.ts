@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 export const AEGIR_SOURCES = {
   guide: { id: '11209250644', title: '做个阿戈尔攻略' },
   placement: { id: '11208776815', title: '卫戍协议歌蕾蒂娅策略阿戈尔摆法' },

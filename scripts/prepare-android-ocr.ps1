@@ -1,4 +1,5 @@
-﻿# 使用已锁定的官方 AAR/JAR，合并资源和初始化组件；不引入联网权限。
+﻿# 青逝痕 Tenkinoko 制作
+# 使用已锁定的官方 AAR/JAR，合并资源和初始化组件；不引入联网权限。
 function Prepare-OcrDependencies(
     [string]$ProjectRoot,
     [string]$BuildRoot,

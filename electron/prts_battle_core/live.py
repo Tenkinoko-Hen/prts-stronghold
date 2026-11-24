@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Emits only local battle summaries; no external connections or files."""
 
 import ctypes as ct

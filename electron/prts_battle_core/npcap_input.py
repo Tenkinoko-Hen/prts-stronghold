@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """使用本机已经安装的 Npcap；不安装驱动、不保存原始包。"""
 
 import ctypes as ct

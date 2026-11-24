@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { StrategyBadge } from './StrategyBadge';
 import React, { useEffect, useState } from 'react';
 import { Ban, Check, ChevronLeft, ChevronRight, CircleHelp, RotateCcw } from 'lucide-react';

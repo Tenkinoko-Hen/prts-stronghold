@@ -1,4 +1,5 @@
 package com.prts.stronghold.mobile;
+// 青逝痕 Tenkinoko 制作
 
 import android.content.Context;
 import android.content.SharedPreferences;

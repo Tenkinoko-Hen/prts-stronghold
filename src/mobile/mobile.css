@@ -1,3 +1,4 @@
+/* 青逝痕 Tenkinoko 制作 */
 .mobile-app { --m-bg:#0c141b; --m-card:#14202a; --m-line:#293b47; --m-accent:#9ce3bb; --m-muted:#a6b8c4; box-sizing:border-box; height:100dvh; width:100%; max-width:760px; margin:auto; display:flex; flex-direction:column; background:var(--m-bg); color:#edf4f5; font-size:15px; line-height:1.65; overflow:hidden; }
 .mobile-app *, .mobile-app *::before, .mobile-app *::after { box-sizing:border-box; }
 .mobile-app button, .mobile-app input, .mobile-app select { font:inherit; }

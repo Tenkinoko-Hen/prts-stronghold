@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Windows IPv4 capture restricted to TCP connections owned by Arknights.exe."""
 
 from collections import deque

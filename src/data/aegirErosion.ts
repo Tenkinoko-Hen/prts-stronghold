@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from './strongholdData';
 import { aegirImageUrl } from './aegirReferences';
 

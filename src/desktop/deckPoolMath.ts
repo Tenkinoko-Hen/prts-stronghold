@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 /**
  * Clean-room Stronghold shared/solo deck-pool probability & comparison calculator.
  * Uses exact hypergeometric without-replacement roll probability per shop slot count.

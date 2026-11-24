@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from './strongholdData';
 import { AEGIR_EROSION, AEGIR_HUNTERS } from './aegirErosion';
 import { MECHANIST_KJERAG } from './mechanistKjerag';

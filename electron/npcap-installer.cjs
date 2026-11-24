@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 const fs = require('node:fs');
 const https = require('node:https');
 const os = require('node:os');

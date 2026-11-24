@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Lightweight pure-stdlib battle report capture worker for standalone telemetry builds."""
 import sys
 

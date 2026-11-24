@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATORS, META_COMPS } from '../data/strongholdData';
 import type { BanPickState } from '../utils/tacticalLogic';
 import { parseCovenantScan, type CovenantScan } from './covenantScan';

@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { groupEnemyOutcomes, hasBossDamage, REPORT_SEATS, reportLeader, roundMetrics,
   type BattleReport, type BattleRound, type EnemyOutcome } from './battleReportData';
 import { isSkippedAssistInferred, laneKinds, roundOutcome, sumMetrics, type LaneMetric } from './battleRoundOutcome';

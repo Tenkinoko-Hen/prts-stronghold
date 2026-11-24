@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 const reportWidth = 1160;
 
 export async function renderBattleReportPng(html: string): Promise<Blob> {

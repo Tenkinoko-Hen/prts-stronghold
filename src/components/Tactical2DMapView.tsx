@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { useEffect, useState } from 'react';
 import { DesktopDialog } from '../desktop/DesktopDialog';
 import { BossRoutes } from './BossRoutes';

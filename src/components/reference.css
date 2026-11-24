@@ -1,3 +1,4 @@
+/* 青逝痕 Tenkinoko 制作 */
 .strategy-badge{display:inline-flex;flex-direction:column;gap:6px;min-width:0;vertical-align:middle;font-size:12px;line-height:1.4;color:#b9c9d9}
 .strategy-heading{display:flex;align-items:center;gap:6px;min-width:0}.strategy-heading>span:last-child{overflow-wrap:anywhere}
 .strategy-faces{display:inline-flex;flex-shrink:0;gap:2px}.strategy-faces:empty{display:none}.strategy-faces img{width:24px;height:24px;object-fit:contain;border-radius:5px;background:#1a2932}

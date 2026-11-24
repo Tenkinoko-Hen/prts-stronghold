@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { BOSS_ENCOUNTERS } from '../data/bossEncounterData';
 import { readCombatTelemetry, readDeckPool, readSeatLineups, type CombatTelemetrySnapshot, type DeckPoolSnapshot, type SeatLineup } from './combatTelemetry';
 import { mapBannedBondsToCovenants } from './covenantBonds';

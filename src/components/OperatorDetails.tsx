@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useState } from 'react';
 import type { GuideOperator } from '../mobile/guideContent';
 import { mentionedOperators } from '../mobile/guideContent';

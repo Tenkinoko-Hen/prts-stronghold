@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { ReactNode } from 'react';
 import { ChevronRight, Flame, Skull, Trophy } from 'lucide-react';
 import type { BossEncounter } from '../data/bossEncounterData';

@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readBattleReport } from './battleReportData';
 import type { CovenantOcrState, NpcapInstallState, ReportFeed, ReportStatus } from './battleReports';

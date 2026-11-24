@@ -1,3 +1,4 @@
+/* 青逝痕 Tenkinoko 制作 */
 .boss-routes { min-width:0; font-size:12px; line-height:1.55; color:var(--text-primary,#e0e8e2); }
 .boss-routes p { margin:0; }
 .boss-route-layout,.boss-stats,.boss-patrol { display:grid; gap:8px; min-width:0; }

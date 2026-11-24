@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Zero-injection Win32 read-only battle inspector with double logic-frame guards.
 
 Safety & Clean-Room Invariants:

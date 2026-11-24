@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React from 'react';
 import { CheckCircle2, Download, ExternalLink, RefreshCw, ShieldAlert } from 'lucide-react';
 import type { BattleReportsBridge, NpcapInstallState } from './battleReports';

@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Cpu, Download, Link2, Unlink, Wifi } from 'lucide-react';
 import { readBattleReport, type BattleReport } from '../desktop/battleReportData';

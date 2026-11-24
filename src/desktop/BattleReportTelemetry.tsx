@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useId, useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, Cpu, Flame, HeartPulse, Shield, Skull, Sparkles, Swords, Users } from 'lucide-react';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';

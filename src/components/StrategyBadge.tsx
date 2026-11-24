@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { reference, strategiesFor } from './referenceData';
 import './reference.css';
 

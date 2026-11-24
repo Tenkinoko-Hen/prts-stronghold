@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Expand, X } from 'lucide-react';
 import { OperatorAvatar } from '../components/OperatorAvatar';

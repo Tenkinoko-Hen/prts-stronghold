@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'node:fs';

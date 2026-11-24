@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2, Radar } from 'lucide-react';
 import type { MetaCompGuide } from '../data/strongholdData';

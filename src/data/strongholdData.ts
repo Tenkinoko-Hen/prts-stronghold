@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { COMMUNITY_COMPS } from './communityComps';
 import { BOSS_ROUTE_GUIDES } from './bossRoutes';
 import { NGA_COMMUNITY_COMPS, PEPE_POSITION_IMAGE } from './ngaCommunityComps';

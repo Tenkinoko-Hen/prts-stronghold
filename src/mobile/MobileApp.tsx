@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Crosshair, RotateCcw, ShieldBan, X } from 'lucide-react';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATORS, META_COMPS } from '../data/strongholdData';

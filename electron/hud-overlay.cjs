@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 const path = require('node:path');
 const { BrowserWindow, screen } = require('electron');
 

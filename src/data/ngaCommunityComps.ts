@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from './strongholdData';
 
 export const PEPE_POSITION_IMAGE = '/assets/community/pepe-position-084.svg';

@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 // 客户端 6f63c14e · act3autochess。提取双人战斗区 x=2–18、y=16–20，行从上向下。
 export interface PatrolBoard {
   id: string;

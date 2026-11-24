@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from './strongholdData';
 import { FINAL_COMMUNITY_COMPS } from './finalCommunityComps';
 import { SUPPLEMENT_COMMUNITY_COMPS } from './supplementCommunityComps';

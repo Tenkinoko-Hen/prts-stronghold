@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useState } from 'react';
 import { Crown, Layers, List, ScanFace } from 'lucide-react';
 import { confirmedCurrent, resolvePreviewRound, visibleSpawnRows, type BattleReport, type PreviewRoundFilter } from './battleReportData';

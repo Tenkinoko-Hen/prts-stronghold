@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 /**
  * Restrained PRTS x Endfield ("// 简报") industrial BI chart palette & SVG geometry helpers.
  * Avoids neon gradients; favors matte steel blue, tactical ochre, alert crimson, clean axes,

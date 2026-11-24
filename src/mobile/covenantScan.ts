@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES } from '../data/strongholdData';
 
 export const COVENANT_NAMES = [...ALL_CORE_COVENANT_NAMES, ...ALL_SUB_COVENANT_NAMES];

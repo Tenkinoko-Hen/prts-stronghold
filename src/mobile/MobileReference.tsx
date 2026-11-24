@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { useState } from 'react';
 import { COVENANT_GUIDES, SUB_COVENANT_GUIDES, TACTICAL_MAPS, TRANSFER_ITEM_RECIPES, UNIVERSAL_STACKERS, UPLOADED_GALLERY_ITEMS } from '../data/strongholdData';
 import { PEPE_POSITION_IMAGE } from '../data/ngaCommunityComps';

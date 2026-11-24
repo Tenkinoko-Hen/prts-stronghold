@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import type { MetaCompGuide } from './strongholdData';
 
 // 本批四张截图：保留来源节点；其余逐回合安排明确标为推导。

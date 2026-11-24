@@ -1,3 +1,4 @@
+# 青逝痕 Tenkinoko 制作
 """Build the offline battle report portraits from the public Closure Wiki CDN."""
 
 from concurrent.futures import ThreadPoolExecutor

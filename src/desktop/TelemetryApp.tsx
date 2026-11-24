@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useEffect, useState } from 'react';
 import { Cpu, Smartphone } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';

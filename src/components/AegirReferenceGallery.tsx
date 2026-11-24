@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Images, ZoomIn, ZoomOut } from 'lucide-react';
 import { AEGIR_REFERENCES, AEGIR_SOURCES, aegirImageUrl, aegirMapReferences, type AegirStage } from '../data/aegirReferences';

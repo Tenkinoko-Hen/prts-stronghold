@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { confirmedCurrent, groupEnemyOutcomes, hasBossDamage, ownLeakKinds, REPORT_SEATS, roundMetrics,
   type BattleReport, type BattleRound, type EnemyOutcome } from './battleReportData';
 import { isSoloMode } from './combatTelemetry';

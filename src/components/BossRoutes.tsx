@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useState } from 'react';
 import { BOSS_ROUTE_GUIDES, BOSS_ROUTE_TERRAINS } from '../data/bossRoutes';
 import { BOSS_ENCOUNTERS, BOSS_RESEARCH_SOURCE, type BossEncounter, type BossStats } from '../data/bossEncounterData';

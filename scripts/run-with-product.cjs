@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 const { spawnSync } = require('node:child_process');
 
 const [product, command, ...args] = process.argv.slice(2);

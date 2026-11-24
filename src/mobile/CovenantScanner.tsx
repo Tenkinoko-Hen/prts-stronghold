@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import { useCallback, useEffect, useState } from 'react';
 import { ScanLine, Square } from 'lucide-react';
 import { parseCovenantScan, type CovenantScan } from './covenantScan';

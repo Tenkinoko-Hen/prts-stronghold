@@ -1,3 +1,4 @@
+// 青逝痕 Tenkinoko 制作
 import React, { useState } from 'react';
 import { UNIVERSAL_STACKERS } from '../data/strongholdData';
 import { PEPE_POSITION_IMAGE } from '../data/ngaCommunityComps';

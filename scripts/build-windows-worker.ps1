@@ -1,4 +1,5 @@
-﻿param(
+﻿# 青逝痕 Tenkinoko 制作
+param(
     [string]$Python = 'python',
     [ValidateSet('stronghold', 'telemetry')]
     [string]$Product = 'stronghold'

@@ -1,3 +1,4 @@
+/* 青逝痕 Tenkinoko 制作 */
 /* 桌面仪表盘；不改变手机悬浮窗样式。 */
 .desktop-app { --d-line:#263346; --d-muted:#91a0b8; --d-gold:#f6c54a; --d-teal:#40d9c1; font-size:13px; }
 .desktop-app button:not(:disabled), .desktop-dialog button:not(:disabled) { cursor:pointer; }

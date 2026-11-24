@@ -317,15 +317,15 @@ export const CovenantEncyclopediaView: React.FC<CovenantEncyclopediaViewProps> =
             </h2>
 
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <div className="relative">
-                <Search size={13} className="text-[#9ca3af] absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <div className="d-ind-search w-full sm:w-60">
+                <Search size={13} aria-hidden="true" />
                 <input
                   type="text"
                   value={stackerQuery}
                   onChange={(e) => setStackerQuery(e.target.value)}
                   placeholder="搜干员 / 身前 / 整备区…"
                   aria-label="搜索通用叠层干员"
-                  className="d-ind-input pl-7 pr-2"
+                  className="d-ind-input"
                 />
               </div>
 

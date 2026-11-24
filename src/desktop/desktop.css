@@ -382,7 +382,10 @@
 .d-ref-inner { max-width:1480px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
 .d-map-page.is-embedded { position:static; height:100%; padding:12px 16px; }
 .d-ind-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; padding:9px 12px; }
-.d-ind-input, .d-ind-select { height:30px; padding:0 8px; background:var(--bg-canvas); border:1px solid var(--border-hairline); color:var(--text-primary); font-size:12px; }
+.d-ind-search { position:relative; display:flex; align-items:center; }
+.d-ind-search > svg { position:absolute; left:9px; color:var(--text-secondary); pointer-events:none; }
+.d-ind-input, .d-ind-select { height:30px; padding:0 9px; background:var(--bg-canvas); border:1px solid var(--border-hairline); color:var(--text-primary); font-size:12px; }
+.d-ind-search > .d-ind-input { width:100%; padding-left:30px; padding-right:10px; }
 .d-ind-input:focus, .d-ind-select:focus { outline:none; border-color:var(--accent-endfield); }
 .d-ind-select { color:var(--accent-endfield); font-weight:600; max-width:240px; }
 .d-ind-tab { display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border:1px solid var(--border-hairline); background:var(--bg-elevated); color:var(--text-secondary); font-size:12px; font-weight:700; white-space:nowrap; }
@@ -393,11 +396,22 @@
 .d-ind-card.is-accent { background:#1d1b10; border-color:var(--accent-endfield); }
 .d-ind-card.is-cyan { background:#0c2026; border-color:var(--accent-prts); }
 .d-ind-card.is-selected { background:var(--accent-endfield); border-color:var(--accent-endfield); color:var(--accent-endfield-fg); }
+.d-transfer-card { display:flex; flex-direction:column; gap:8px; padding:8px 10px 10px; }
+.d-transfer-card-head { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:20px; padding-bottom:6px; border-bottom:1px solid var(--border-subtle); }
 .d-ind-kpi { padding:12px; background:var(--bg-canvas); border:1px solid var(--border-hairline); border-top:2px solid var(--accent-endfield); }
+.d-ban-operator-grid button { background:var(--bg-elevated); border:1px solid var(--border-hairline); border-radius:2px; }
+.d-ban-operator-grid button[aria-pressed=true] { border-color:var(--accent-crisis); background:#30191b; }
 .d-board-grid { background:var(--bg-canvas); border-color:var(--border-hairline); border-radius:2px; }
 .d-board-cell { border-radius:2px; }
 .d-board-cell.is-selected { outline:2px solid var(--accent-endfield); outline-offset:1px; }
 .d-map-counts span { border-radius:2px; }
+@media (max-height:780px), (max-width:1180px) {
+  .d-board-grid { gap:4px; padding:5px; }
+  .d-board-cell { gap:1px; padding:2px 3px; }
+  .d-slot-role { font-size:9.5px; padding:1px 0; }
+  .d-slot-avatar { min-height:22px; }
+  .d-slot-name { font-size:9.5px; line-height:1.1; }
+}
 .d-panel,.desktop-dialog,.desktop-dialog:has(.d-route-overview) { background:var(--bg-surface); border-color:var(--border-hairline); }
 .desktop-dialog > header,.desktop-dialog:has(.d-route-overview) > header,.d-comp-card,.d-map-list button,.d-source-grid button,.d-equipment-list article { background:var(--bg-elevated); border-color:var(--border-hairline); }
 .d-comp-card:hover,.d-map-list button[aria-pressed=true] { background:#252526; border-color:var(--accent-endfield); }
@@ -456,8 +470,8 @@
 .d-phase-panel .d-text-button,.d-guide .d-text-button { background:#ffe60012; border-color:#ffe60055; color:var(--accent-endfield); border-radius:2px; padding:2px 7px; font-size:11px; }
 .d-guide-right { display:grid; grid-template-rows:auto minmax(180px,1.3fr) minmax(110px,1fr); background:var(--bg-surface); }
 .d-guide-right > .d-panel { padding:8px 12px; }
-.d-round-head > div { background:var(--accent-endfield); padding:4px 15px 7px 9px; }
-.d-round-head > div :is(small,strong,strong span) { color:var(--accent-endfield-fg); letter-spacing:0; }
+.d-round-head > .chamfer-box { background:var(--accent-endfield); padding:4px 15px 7px 9px; }
+.d-round-head > .chamfer-box :is(small,strong,strong span) { color:var(--accent-endfield-fg); letter-spacing:0; }
 .d-round-head strong { font-size:36px; }
 .d-tier { background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-hairline); }
 .d-round-action { background:#ffe60010; color:var(--text-primary); border-left:4px solid var(--accent-endfield); min-height:0; max-height:125px; }

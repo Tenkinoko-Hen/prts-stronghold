@@ -8,6 +8,7 @@ export interface OperatorAvatarProps {
   badgeText?: string;
   highlightColor?: 'amber' | 'emerald' | 'sky' | 'rose' | 'purple';
   showName?: boolean;
+  showTier?: boolean;
   className?: string;
 }
 
@@ -41,6 +42,7 @@ export const OperatorAvatar: React.FC<OperatorAvatarProps> = ({
   tier,
   size = 'md',
   showName = true,
+  showTier = true,
   className = '',
 }) => {
   const resolvedList = resolveOperatorAvatars(name);
@@ -116,7 +118,7 @@ export const OperatorAvatar: React.FC<OperatorAvatarProps> = ({
         )}
 
         {/* Roman Numeral Tier Badge (Top-Left, matches Arknights Stronghold UI) */}
-        {effectiveTier && (
+        {showTier && effectiveTier && (
           <span
             className={`absolute -top-1.5 -left-1.5 z-10 font-mono-tabular font-black rounded border shadow ${sizeCfg.tier} ${tierBadgeStyle}`}
           >

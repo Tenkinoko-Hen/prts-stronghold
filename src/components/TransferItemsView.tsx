@@ -73,21 +73,21 @@ export const TransferItemsView: React.FC<TransferItemsViewProps> = ({
                 ① 6本商店直购
               </span>
               <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#24200c] border border-[#ffe60055] text-[#ffe600]">
-                <OperatorAvatar name="缪尔赛思" tier="VI" size="sm" showName={false} className="[&_.w-12]:size-6" />
+                <OperatorAvatar name="缪尔赛思" size="sm" showName={false} showTier={false} className="[&_.w-12]:size-6" />
                 <span>② 抓缪尔赛思免费送</span>
               </div>
             </div>
           </div>
 
-          <div className="relative w-full sm:w-52">
-            <Search size={13} className="text-[#9ca3af] absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <div className="d-ind-search w-full sm:w-56">
+            <Search size={13} aria-hidden="true" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜装备名 / 盟约…"
               aria-label="搜索转职合成公式"
-              className="d-ind-input w-full pl-7 pr-2"
+              className="d-ind-input"
             />
           </div>
         </div>
@@ -123,22 +123,35 @@ export const TransferItemsView: React.FC<TransferItemsViewProps> = ({
         </div>
 
         {/* 3. Formula Grid */}
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,244px),1fr))] gap-2.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,256px),1fr))] gap-2.5">
           {filteredRecipes.map((recipe) => {
             const isCompRec = isRecipeRecommendedForComp(recipe);
+            const isCore = recipe.category === '核心盟约转职';
 
             return (
               <div
                 key={recipe.id}
                 data-testid={`transfer-card-${recipe.id}`}
-                className={`d-ind-card relative min-w-0 px-2.5 py-3${isCompRec ? ' is-accent' : ''}`}
+                className={`d-ind-card d-transfer-card min-w-0${isCompRec ? ' is-accent' : ''}`}
               >
-                {isCompRec && (
-                  <span className="absolute top-0 right-2 -translate-y-1/2 px-1.5 py-0.5 bg-[#ffe600] text-[#0b0c0e] text-[10px] leading-3 font-extrabold flex items-center gap-0.5">
-                    <Flame size={10} />
-                    <span>当前阵容适用</span>
-                  </span>
-                )}
+                <div className="d-transfer-card-head">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] leading-3 font-mono-tabular font-bold tracking-wider uppercase text-[#9ca3af]">
+                      {isCore ? '核心盟约' : '附加盟约'}
+                    </span>
+                    {recipe.isNew && (
+                      <span className="px-1 py-0.5 text-[9px] leading-none font-extrabold font-mono-tabular bg-[#ff3b30] text-white">
+                        NEW
+                      </span>
+                    )}
+                  </div>
+                  {isCompRec && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#ffe600] text-[#0b0c0e] text-[10px] leading-none font-extrabold shrink-0">
+                      <Flame size={10} />
+                      <span>当前阵容适用</span>
+                    </span>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-[minmax(max-content,1fr)_auto_minmax(0,1.4fr)_auto_minmax(0,1fr)] items-start gap-x-1 text-center text-xs leading-4 font-semibold">
                   <div className="min-w-0 flex flex-col items-center gap-1">
@@ -158,14 +171,9 @@ export const TransferItemsView: React.FC<TransferItemsViewProps> = ({
                   <div className="min-w-0 flex flex-col items-center gap-1">
                     <div
                       style={{ width: RECIPE_ICON_SIZE, height: RECIPE_ICON_SIZE }}
-                      className="relative overflow-hidden bg-[#102226] border border-[#00e5ff80] flex items-center justify-center text-[#00e5ff]"
+                      className="bg-[#102226] border border-[#00e5ff80] flex items-center justify-center text-[#00e5ff]"
                     >
                       <CovenantEmblemSvg name={recipe.targetCovenant} size={24} />
-                      {recipe.isNew && (
-                        <span className="absolute top-0 left-0 px-1 text-[9px] leading-3 font-extrabold font-mono-tabular bg-[#ff3b30] text-white">
-                          NEW
-                        </span>
-                      )}
                     </div>
                     <span className="max-w-full text-[#00e5ff]">{recipe.targetCovenant}</span>
                   </div>

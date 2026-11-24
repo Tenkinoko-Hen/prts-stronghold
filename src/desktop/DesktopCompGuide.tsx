@@ -63,7 +63,7 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, liveRound, au
           <div className="d-phase-header"><div className="d-phase-toolbar"><div className="d-phase-tabs" aria-label="阵容阶段">
             {comp.phases.map((item, index) => <button key={item.phaseName} aria-pressed={phaseIndex === index} title={item.phaseName} onClick={() => setPhaseOverride(index === automaticIndex ? null : index)}>{index + 1} · {item.rounds}</button>)}
           </div><section className="d-bench" aria-label="整备区"><strong>整备区</strong><div className="d-bench-ops">
-            {phase.benchOperators.map((op, index) => <button key={`${op.name}-${index}`} aria-label={`查看${op.name}详情`} onClick={() => setOperator({ ...op, role: '整备区' })}><OperatorAvatar name={op.name} tier={op.tier} size="sm" /></button>)}
+            {phase.benchOperators.map((op, index) => <button key={`${op.name}-${index}`} aria-label={`查看${op.name}详情`} onClick={() => setOperator({ ...op, role: '整备区' })}><OperatorAvatar name={op.name} tier={op.tier} size="sm" showTier={false} /></button>)}
           </div>{!phase.benchOperators.length && <span className="d-muted">无需固定挂件 · 留对子</span>}</section></div></div>
           <div className="d-phase-body" key={`${comp.id}-${phaseIndex}`}>
             <div className="d-section-head d-phase-name"><h3>{phase.phaseName} <small>上场 {phase.fieldOperators.length} 人</small></h3>{phaseOverride !== null ? <button className="d-text-button" onClick={() => setPhaseOverride(null)}>返回 R{round} 对应阶段</button> : <span className="d-muted">{phase.shopTier}</span>}</div>

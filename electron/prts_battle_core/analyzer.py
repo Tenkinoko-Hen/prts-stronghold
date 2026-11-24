@@ -440,7 +440,11 @@ class Analyzer:
                     conn.model.add_spawn_plan(event['previews'], source, round_hint)
             return
         else:
-            if kind == 'preparation':
+            if kind in ('preparation', 'shop_purchase_result'):
+                if event.get('shops'):
+                    conn.model.set_shops(event['shops'])
+                if kind == 'shop_purchase_result':
+                    return None
                 preparation = event['preparation']
                 seat, hp, number = preparation[:3]
                 if 1 <= seat <= 4 and max(1, conn.model.current_round) <= number <= 15:
@@ -466,6 +470,10 @@ class Analyzer:
                         conn.model.battle_config = {key: event[key] for key in ['mode_id', 'boss_id', 'hidden_boss_id']}
                     if event.get('banned_bonds'):
                         conn.model.banned_bonds = tuple(event['banned_bonds'])
+                    if event.get('squads') or event.get('banned_units'):
+                        conn.model.set_roster_squads(event.get('squads'), event.get('banned_units'))
+                    if event.get('shops'):
+                        conn.model.set_shops(event['shops'])
                     if event.get('defeated_boss_rounds'):
                         conn.model.defeated_boss_rounds.update(
                             round_no for round_no in event['defeated_boss_rounds'] if round_no in BOSS_ROUNDS

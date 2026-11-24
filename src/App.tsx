@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
-import { BookOpen, Calculator, Grid, Images, Pin, Repeat2 } from 'lucide-react';
+import { BookOpen, Calculator, Cpu, Grid, Images, Pin, Repeat2, Smartphone } from 'lucide-react';
 import {
   META_COMPS,
   OperatorPlacement,
@@ -14,7 +14,9 @@ import { StackingCalculatorView } from './components/StackingCalculatorView';
 import { TransferItemsView } from './components/TransferItemsView';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
 import { useBattleBanSync } from './desktop/battleBanSync';
-import { BanPickState } from './utils/tacticalLogic';
+import type { HudOverlayState, LanSyncState } from './desktop/battleReports';
+import { LanSyncDialog } from './desktop/LanSyncDialog';
+import { BanPickState, getRecommendedPaceForRound } from './utils/tacticalLogic';
 import './desktop/desktop.css';
 
 type PrimaryDomain = 'guide' | 'reports' | 'reference';
@@ -151,6 +153,41 @@ export default function App() {
     url: string;
     title: string;
   } | null>(null);
+  const [hudState, setHudState] = useState<HudOverlayState | null>(null);
+  const [lanState, setLanState] = useState<LanSyncState | null>(null);
+  const [lanDialogOpen, setLanDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const hud = desktopAPI?.hud;
+    const lan = desktopAPI?.lanSync;
+    let mounted = true;
+    const offHud = hud?.onState(next => { if (mounted) setHudState(next); });
+    const offLan = lan?.onState(next => { if (mounted) setLanState(next); });
+    void hud?.getState().then(next => { if (mounted) setHudState(next); }).catch(() => {});
+    void lan?.getState().then(next => { if (mounted) setLanState(next); }).catch(() => {});
+    return () => {
+      mounted = false;
+      offHud?.();
+      offLan?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const pace = getRecommendedPaceForRound(activeComp, currentRound);
+    const paceTip = pace.currentAction || activeComp.strategistTip;
+    void desktopAPI?.hud?.syncGuide({
+      round: currentRound,
+      compTitle: activeComp.title,
+      paceTip,
+    }).catch(() => {});
+    void desktopAPI?.lanSync?.syncGuide({
+      bannedCovenants: banState.bannedCovenants,
+      currentRound,
+      selectedCompId,
+      compTitle: activeComp.title,
+      paceTip,
+    }).catch(() => {});
+  }, [activeComp, banState.bannedCovenants, currentRound, selectedCompId]);
 
   const telemetryTone = banSync.npcapInstalled === false ? 'warn'
     : banSync.status === 'listening' ? 'live'
@@ -226,6 +263,30 @@ export default function App() {
             >
               <span className="d-dot" aria-hidden="true" />
               <span>{telemetryLabel}</span>
+            </button>
+          )}
+          {desktopAPI?.hud && (
+            <button
+              type="button"
+              onClick={() => void desktopAPI.hud?.setOpen(!hudState?.open)}
+              aria-pressed={Boolean(hudState?.open)}
+              title="开启/关闭桌面置顶鼠标穿透微缩条（Ctrl+Shift+F10 切换穿透）"
+              className={`d-button d-small d-pin-btn${hudState?.open ? ' is-pinned' : ''}`}
+            >
+              <Cpu size={13} />
+              <span>{hudState?.open ? (hudState.locked ? '微缩穿透' : '微缩条') : '微缩条'}</span>
+            </button>
+          )}
+          {desktopAPI?.lanSync && (
+            <button
+              type="button"
+              onClick={() => setLanDialogOpen(true)}
+              aria-pressed={Boolean(lanState?.enabled)}
+              title="PC ↔ 免 Root 安卓局域网无线副屏与战报同步"
+              className={`d-button d-small d-pin-btn${lanState?.enabled ? ' is-pinned' : ''}`}
+            >
+              <Smartphone size={13} />
+              <span>{lanState?.enabled ? `副屏(${lanState.peerCount})` : '无线副屏'}</span>
             </button>
           )}
           {desktopAPI && (
@@ -373,6 +434,14 @@ export default function App() {
           initialUrl={lightboxImage.url}
           initialTitle={lightboxImage.title}
           onClose={() => setLightboxImage(null)}
+        />
+      )}
+      {desktopAPI?.lanSync && lanState && (
+        <LanSyncDialog
+          open={lanDialogOpen}
+          state={lanState}
+          api={desktopAPI.lanSync}
+          onClose={() => setLanDialogOpen(false)}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import { groupEnemyOutcomes, hasBossDamage, REPORT_SEATS, reportLeader, roundMetrics,
   type BattleReport, type BattleRound, type EnemyOutcome } from './battleReportData';
 import { isSkippedAssistInferred, laneKinds, roundOutcome, sumMetrics, type LaneMetric } from './battleRoundOutcome';
+import { formatTelemetryRate, formatTelemetryTotal, isSoloMode, isSoloStageMode } from './combatTelemetry';
 import { REPORT_BRAND, type ReportBrand } from '../brand/productBrand';
 import type { ReportRecord } from './battleReports';
 
@@ -173,8 +174,30 @@ export function summarizeBattleReport(
   const net = sumMetrics(rounds.map(r => r.net));
   const hasPartial = [gross, helps, net, ...players.flatMap(p => [p.leaks, p.helps, p.boss]),
     ...bosses.flatMap(b => [b.total, ...b.seats.map(s => s.damage)])].some(m => Boolean(m?.quality));
-  return { title: '卫戍协议 · 局内详情战报', name: entry.label, start: localTime(new Date(entry.seenAt)), exported: localTime(at),
+  const midstream = report.telemetry?.coverage === 'midstream';
+  const telemetryOperators = (report.telemetry?.operators ?? []).slice(0, 16).map(op => ({
+    name: op.name,
+    seat: op.seat,
+    totalText: formatTelemetryTotal(op.totalDamage, midstream),
+    shareText: `${ratio.format(op.shareRatio * 100)}%`,
+    sharePercent: Math.min(100, op.shareRatio * 100),
+    activeDpsText: formatTelemetryRate(op.activeDps),
+    channelsText: [
+      op.physical > 0 ? `物 ${formatTelemetryTotal(op.physical)}` : '',
+      op.arts > 0 ? `法 ${formatTelemetryTotal(op.arts)}` : '',
+      op.elemental > 0 ? `元 ${formatTelemetryTotal(op.elemental)}` : '',
+      op.trueDamage > 0 ? `真 ${formatTelemetryTotal(op.trueDamage)}` : '',
+      op.healing > 0 ? `疗 ${formatTelemetryTotal(op.healing)}` : '',
+    ].filter(Boolean).join(' · ') || '—',
+  }));
+  const soloStage = isSoloStageMode(report.mode);
+  const solo = isSoloMode(report.mode);
+  const title = soloStage
+    ? `${report.difficulty || '单人作战关卡'} · 算力遥测战报`
+    : '卫戍协议 · 局内详情战报';
+  return { title, name: entry.label, start: localTime(new Date(entry.seenAt)), exported: localTime(at),
     filename: `${brand.exportPrefix}_${safeName}_${year}${month}${day}-${hour}${minute}`, rounds, bosses, hasPartial,
+    solo, soloStage, telemetryOperators,
     players: players.map(p => ({ ...p, top: most > 0 && p.helps?.value === most ? (allHelpsKnown ? '协防最多' : '已记录协防最多') : '' })),
     clean: rounds.filter(row => row.tone === 'clean').length, gross, helps, net };
 }

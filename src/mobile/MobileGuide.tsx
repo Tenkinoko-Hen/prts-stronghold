@@ -64,6 +64,9 @@ export function MobileGuide({ comp, round, bans, roundSyncProgress, onRound, onB
   useEffect(() => { setPhaseOverride(null); }, [comp.id, round]);
   useEffect(() => { detailRef.current?.scrollTo({ top: 0 }); setOperator(null); setFullAction(false); }, [comp.id, round, tab]);
   useEffect(() => {
+    window.PRTSOverlay?.updateStrip(round, comp.title, action);
+  }, [comp.title, round, action]);
+  useEffect(() => {
     if (!quickPick) return;
     const dismiss = (event: PointerEvent) => { if (!pickRef.current?.contains(event.target as Node)) setQuickPick(false); };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setQuickPick(false); };

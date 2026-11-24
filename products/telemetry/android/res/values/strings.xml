@@ -4,7 +4,7 @@
     <string name="home_subtitle">局内战报 · 自动回合识别 · 离线归档</string>
     <string name="home_body">点悬浮球打开本局战报，收起面板即可返回游戏。</string>
     <string name="home_open_button">打开本局战报</string>
-    <string name="home_tips">使用提示\n• 首次开启需允许「显示在其他应用上层」。\n• 若 HyperOS 回到游戏后不显示，请检查后台弹出界面与后台运行权限。\n• 开启自动回合后需系统屏幕共享授权并框选游戏回合数字；漏怪、协防、Boss 总伤与出怪由玩家补记。\n• 截图与战报记录仅在本机处理，不上传，无联网或无障碍权限。</string>
+    <string name="home_tips">使用提示\n• 首次开启需允许「显示在其他应用上层」；悬浮窗支持收窄为点击穿透微缩条。\n• 开启自动回合后需系统屏幕共享授权并框选游戏回合数字；支持与电脑端同一局域网配对同步完整 15 回合战报与算力明细并一键保存相册。\n• 截图与战报记录仅在本机与内网处理，不上传公网，无无障碍权限。</string>
     <string name="permission_hint">尚未允许悬浮窗，仍可在应用内查看战报</string>
     <string name="overlay_channel">悬浮战报</string>
     <string name="overlay_title">卫戍战报仪正在悬浮</string>

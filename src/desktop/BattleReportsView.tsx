@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, ChevronDown, FileDown, ListTree, Radio, Swords } from 'lucide-react';
+import { Activity, ChevronDown, Cpu, FileDown, ListTree, Radio, Swords } from 'lucide-react';
 import { BossRoutes } from '../components/BossRoutes';
 import { ImageLightboxModal } from '../components/ImageLightboxModal';
 import { DesktopDialog } from './DesktopDialog';
@@ -7,9 +7,11 @@ import { defaultBossRound, readBattleReport, reportLeader, reportProgress, type 
 import { BossDamage, LeaderInlineBar } from './BattleReportPanels';
 import { RoundMatrix } from './BattleReportRounds';
 import { SpawnPreview } from './BattleReportSpawns';
+import { BattleReportTelemetry } from './BattleReportTelemetry';
 import { BattleReportRoster } from './BattleReportRoster';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
+import { isSoloStageMode } from './combatTelemetry';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
 import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type NpcapInstallState, type ReportFeed,
   type ReportRecords, type ReportSeat, type ReportStatus } from './battleReports';
@@ -27,8 +29,8 @@ const STATUS: Record<ReportStatus, string> = {
   incompatible: '当前游戏数据未能识别。已有历史战局仍可查阅或导出。',
   failed: `本地战报组件未启动，请重启 ${PRODUCT_BRAND.shortName}。`,
 };
-const TABS = { rounds: '实时战报', preview: '出怪预告', boss: 'Boss 伤害' } as const;
-const TAB_ICONS = { rounds: Activity, preview: ListTree, boss: Swords };
+const TABS = { rounds: '实时战报', telemetry: '算力遥测', preview: '出怪预告', boss: 'Boss 伤害' } as const;
+const TAB_ICONS = { rounds: Activity, telemetry: Cpu, preview: ListTree, boss: Swords };
 const shortStatus: Record<ReportStatus, string> = { starting: '启动中', waiting: '等待游戏', connecting: '等待对局',
   listening: '采集中', permission: '需要权限', paused: '已暂停', unavailable: '采集不可用', incompatible: '数据未识别', failed: '启动失败' };
 const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
@@ -79,14 +81,21 @@ export default function BattleReportsView({ api, visible, sourceLabel }: { api: 
   const key = entry?.key ?? '';
   const replay = Boolean(entry && entry.key !== records.live?.key);
   const liveView = status === 'listening' && (!entry || entry.key === records.live?.key);
-  const canExport = report?.rounds.some(isCombatRound) ?? false;
+  const canExport = Boolean(report && (report.rounds.some(isCombatRound) || (report.telemetry?.operators.length ?? 0) > 0));
   const exportReason = '尚无实战回合，不能导出战报文档。';
-  const progressLabel = reportProgress(report, liveView).label;
+  const soloStage = isSoloStageMode(report?.mode);
+  const activeTab: Tab = soloStage ? 'telemetry' : tab;
+  const visibleTabs = soloStage
+    ? (['telemetry'] as Tab[])
+    : (Object.keys(TABS) as Tab[]);
+  const progressLabel = soloStage
+    ? (report?.difficulty || '单人关卡实时遥测')
+    : reportProgress(report, liveView).label;
   const seat = perspective?.key === key ? perspective.seat : report?.self ?? null;
   const previewRound = previewFilter?.key === key ? previewFilter.round : replay ? 'all' : 'follow';
   const bossNumber = bossFilter?.key === key ? bossFilter.round : defaultBossRound(report);
   const lastLocal = !report && records.history[0];
-  const leader = tab === 'boss' && report && reportLeader(report, bossNumber);
+  const leader = activeTab === 'boss' && report && reportLeader(report, bossNumber);
   const highDifficulty = ['mode_multi_hard', 'mode_multi_abyss'].includes(report?.mode ?? '') ? true
     : ['mode_multi_funny', 'mode_multi_normal'].includes(report?.mode ?? '') ? false : undefined;
   const selectBossRound = (round: number) => { if (round === 14 || round === 15) setBossFilter({ key, round }); setLeaderKey(''); };
@@ -132,19 +141,22 @@ export default function BattleReportsView({ api, visible, sourceLabel }: { api: 
       {!sourceLabel && ['failed', 'permission', 'unavailable', 'incompatible'].includes(status) && <p className="d-warning d-report-error">{STATUS[status]}</p>}
       {!sourceLabel && <NpcapSetupBanner api={api} npcapInstalled={npcapInstalled} installState={npcapInstall} />}
       <nav className="d-report-tabs" aria-label="战报视图">
-        {(Object.keys(TABS) as Tab[]).map(name => { const Icon = TAB_ICONS[name]; return <button key={name} type="button"
-          aria-pressed={tab === name} onClick={() => openTab(name)}><Icon size={15} />{name === 'rounds' && replay ? '战报回放' : TABS[name]}</button>; })}
+        {visibleTabs.map(name => { const Icon = TAB_ICONS[name]; return <button key={name} type="button"
+          aria-pressed={activeTab === name} onClick={() => openTab(name)}><Icon size={15} />{name === 'rounds' && replay ? '战报回放' : TABS[name]}
+          {name === 'telemetry' && (report?.telemetry?.operators.length ?? 0) > 0 && <i className="d-tab-count">{report!.telemetry!.operators.length}</i>}
+        </button>; })}
         {report?.difficulty && <small>{report.difficulty}</small>}
       </nav>
       <div className="d-report-body">
-        {tab === 'rounds' && <RoundMatrix key={key} report={report} seat={seat} live={liveView} onPreview={() => showPreview('all')} />}
-        {tab === 'boss' && lastLocal && <button type="button" className="d-button d-small"
+        {activeTab === 'rounds' && <RoundMatrix key={key} report={report} seat={seat} live={liveView} onPreview={() => showPreview('all')} />}
+        {activeTab === 'telemetry' && <BattleReportTelemetry key={key} report={report} />}
+        {activeTab === 'boss' && lastLocal && <button type="button" className="d-button d-small"
           onClick={() => openRecord(lastLocal.key, 'boss')}>查看最近本地对局</button>}
-        {tab === 'boss' && <BossDamage report={report} seat={seat} number={bossNumber} onRound={selectBossRound} reference={leader &&
+        {activeTab === 'boss' && <BossDamage report={report} seat={seat} number={bossNumber} onRound={selectBossRound} reference={leader &&
           <LeaderInlineBar encounter={leader} round={bossNumber}
             liveHp={report?.rounds.find(r => r.number === bossNumber)?.bossHp}
             onOpen={() => { setLeaderKey(key); setLeaderImage(null); }} />} onPreview={showPreview} />}
-        {tab === 'preview' && <SpawnPreview key={key} report={report} live={liveView} filter={previewRound}
+        {activeTab === 'preview' && <SpawnPreview key={key} report={report} live={liveView} filter={previewRound}
           onSelect={round => setPreviewFilter({ key, round })} />}
       </div>
       {exported && <BattleReportExportDialog report={exported} onClose={() => setExported(null)} />}

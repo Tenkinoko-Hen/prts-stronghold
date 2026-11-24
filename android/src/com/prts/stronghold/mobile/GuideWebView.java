@@ -48,6 +48,8 @@ final class GuideWebView {
             view.addJavascriptInterface(new ScanBridge(context.getApplicationContext()), "PRTSScan");
         }
         view.addJavascriptInterface(new RoundBridge(context.getApplicationContext()), "PRTSRound");
+        view.addJavascriptInterface(new LanSyncBridge(context.getApplicationContext()), "PRTSLan");
+        view.addJavascriptInterface(new OverlayBridge(), "PRTSOverlay");
         view.setWebViewClient(new WebViewClient() {
             private boolean local(Uri uri) { return "https".equals(uri.getScheme()) && HOST.equals(uri.getHost()); }
             @Override public boolean shouldOverrideUrlLoading(WebView web, WebResourceRequest request) { return !local(request.getUrl()); }
@@ -123,6 +125,15 @@ final class GuideWebView {
         @JavascriptInterface public void stop() {
             RoundScanState.stop("回合同步已停止");
             main.post(() -> { if (CovenantScanService.isRoundMode()) CovenantScanService.stopActive(); });
+        }
+    }
+
+    private static final class OverlayBridge {
+        @JavascriptInterface public void updateStrip(int round, String headline, String detail) {
+            OverlayService.updateStripFromBridge(round, headline, detail);
+        }
+        @JavascriptInterface public void enterStrip(boolean locked) {
+            OverlayService.enterStripFromBridge(locked);
         }
     }
 }

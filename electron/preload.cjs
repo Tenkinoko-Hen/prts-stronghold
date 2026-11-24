@@ -28,5 +28,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('covenant-ocr-state', listener);
       },
     },
+    hud: {
+      getState: () => ipcRenderer.invoke('hud-overlay-get'),
+      setOpen: (flag) => ipcRenderer.invoke('hud-overlay-open', Boolean(flag)),
+      setLocked: (locked) => ipcRenderer.invoke('hud-overlay-lock', Boolean(locked)),
+      syncGuide: (guide) => ipcRenderer.invoke('hud-overlay-guide', guide),
+      onState: (callback) => {
+        const listener = (_event, state) => callback(state);
+        ipcRenderer.on('hud-overlay-state', listener);
+        return () => ipcRenderer.removeListener('hud-overlay-state', listener);
+      },
+    },
+    lanSync: {
+      getState: () => ipcRenderer.invoke('lan-sync-get'),
+      setEnabled: (enabled) => ipcRenderer.invoke('lan-sync-enable', Boolean(enabled)),
+      refreshPin: () => ipcRenderer.invoke('lan-sync-refresh-pin'),
+      syncGuide: (guide) => ipcRenderer.invoke('lan-sync-guide', guide),
+      onState: (callback) => {
+        const listener = (_event, state) => callback(state);
+        ipcRenderer.on('lan-sync-state', listener);
+        return () => ipcRenderer.removeListener('lan-sync-state', listener);
+      },
+    },
   } : {}),
 });

@@ -142,6 +142,110 @@
 .d-report-table thead th { background:var(--bg-base,var(--bg-canvas)); color:var(--d-muted); white-space:nowrap; }
 .d-report-table tbody tr:nth-child(even) { background:rgba(145,160,184,.04); }
 .d-report-note { margin:0; padding:10px 0; }
+.d-solo-pill { display:inline-flex; align-items:center; padding:1px 6px; border:1px solid rgba(245,208,0,.45); background:rgba(245,208,0,.1); color:var(--report-active); font:700 10px var(--font-mono); letter-spacing:.06em; border-radius:2px; }
+.d-tab-count { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:15px; padding:0 4px; border-radius:2px; background:rgba(34,211,238,.16); color:var(--report-round); font:700 10px var(--font-mono); font-style:normal; }
+.d-boss-op { display:inline-flex; align-items:center; gap:6px; vertical-align:middle; }
+.d-report-seat-cards[data-solo="true"] { grid-template-columns:minmax(0,220px); }
+.d-round-cell-mix { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; min-width:0; }
+.d-round-mini-ops { display:inline-flex; flex-wrap:wrap; gap:4px; }
+.d-round-mini-ops small { padding:1px 5px; border:1px solid var(--border-hairline); background:#141a22; color:#22d3ee; font:600 11px var(--font-mono); border-radius:2px; }
+.d-round-dps-summary { display:grid; gap:5px; padding-top:6px; border-top:1px solid var(--border-hairline); }
+.d-round-dps-chips { display:flex; flex-wrap:wrap; gap:5px; }
+.d-round-dps-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 7px 2px 3px; border:1px solid var(--border-hairline); background:#151a22; border-radius:2px; font-size:12px; }
+.d-round-dps-chip b { color:var(--report-active); font:700 12px var(--font-mono); }
+.d-round-dps-chip small { color:var(--report-round); font:600 11px var(--font-mono); }
+
+/* PRTS × Endfield Combat Telemetry Matrix */
+.d-tele-shell { display:grid; gap:10px; min-width:0; }
+.d-tele-empty { display:flex; align-items:flex-start; gap:12px; padding:16px 18px; border:1px solid var(--border-hairline); border-left:3px solid var(--report-round); background:var(--bg-panel); border-radius:2px; color:var(--d-muted); }
+.d-tele-empty svg { flex:none; margin-top:2px; color:var(--report-round); }
+.d-tele-empty h3 { margin:0 0 4px; font-size:14px; color:#f1f5f9; }
+.d-tele-empty p { margin:0; font-size:12.5px; line-height:1.6; max-width:72ch; }
+.d-tele-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; padding:8px 12px; border:1px solid var(--border-hairline); border-top:2px solid var(--report-active); background:#10141c; border-radius:2px; }
+.d-tele-scope-group,.d-tele-controls { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+.d-tele-scope-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; background:rgba(245,208,0,.12); border:1px solid rgba(245,208,0,.45); color:var(--report-active); font:700 11px var(--font-mono); letter-spacing:.03em; border-radius:2px; }
+.d-tele-scope-badge[data-scope="coop_assist"] { background:rgba(56,189,248,.12); border-color:rgba(56,189,248,.45); color:#38bdf8; }
+.d-tele-scope-badge[data-scope="coop_boss"] { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.45); color:#f87171; }
+.d-tele-stage { font-size:13px; color:#f1f5f9; }
+.d-tele-retain-chip { padding:2px 7px; border:1px solid rgba(34,211,238,.45); background:rgba(34,211,238,.1); color:#22d3ee; font-size:11px; font-weight:600; border-radius:2px; }
+.d-tele-coverage { padding:2px 6px; border:1px solid var(--border-hairline); background:#161b24; color:var(--d-muted); font-size:11px; border-radius:2px; }
+.d-tele-coverage[data-coverage="midstream"] { border-color:rgba(251,191,36,.45); color:#fbbf24; }
+.d-tele-clock { font-size:12px; color:var(--d-muted); }
+.d-tele-clock b { color:#e8ebef; font:700 12.5px var(--font-mono); }
+.d-tele-seg-btns { display:inline-flex; border:1px solid var(--border-hairline); background:#0c0f15; border-radius:2px; overflow:hidden; }
+.d-tele-seg-btns button { display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:12px; font-weight:600; color:var(--d-muted); border-right:1px solid var(--border-hairline); }
+.d-tele-seg-btns button:last-child { border-right:0; }
+.d-tele-seg-btns button:hover { color:#f1f5f9; background:#161c26; }
+.d-tele-seg-btns button[aria-pressed="true"] { background:rgba(245,208,0,.15); color:var(--report-active); }
+.d-tele-enemy-bar { display:grid; gap:6px; padding:8px 12px; border:1px solid var(--border-hairline); border-left:3px solid #f87171; background:var(--bg-panel); border-radius:2px; }
+.d-tele-enemy-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; font-size:12px; color:var(--d-muted); }
+.d-tele-enemy-meta > span:first-child { display:inline-flex; align-items:center; gap:5px; font-weight:700; color:#f1f5f9; }
+.d-tele-enemy-meta b { color:#f1f5f9; font:700 12.5px var(--font-mono); }
+.d-tele-rebirth { padding:1px 6px; background:rgba(248,113,113,.14); border:1px solid rgba(248,113,113,.4); color:#f87171; font:600 11px var(--font-mono); border-radius:2px; }
+.d-tele-hp-track { height:6px; background:#1b222d; border-radius:1px; overflow:hidden; }
+.d-tele-hp-track > span { display:block; height:100%; background:linear-gradient(90deg,#ef4444,#f59e0b); transition:width .2s ease; }
+.d-tele-lineups { display:grid; gap:6px; padding:9px 12px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:2px; }
+.d-tele-subhead { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; font-weight:650; color:#e2e8f0; }
+.d-tele-subhead > span { display:inline-flex; align-items:center; gap:5px; }
+.d-tele-subhead small { color:var(--d-muted); font-weight:400; }
+.d-tele-lineup-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.d-tele-lineup-grid[data-solo="true"] { grid-template-columns:minmax(0,1fr); }
+.d-tele-lineup-card { display:grid; gap:6px; padding:7px 10px; border:1px solid var(--border-hairline); background:#0d1117; border-radius:2px; }
+.d-tele-lineup-card[data-self="true"] { border-left:2px solid var(--report-active); }
+.d-tele-lineup-top { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px; font-size:12px; }
+.d-tele-badges { display:inline-flex; flex-wrap:wrap; gap:4px; }
+.d-tele-chip { padding:1px 6px; border:1px solid var(--border-hairline); background:#161c26; color:#cbd5e1; font:600 11px var(--font-mono); border-radius:2px; }
+.d-tele-chip.is-accent { border-color:rgba(245,208,0,.45); color:var(--report-active); background:rgba(245,208,0,.1); }
+.d-tele-squad-chips { display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+.d-tele-op-pill { display:inline-flex; align-items:center; gap:4px; padding:1px 6px 1px 2px; border:1px solid #242c38; background:#141922; border-radius:2px; font-size:11.5px; color:#e2e8f0; }
+.d-tele-banned-note { font-size:11px; color:#f87171; }
+.d-tele-avatar { display:inline-grid; place-items:center; flex:none; overflow:hidden; border:1px solid #323c4b; border-radius:2px; background:#171e29; color:var(--report-active); font:700 10px var(--font-mono); }
+.d-tele-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+.d-tele-matrix { display:grid; gap:7px; }
+.d-tele-legend { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; font-size:12px; color:var(--d-muted); }
+.d-tele-legend strong { color:#f1f5f9; font:700 14px var(--font-mono); margin-left:4px; }
+.d-tele-channel-key { display:inline-flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:11.5px; }
+.d-tele-channel-key span { display:inline-flex; align-items:center; gap:4px; }
+.d-tele-channel-key i { display:inline-block; width:9px; height:9px; border-radius:1px; }
+.d-tele-channel-key i.is-phys,.d-tele-seg.is-phys { background:#d8dee9; }
+.d-tele-channel-key i.is-arts,.d-tele-seg.is-arts { background:#00e5ff; }
+.d-tele-channel-key i.is-elem,.d-tele-seg.is-elem { background:#ffe600; }
+.d-tele-channel-key i.is-true,.d-tele-seg.is-true { background:#ff3b30; }
+.d-tele-seg.is-heal { background:#34d399; }
+.d-tele-rows { display:grid; gap:4px; }
+.d-tele-item { border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:2px; transition:border-color .15s; }
+.d-tele-item[data-expanded="true"] { border-color:#3b4656; box-shadow:inset 2px 0 var(--report-active); }
+.d-tele-row { width:100%; display:grid; grid-template-columns:2.4em 30px minmax(8.5em,1.1fr) minmax(90px,2.4fr) 5.8em 6.2em 14px; align-items:center; gap:9px; padding:6px 10px; text-align:left; font-variant-numeric:tabular-nums; }
+.d-tele-row:hover { background:#161c26; }
+.d-tele-rank { color:var(--d-muted); font:700 11.5px var(--font-mono); }
+.d-tele-ident { display:grid; min-width:0; }
+.d-tele-ident strong { display:inline-flex; align-items:center; gap:5px; font-size:13px; color:#f1f5f9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.d-tele-ident small { font-size:11px; color:var(--d-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.d-tele-onfield { width:6px; height:6px; border-radius:50%; background:#34d399; flex:none; }
+.d-tele-bar-track { display:flex; align-items:stretch; height:10px; background:#0b0e14; border:1px solid #202733; border-radius:1px; overflow:hidden; }
+.d-tele-seg { display:block; height:100%; min-width:1px; }
+.d-tele-total,.d-tele-rate { display:grid; justify-items:end; line-height:1.25; }
+.d-tele-total b { font:700 13px var(--font-mono); color:#f1f5f9; }
+.d-tele-rate b { font:700 12.5px var(--font-mono); color:var(--report-active); }
+.d-tele-total small,.d-tele-rate small { font-size:10.5px; color:var(--d-muted); }
+.d-tele-drawer { padding:9px 12px 11px 42px; border-top:1px solid var(--border-hairline); background:#0d1016; display:grid; gap:9px; }
+.d-tele-drawer-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:6px 12px; font-size:11.5px; }
+.d-tele-drawer-grid > div { display:grid; gap:2px; padding:4px 7px; border:1px solid #1e2530; background:#121720; border-radius:2px; }
+.d-tele-drawer-grid span { display:inline-flex; align-items:center; gap:4px; color:var(--d-muted); font-size:11px; }
+.d-tele-drawer-grid b { font:700 12.5px var(--font-mono); color:#e8ebef; }
+.d-tele-drawer-grid b.c-arts { color:#00e5ff; }
+.d-tele-drawer-grid b.c-elem { color:#ffe600; }
+.d-tele-drawer-grid b.c-true { color:#ff3b30; }
+.d-tele-drawer-grid b.c-heal { color:#34d399; }
+.d-tele-summons { display:grid; gap:4px; padding-top:6px; border-top:1px dashed var(--border-hairline); font-size:12px; }
+.d-tele-summons h4 { display:inline-flex; align-items:center; gap:5px; margin:0; font-size:11.5px; color:var(--report-round); }
+.d-tele-summons ul { display:flex; flex-wrap:wrap; gap:6px 14px; margin:0; padding:0; list-style:none; }
+.d-tele-summons li { display:inline-flex; align-items:baseline; gap:6px; color:var(--d-muted); }
+.d-tele-summons li b { color:#f1f5f9; font:700 12px var(--font-mono); }
+.d-tele-devices { padding:4px 10px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:2px; font-size:12px; }
+.d-tele-device-list { display:flex; flex-wrap:wrap; gap:6px 16px; padding:4px 0 6px; }
+.d-tele-device-list > div { display:inline-flex; gap:6px; color:var(--d-muted); }
+.d-tele-device-list b { color:#e2e8f0; font:700 12px var(--font-mono); }
 @container report (max-width:960px) {
   .d-roster-edit > span { display:none; }
 }
@@ -149,6 +253,9 @@
   .d-report-context { gap:6px; padding-inline:9px; }.d-report-tabs { padding-inline:9px; }
   .d-report-body { padding:8px 9px 16px; }.d-spawn-rounds { grid-template-columns:1fr; gap:2px; }
   .d-round-row { min-height:37px; }.d-spawn-round { padding:5px 0; }
+  .d-tele-lineup-grid { grid-template-columns:minmax(0,1fr); }
+  .d-tele-row { grid-template-columns:2em 26px minmax(6.5em,1fr) minmax(60px,1.4fr) 5.2em 5.4em 12px; gap:6px; padding-inline:7px; }
+  .d-tele-drawer { padding-left:12px; }
 }
 @container report (max-width:550px) {
   .d-report-context { flex-wrap:wrap; }.d-report-progress { display:none; }

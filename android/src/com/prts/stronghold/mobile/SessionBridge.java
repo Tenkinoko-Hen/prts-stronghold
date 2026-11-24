@@ -95,4 +95,56 @@ final class SessionBridge {
             } catch(Exception e){return false;}
         }
     }
+
+    @JavascriptInterface public boolean importLanMatch(String rawMatchJson) {
+        if (rawMatchJson == null || rawMatchJson.length() > 120000) return false;
+        synchronized (SessionBridge.class) {
+            try {
+                JSONObject incoming = new JSONObject(rawMatchJson);
+                JSONObject incomingRounds = incoming.optJSONObject("rounds");
+                if (incomingRounds == null || incomingRounds.length() == 0) return false;
+                JSONObject sanitizedRounds = new JSONObject();
+                for (int r = 1; r <= 15; r++) {
+                    String key = String.valueOf(r);
+                    JSONObject src = incomingRounds.optJSONObject(key);
+                    if (src == null) continue;
+                    JSONObject clean = new JSONObject();
+                    for (String field : new String[]{"leaks", "helps", "boss"}) {
+                        if (!src.isNull(field)) {
+                            int v = src.optInt(field, -1);
+                            if (v >= 0 && v <= 1000000000) clean.put(field, v);
+                        }
+                    }
+                    String note = src.optString("note", "").trim();
+                    if (note.length() > 400) note = note.substring(0, 400);
+                    if (!note.isEmpty()) clean.put("note", note);
+                    JSONArray spawns = src.optJSONArray("spawns");
+                    if (spawns != null && spawns.length() <= 45) clean.put("spawns", spawns);
+                    clean.put("manual", System.currentTimeMillis());
+                    sanitizedRounds.put(key, clean);
+                }
+                if (sanitizedRounds.length() == 0) return false;
+                JSONObject old = read(context);
+                JSONArray history = new JSONArray(prefs(context).getString("history", "[]"));
+                if (old.has("started") && old.optJSONObject("rounds") != null && old.optJSONObject("rounds").length() > 0) {
+                    if (!old.has("ended")) old.put("ended", System.currentTimeMillis());
+                    history.put(old);
+                }
+                long now = System.currentTimeMillis();
+                JSONObject fresh = new JSONObject()
+                    .put("started", now)
+                    .put("current", Math.max(1, Math.min(15, incoming.optInt("current", 1))))
+                    .put("rounds", sanitizedRounds);
+                if (incoming.optBoolean("ended", false)) {
+                    fresh.put("ended", now);
+                }
+                return prefs(context).edit()
+                    .putString("active", fresh.toString())
+                    .putString("history", history.toString())
+                    .commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
+    }
 }

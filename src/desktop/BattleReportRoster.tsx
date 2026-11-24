@@ -3,6 +3,7 @@ import { UserRoundPen } from 'lucide-react';
 import { DesktopDialog } from './DesktopDialog';
 import { REPORT_SEATS, type BattleReport } from './battleReportData';
 import { seatName } from './BattleReportPanels';
+import { isSoloMode } from './combatTelemetry';
 import { canConfirmSelfSeat, canEditPlayerNames, MAX_MANUAL_NAME_LENGTH, type ManualNames, type ReportRecord,
   type ReportSeat } from './battleReports';
 
@@ -12,14 +13,17 @@ export function BattleReportRoster({ entry, report, seat, onViewSeat, onSave, on
 }) {
   const [draft, setDraft] = useState<ManualNames | null>(null);
   const [draftSeat, setDraftSeat] = useState<ReportSeat | null>(null);
+  const solo = isSoloMode(report.mode);
+  const seats = solo ? ([1] as const) : REPORT_SEATS;
   const captured = entry.report.names;
-  const editable = canEditPlayerNames(entry) && REPORT_SEATS.some(seat => !captured[seat]);
-  const canConfirmSelf = canConfirmSelfSeat(entry);
-  return <div className="d-report-roster" role="group" aria-label="本局队伍 · 切换我的视角">
-    {REPORT_SEATS.map(id => <button key={id} type="button" className="d-seat-button" aria-pressed={seat === id}
+  const editable = !solo && canEditPlayerNames(entry) && REPORT_SEATS.some(seat => !captured[seat]);
+  const canConfirmSelf = !solo && canConfirmSelfSeat(entry);
+  return <div className="d-report-roster" role="group" aria-label={solo ? '单兵作战视角' : '本局队伍 · 切换我的视角'}>
+    {solo && <span className="d-solo-pill">SOLO</span>}
+    {seats.map(id => <button key={id} type="button" className="d-seat-button" aria-pressed={(seat ?? 1) === id}
       aria-label={`切换到${id}号视角${report.names[id] ? ` · ${report.names[id]}` : ''}`} onClick={() => onViewSeat(id)}
       title={`${id}号${report.names[id] ? ` · ${report.names[id]}${captured[id] ? '' : '（手填）'}` : ''}${report.self === id ? ' · 本机席位' : ''}`}>
-      {seatName(id, report, seat)}</button>)}
+      {seatName(id, report, solo ? 1 : seat)}</button>)}
     {(editable || canConfirmSelf) && <button type="button" className="d-icon d-roster-edit" aria-label="昵称与本机席位"
       title={editable ? '补录昵称 / 本机席位' : '本机席位'} onClick={() => { setDraft({ ...entry.manualNames }); setDraftSeat(entry.manualSelfSeat ?? null); }}>
       <UserRoundPen size={15} />{editable && <span>补录昵称</span>}</button>}

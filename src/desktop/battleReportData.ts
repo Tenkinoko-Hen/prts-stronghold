@@ -1,4 +1,5 @@
 import { BOSS_ENCOUNTERS } from '../data/bossEncounterData';
+import { readCombatTelemetry, readSeatLineups, type CombatTelemetrySnapshot, type SeatLineup } from './combatTelemetry';
 import { mapBannedBondsToCovenants } from './covenantBonds';
 
 export const REPORT_SEATS = [1, 2, 3, 4] as const;
@@ -7,6 +8,7 @@ export type ReportRoundFilter = number | 'all';
 export type PreviewRoundFilter = ReportRoundFilter | 'follow';
 
 const modes: Readonly<Record<string, string>> = {
+  mode_solo_stage: '单人作战关卡',
   mode_multi_funny: '标准模拟', mode_multi_normal: '险境模拟', mode_multi_hard: '绝境模拟', mode_multi_abyss: '终极模拟',
 };
 const bossIds = [
@@ -67,7 +69,14 @@ interface Spawn extends Pick<Enemy, 'id' | 'name' | 'count'> {
   kind: 'plan' | 'battle';
   boss?: true;
 }
-interface BossHit { seat: number; identifier: number; source: number | null; damage: number }
+export interface BossHit {
+  seat: number;
+  identifier: number;
+  source: number | null;
+  damage: number;
+  charId?: string;
+  operatorName?: string;
+}
 export interface BattleRound {
   number: number;
   phase: string;
@@ -120,6 +129,8 @@ export interface BattleReport {
   eliminated: Record<number, number>;
   rounds: BattleRound[];
   preview: Spawn[];
+  lineups: Record<number, SeatLineup>;
+  telemetry: CombatTelemetrySnapshot | null;
 }
 
 function readEnemy(value: unknown): Enemy | null {
@@ -157,7 +168,16 @@ function bossHits(value: unknown, official: boolean): BossHit[] {
     const identifier = number(row?.[official ? 'identifier' : 'attacker']);
     const damage = number(row?.damage);
     if (player === null || identifier === null || damage === null) return [];
-    return [{ seat: player, identifier, source: official ? null : number(row?.source), damage }];
+    const charId = text(row?.char_id);
+    const operatorName = text(row?.operator_name);
+    return [{
+      seat: player,
+      identifier,
+      source: official ? null : number(row?.source),
+      damage,
+      ...(charId ? { charId } : {}),
+      ...(operatorName ? { operatorName } : {}),
+    }];
   });
 }
 
@@ -276,18 +296,25 @@ export function readBattleReport(input: unknown): BattleReport {
   const bannedCovenants = mapBannedBondsToCovenants(config?.banned_bonds);
   const defeatedBossRounds = [...new Set(array(root.defeated_boss_rounds)
     .flatMap(value => value === 14 || value === 15 ? [value] : []))].sort((a, b) => a - b);
-  if (!result.length && !preview.length && !mode && !bannedCovenants.length) throw new Error('战报里没有对局数据。');
+  const lineups = readSeatLineups(root.lineups);
+  const telemetry = readCombatTelemetry(root.telemetry);
+  if (!result.length && !preview.length && !mode && !bannedCovenants.length && !telemetry && !Object.keys(lineups).length) {
+    throw new Error('战报里没有对局数据。');
+  }
   const single = /^mode_single_(\d+)$/.exec(mode);
+  const stageName = text(config?.stage_name);
   const self = seat(capture?.self);
   return { match: number(capture?.match), current: round(capture?.round), self, mode,
     selfBySettlement: self !== null && capture?.self_basis === 'help',
     selfManual: false,
-    difficulty: single ? `规程等级 ${single[1]}` : Object.hasOwn(modes, mode) ? modes[mode] : '',
+    difficulty: single ? `单人规程 Lv.${single[1]}` : stageName || (Object.hasOwn(modes, mode) ? modes[mode] : ''),
     boss: text(config?.boss_id), hiddenBoss: text(config?.hidden_boss_id),
     bannedCovenants, defeatedBossRounds,
     names: Object.fromEntries(REPORT_SEATS.map(id => [id, text(players[id]).trim()])),
     hp: numberTable(root.hp), eliminated: numberTable(root.eliminated), rounds: result,
     preview: preview.sort((a, b) => a.round - b.round),
+    lineups,
+    telemetry,
   };
 }
 

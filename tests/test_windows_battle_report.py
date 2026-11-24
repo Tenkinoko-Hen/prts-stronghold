@@ -800,5 +800,216 @@ class LiveCaptureTests(unittest.TestCase):
                 stream.close()
 
 
+class _SyntheticMemory:
+    def __init__(self, base: int = 0x180000000):
+        self.base = base
+        self.mem: dict[int, bytes] = {}
+        self.write(base, b'MZ')
+        self.hook_on_address: dict[int, callable] = {}
+
+    def write(self, addr: int, raw: bytes) -> None:
+        for i, b in enumerate(raw):
+            self.mem[addr + i] = bytes((b,))
+
+    def write_il2cpp_str(self, addr: int, text: str) -> int:
+        encoded = text.encode('utf-16-le')
+        self.write(addr + 0x10, struct.pack('<i', len(text)) + encoded)
+        return addr
+
+    def module_base(self, module_name: str) -> int | None:
+        return self.base if module_name.lower() == 'gameassembly.dll' else None
+
+    def read_bytes(self, address: int, size: int) -> bytes | None:
+        hook = self.hook_on_address.get(address)
+        if hook:
+            hook()
+        out = bytearray()
+        for off in range(size):
+            chunk = self.mem.get(address + off)
+            if chunk is None:
+                return None
+            out.extend(chunk)
+        return bytes(out)
+
+    def close(self) -> None:
+        pass
+
+
+class CombatMeterAndInspectorTests(unittest.TestCase):
+    def test_three_rate_calibers_summon_rollup_trap_isolation_and_pause_invariance(self):
+        from electron.prts_battle_core.combat_meter import (
+             ArenaTelemetryCoordinator, BattleFrameSample, CombatMeter, EnemySample, UnitSample,
+        )
+
+        meter = CombatMeter(battle_id='b1', stage_id='act38_ex08', stage_name='熔炉边界')
+        # Tick 0 (0.0s): Wis'adel deployed, no damage yet
+        meter.observe_frame(BattleFrameSample(
+            battle_id='b1',
+            logic_tick=0,
+            units=(UnitSample(instance_id=10, unit_id='char_1035_wisdel', owner_seat=1, on_field=True),),
+            enemies=(EnemySample(instance_id=900, enemy_id='enemy_boss', name='首领', hp=50000, max_hp=50000, is_boss=True),),
+        ))
+        # Tick 90 (3.0s): Idle waiting for enemies -> presence=3.0s, active=0
+        meter.observe_frame(BattleFrameSample(
+            battle_id='b1',
+            logic_tick=90,
+            units=(UnitSample(instance_id=10, unit_id='char_1035_wisdel', owner_seat=1, on_field=True),),
+            enemies=(EnemySample(instance_id=900, enemy_id='enemy_boss', name='首领', hp=50000, max_hp=50000, is_boss=True),),
+        ))
+        # Tick 120 (4.0s): Deals 6000 physical + summon deals 3000 arts; stage trap deals 99999 true
+        meter.observe_frame(BattleFrameSample(
+            battle_id='b1',
+            logic_tick=120,
+            units=(
+                UnitSample(instance_id=10, unit_id='char_1035_wisdel', owner_seat=1, on_field=True, physical=6000),
+                UnitSample(instance_id=11, unit_id='token_10042_wisdel_soul', owner_seat=1, host_instance_id=10, is_summon=True, on_field=True, arts=3000),
+                UnitSample(instance_id=88, unit_id='trap_042_altar', name='源石祭坛', is_device=True, true=99999),
+            ),
+            enemies=(EnemySample(instance_id=900, enemy_id='enemy_boss', name='首领', hp=5000, max_hp=50000, is_boss=True),),
+        ))
+        # Pause test: repeated identical logic_tick=120 must NOT advance presence or alter DPS
+        snap_before_pause = meter.snapshot()
+        meter.observe_frame(BattleFrameSample(
+            battle_id='b1',
+            logic_tick=120,
+            units=(
+                UnitSample(instance_id=10, unit_id='char_1035_wisdel', owner_seat=1, on_field=True, physical=6000),
+                UnitSample(instance_id=11, unit_id='token_10042_wisdel_soul', owner_seat=1, host_instance_id=10, is_summon=True, on_field=True, arts=3000),
+                UnitSample(instance_id=88, unit_id='trap_042_altar', name='源石祭坛', is_device=True, true=99999),
+            ),
+            enemies=(EnemySample(instance_id=900, enemy_id='enemy_boss', name='首领', hp=5000, max_hp=50000, is_boss=True),),
+        ))
+        snap_after_pause = meter.snapshot()
+        self.assertEqual(snap_before_pause['operators'][0]['active_dps'], snap_after_pause['operators'][0]['active_dps'])
+        self.assertEqual(snap_before_pause['operators'][0]['presence_seconds'], 4.0)
+
+        # Trap isolated from team_total_damage and share_ratio
+        self.assertEqual(snap_after_pause['team_total_damage'], 9000.0)
+        self.assertEqual(len(snap_after_pause['stage_devices']), 1)
+        self.assertEqual(snap_after_pause['stage_devices'][0]['total_damage'], 99999.0)
+        op = snap_after_pause['operators'][0]
+        self.assertEqual(op['name'], '维什戴尔')
+        self.assertEqual(op['summon_damage'], 3000.0)
+        self.assertEqual(op['share_ratio'], 1.0)
+        # Future tail clipped at now=4.0s -> active window [3.0, 4.0] = 1.0s (NOT 2.5s!) -> 9000 / 1.0 = 9000 DPS
+        self.assertEqual(op['active_seconds'], 1.0)
+        self.assertEqual(op['active_dps'], 9000.0)
+        # Unhooked fields stay honest None
+        self.assertIsNone(op['shield_guarded'])
+        self.assertIsNone(op['overkill_trimmed'])
+        self.assertIsNone(op['mitigation_ratio'])
+
+        # Tick 180 (6.0s): Host retreats (on_field=False), summon deals +1000 arts; boss respawns HP pool to 50000
+        meter.observe_frame(BattleFrameSample(
+            battle_id='b1',
+            logic_tick=180,
+            units=(
+                UnitSample(instance_id=10, unit_id='char_1035_wisdel', owner_seat=1, on_field=False, physical=6000),
+                UnitSample(instance_id=11, unit_id='token_10042_wisdel_soul', owner_seat=1, host_instance_id=10, is_summon=True, on_field=True, arts=4000),
+            ),
+            enemies=(EnemySample(instance_id=900, enemy_id='enemy_boss', name='首领', hp=50000, max_hp=50000, is_boss=True),),
+        ))
+        snap_retreated = meter.snapshot()
+        self.assertEqual(snap_retreated['operators'][0]['total_damage'], 10000.0)
+        self.assertEqual(snap_retreated['operators'][0]['presence_seconds'], 4.0)
+        self.assertEqual(snap_retreated['enemy_pool']['respawn_resets'], 1)
+
+        # Prep-phase defense telemetry retention in ArenaTelemetryCoordinator
+        coord = ArenaTelemetryCoordinator()
+        coord.accept_battle_frame(
+            BattleFrameSample(
+                battle_id='r3_def',
+                logic_tick=60,
+                units=(UnitSample(instance_id=1, unit_id='char_4133_logos', owner_seat=2, arts=12000),),
+            ),
+            in_stronghold=True,
+            mode_id='mode_multi_hard',
+            round_number=3,
+            phase='self',
+        )
+        coord.accept_battle_frame(None, in_stronghold=True)
+        report = {
+            'capture': {'match': 1, 'round': 4, 'self': 2},
+            'rounds': {4: {'phase': 'prep'}},
+            'battle_config': {'mode_id': 'mode_multi_hard'},
+        }
+        # Clear active meter to simulate entering R4 shop where battle controller is destroyed
+        coord._active_meter = None
+        enriched = coord.enrich_report(report)
+        self.assertEqual(enriched['telemetry']['retained_round'], 3)
+        self.assertEqual(enriched['telemetry']['operators'][0]['name'], '逻各斯')
+
+    def test_protocol_squad_lineups_and_boss_attacker_operator_mapping(self):
+        stats = MatchStats()
+        stats.set_players({1: 'Alpha', 2: 'Bravo'})
+        stats.set_roster_squads({
+            2: [
+                {'chess_id': 'chess_char_6_24_a', 'char_id': 'char_1035_wisdel', 'bonds': ('sargonShip',), 'is_banned': False},
+                {'chess_id': 'chess_char_6_08_a', 'char_id': 'char_4133_logos', 'bonds': ('arcaneShip',), 'is_banned': True},
+            ]
+        })
+        stats.set_shops([
+            {'seat': 2, 'round': 14, 'shop_level': 6, 'skill_id': 'band_kalts', 'pieces': {501: 1035}, 'positions': {501: 12}}
+        ])
+        stats.set_phase(14, 'boss')
+        stats.add_step(14, 1, ((3, (48000, 501, 1, 2)),), uplink=True, uid=2)
+        snap = stats.snapshot()
+        self.assertEqual(snap['lineups'][2]['shop_level'], 6)
+        self.assertEqual(snap['lineups'][2]['strategist'], '凯尔希')
+        self.assertEqual(snap['lineups'][2]['squad'][0]['name'], '维什戴尔')
+        hit = snap['rounds'][14]['boss_uplink_rows'][0]
+        self.assertEqual(hit['char_id'], 'char_1035_wisdel')
+        self.assertEqual(hit['operator_name'], '维什戴尔')
+
+    def test_guarded_pc_inspector_reads_clean_frame_and_discards_torn_frame(self):
+        from electron.prts_battle_core.pc_inspector import FieldLayout, PcBattleInspector
+
+        mem = _SyntheticMemory()
+        layout = FieldLayout(build_tag='*', controller_rva=0x1000)
+        ctrl = 0x20000000
+        mem.write(mem.base + layout.controller_rva, struct.pack('<Q', ctrl))
+        mem.write(ctrl + layout.logic_tick_offset, struct.pack('<i', 150))
+        stage_str = mem.write_il2cpp_str(0x20001000, 'main_14-21')
+        mem.write(ctrl + layout.stage_id_offset, struct.pack('<Q', stage_str))
+
+        # 1 unit in list
+        ulist = 0x20002000
+        uarr = 0x20002100
+        u0 = 0x20003000
+        stats_ptr = 0x20003200
+        cid_str = mem.write_il2cpp_str(0x20003400, 'char_4116_blkkgt')
+        name_str = mem.write_il2cpp_str(0x20003600, '锏')
+        mem.write(ctrl + layout.unit_list_offset, struct.pack('<Q', ulist))
+        mem.write(ctrl + layout.enemy_list_offset, struct.pack('<Q', 0))
+        mem.write(ulist + layout.list_items_offset, struct.pack('<Q', uarr))
+        mem.write(ulist + layout.list_size_offset, struct.pack('<i', 1))
+        mem.write(uarr + layout.array_first_offset, struct.pack('<Q', u0))
+        mem.write(u0 + layout.unit_instance_id_offset, struct.pack('<i', 7))
+        mem.write(u0 + layout.unit_char_id_offset, struct.pack('<Q', cid_str))
+        mem.write(u0 + layout.unit_name_offset, struct.pack('<Q', name_str))
+        mem.write(u0 + layout.unit_seat_offset, struct.pack('<i', 1))
+        mem.write(u0 + layout.unit_flags_offset, struct.pack('<I', 1))
+        mem.write(u0 + layout.unit_host_inst_offset, struct.pack('<i', 0))
+        mem.write(u0 + layout.unit_stats_offset, struct.pack('<Q', stats_ptr))
+        mem.write(stats_ptr + layout.stats_channels_offset, struct.pack('<5d', 45000.0, 0.0, 0.0, 0.0, 0.0))
+
+        inspector = PcBattleInspector(layout_registry={'*': layout}, source_factory=lambda: mem)
+        frame = inspector.poll()
+        self.assertIsNotNone(frame)
+        self.assertEqual(inspector.status, 'active')
+        self.assertEqual(frame.stage_id, 'main_14-21')
+        self.assertEqual(frame.units[0].name, '锏')
+        self.assertEqual(frame.units[0].physical, 45000.0)
+
+        # Simulate mid-read frame mutation (tick jumps by +10 while reading stats) -> must be discarded as torn!
+        def mutate_mid_poll():
+            mem.write(ctrl + layout.logic_tick_offset, struct.pack('<i', 160))
+
+        mem.hook_on_address[stats_ptr + layout.stats_channels_offset] = mutate_mid_poll
+        torn = inspector.poll()
+        self.assertIsNone(torn)
+        self.assertEqual(inspector.torn_reads, 1)
+
+
 if __name__ == '__main__':
     unittest.main()

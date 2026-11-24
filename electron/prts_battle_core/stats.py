@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from math import floor
 import struct
 from typing import Iterable, Mapping
+from .operator_catalog import resolve_char_by_numeric_id, resolve_operator_name, resolve_strategist_name
 from .wave_power import EnemyInstance, _enemy, _power, player_for_escapes, resolve_enemy_id, wave_report
 from .wire import EscapedEnemy, SpawnGroup, SpawnPreview
 BOSS_ROUNDS = (14, 15)
@@ -72,6 +73,7 @@ class RoundStats:
     boss_rank_sequence: tuple[int, int] = ((-1), (-1))
     boss_uplink: Counter[tuple[int, int, int]] = field(default_factory=Counter)
     boss_uplink_seen: set[tuple[int, int | None, tuple[StepAction, ...]]] = field(default_factory=set)
+    seat_loadouts: dict[int, dict] = field(default_factory=dict)
 
     def observe_enemy_id(self, owner: int, instance: int, is_token: bool, enemy_id: str) -> None:
         # Typed instance evidence survives sparse refreshes of outcome and spawn lists.
@@ -109,6 +111,81 @@ class MatchStats:
         self.battle_config = {}
         self.banned_bonds: tuple[str, ...] = ()
         self.defeated_boss_rounds: set[int] = set()
+        self.squads: dict[int, list[dict]] = {}
+        self.banned_units: dict[int, list[dict]] = {}
+        self.seat_loadouts: dict[int, dict] = {}
+
+    def set_roster_squads(self, squads: Mapping | None, banned_units: Mapping | None = None) -> None:
+        if squads:
+            for seat, slots in squads.items():
+                if seat in range(1, 5) and slots:
+                    self.squads[seat] = [
+                        {
+                            "chess_id": str(slot.get("chess_id") or ""),
+                            "char_id": str(slot.get("char_id") or ""),
+                            "bonds": tuple(slot.get("bonds") or ()),
+                            "is_banned": bool(slot.get("is_banned")),
+                        }
+                        for slot in slots
+                        if slot.get("char_id") or slot.get("chess_id")
+                    ]
+        if banned_units:
+            for seat, items in banned_units.items():
+                if seat in range(1, 5) and items:
+                    self.banned_units[seat] = [dict(item) for item in items]
+
+    def set_shops(self, shops: Iterable[Mapping]) -> None:
+        for shop in shops or ():
+            seat = shop.get("seat")
+            round_no = shop.get("round")
+            if seat not in range(1, 5):
+                continue
+            pieces = dict(shop.get("pieces") or {})
+            positions = dict(shop.get("positions") or {})
+            skill_id = str(shop.get("skill_id") or "")
+            summary = {
+                "round": int(round_no) if isinstance(round_no, int) and 1 <= round_no <= 15 else self.current_round,
+                "shop_level": int(shop.get("shop_level") or 0),
+                "skill_id": skill_id,
+                "strategist": resolve_strategist_name(skill_id),
+                "piece_count": len(pieces),
+                "deployed_count": len(positions),
+                "pieces": pieces,
+                "chess_ids": sorted({int(cid) for cid in pieces.values() if isinstance(cid, int) and cid > 0}),
+            }
+            prev = self.seat_loadouts.get(seat)
+            if prev is None or summary["round"] >= prev.get("round", 0):
+                self.seat_loadouts[seat] = summary
+            if isinstance(round_no, int) and 1 <= round_no <= 15:
+                self.rounds.setdefault(round_no, RoundStats()).seat_loadouts[seat] = summary
+
+    def resolve_boss_attacker(self, player: int, attacker: int, source: int | None = None) -> tuple[str, str]:
+        if player not in range(1, 5) or attacker <= 0 or (source is not None and source not in (0, 1)):
+            return ("", "")
+        slots = self.squads.get(player) or ()
+        squad_chars = tuple(s["char_id"] for s in slots if s.get("char_id"))
+        # 1. Check board instance -> chess_id or direct numeric char_id match inside player's own squad
+        pieces = (self.seat_loadouts.get(player) or {}).get("pieces") or {}
+        candidate_num = pieces.get(attacker, attacker)
+        char_id, name = resolve_char_by_numeric_id(candidate_num, squad_chars)
+        if char_id:
+            return (char_id, name)
+        if candidate_num != attacker:
+            char_id, name = resolve_char_by_numeric_id(attacker, squad_chars)
+            if char_id:
+                return (char_id, name)
+        # 2. Check chess_id trailing number match if unique within player's squad
+        chess_matches = [
+            s["char_id"]
+            for s in slots
+            if s.get("char_id")
+            and s.get("chess_id")
+            and any(part.isdigit() and int(part) == candidate_num for part in s["chess_id"].split("_"))
+        ]
+        if len(set(chess_matches)) == 1:
+            cid = chess_matches[0]
+            return (cid, resolve_operator_name(cid))
+        return ("", "")
     def add_spawn_plan(self, previews: Iterable[SpawnPreview], source: str, seen_round: int=0) -> None:
         """Keep every previewed batch under its own round, with the earliest round it was seen in.\n\n        seen_round 0 means loading, before the first round.\n        """
         for preview in previews:
@@ -142,6 +219,14 @@ class MatchStats:
         if observed.banned_bonds and not self.banned_bonds:
             self.banned_bonds = observed.banned_bonds
         self.defeated_boss_rounds.update(observed.defeated_boss_rounds)
+        for seat, slots in observed.squads.items():
+            self.squads.setdefault(seat, slots)
+        for seat, items in observed.banned_units.items():
+            self.banned_units.setdefault(seat, items)
+        for seat, loadout in observed.seat_loadouts.items():
+            current = self.seat_loadouts.get(seat)
+            if current is None or loadout.get("round", 0) >= current.get("round", 0):
+                self.seat_loadouts[seat] = loadout
         for number, incoming in observed.rounds.items():
             row = self.rounds.setdefault(number, incoming)
             if row is incoming:
@@ -161,7 +246,8 @@ class MatchStats:
             for stored, extra in ((row.local_leaks, incoming.local_leaks), (row.local_escaped, incoming.local_escaped),
                                   (row.owners, incoming.owners), (row.help_kills, incoming.help_kills),
                                   (row.boss_ratios, incoming.boss_ratios),
-                                  (row.prep_extras, incoming.prep_extras), (row.player_effects, incoming.player_effects)):
+                                  (row.prep_extras, incoming.prep_extras), (row.player_effects, incoming.player_effects),
+                (row.seat_loadouts, incoming.seat_loadouts)):
                 for key, value in extra.items():
                     stored.setdefault(key, value)
             for player, cost in incoming.hp_costs.items():
@@ -505,10 +591,32 @@ class MatchStats:
                 "hp_costs": hp_costs,
                 "boss_totals": dict(data.boss_totals),
                 "boss_status": "unknown",
-                "boss_official": [dict(row) for row in data.boss_official],
+                "boss_official": [
+                    {
+                        **dict(row),
+                        **(
+                            {"char_id": cid, "operator_name": op_name}
+                            if (cid_pair := self.resolve_boss_attacker(row["player"], row["identifier"]))[0]
+                            and (cid := cid_pair[0]) and (op_name := cid_pair[1])
+                            else {}
+                        ),
+                    }
+                    for row in data.boss_official
+                ],
                 "boss_uplink": dict(uplink),
                 "boss_uplink_rows": [
-                    {"player": player, "attacker": attacker, "source": source, "damage": damage}
+                    {
+                        "player": player,
+                        "attacker": attacker,
+                        "source": source,
+                        "damage": damage,
+                        **(
+                            {"char_id": cid, "operator_name": op_name}
+                            if (cid_pair := self.resolve_boss_attacker(player, attacker, source))[0]
+                            and (cid := cid_pair[0]) and (op_name := cid_pair[1])
+                            else {}
+                        ),
+                    }
                     for (player, attacker, source), damage in data.boss_uplink.items()
                 ],
             }
@@ -594,6 +702,28 @@ class MatchStats:
         battle_config = dict(self.battle_config)
         if self.banned_bonds:
             battle_config["banned_bonds"] = list(self.banned_bonds)
+        lineups = {}
+        for seat in sorted(set(self.squads) | set(self.seat_loadouts)):
+            loadout = self.seat_loadouts.get(seat) or {}
+            slots = self.squads.get(seat) or ()
+            lineups[seat] = {
+                "round": loadout.get("round") or None,
+                "shop_level": loadout.get("shop_level") or None,
+                "skill_id": loadout.get("skill_id") or "",
+                "strategist": loadout.get("strategist") or "",
+                "piece_count": loadout.get("piece_count", 0),
+                "deployed_count": loadout.get("deployed_count", 0),
+                "squad": [
+                    {
+                        "chess_id": slot["chess_id"],
+                        "char_id": slot["char_id"],
+                        "name": resolve_operator_name(slot["char_id"]),
+                        "bonds": list(slot["bonds"]),
+                        "is_banned": slot["is_banned"],
+                    }
+                    for slot in slots
+                ],
+            }
         return {
             "players": players,
             "rounds": rounds,
@@ -603,4 +733,5 @@ class MatchStats:
             "eliminated": dict(sorted(self.eliminated.items())),
             "battle_config": battle_config,
             "defeated_boss_rounds": sorted(self.defeated_boss_rounds),
+            "lineups": lineups,
         }

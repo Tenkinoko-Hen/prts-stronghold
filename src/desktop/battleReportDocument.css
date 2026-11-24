@@ -39,6 +39,9 @@ thead th { color:var(--muted); font-size:13px; font-weight:600; }
 .players.no-boss .identity-col { width:44%; } .players.no-boss .ratio-col { width:24%; }
 .players :is(td,th):not(:first-child) { text-align:right; }
 .players td { font-family:var(--mono); font-weight:600; }
+.tele-table :is(td,th):not(:first-child):not(:nth-child(2)) { text-align:right; }
+.tele-table td:not(.tele-chan) { font-family:var(--mono); font-weight:600; }
+.tele-chan { color:var(--muted); font-size:13px; }
 .players thead span,.ratio-base { display:inline-block; white-space:nowrap; }
 .ratio-base { color:var(--muted); font-weight:400; font-size:13px; }
 .identity { display:flex; align-items:baseline; gap:7px; }

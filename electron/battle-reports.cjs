@@ -39,7 +39,7 @@ function diagnosticsDialogTitle(product) {
   return product?.reportBrand?.diagnosticsTitle || 'PRTS · 战报诊断';
 }
 
-function installBattleReports({ app, mainWindow, ipcMain, product }) {
+function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) {
   let state = {
     status: 'starting',
     report: null,
@@ -60,6 +60,9 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
   function publish(patch) {
     state = { ...state, ...patch };
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('battle-reports-state', state);
+    if (typeof onPublish === 'function') {
+      try { onPublish(state); } catch {}
+    }
     return state;
   }
 

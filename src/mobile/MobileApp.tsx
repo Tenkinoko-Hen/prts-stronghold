@@ -7,6 +7,7 @@ import { MobileReference } from './MobileReference';
 import { CovenantScanner, useCovenantScanner } from './CovenantScanner';
 import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
+import { MobileLanPanel } from './MobileLanPanel';
 import type { RoundSyncProgress } from './RoundSync';
 import { StrategyBadge } from '../components/StrategyBadge';
 import { OperatorAvatar } from '../components/OperatorAvatar';
@@ -52,6 +53,9 @@ export default function MobileApp() {
     setCorrecting(false);
   }, [resetRoundSync]);
   const scanner = useCovenantScanner(session.scanId, applyScan);
+  const handleLanSync = useCallback((data: { bannedCovenants: string[]; round: number; selectedCompId?: string }) => {
+    dispatch({ type: 'applyLanSync', ...data });
+  }, []);
   const startNewMatch = () => {
     window.PRTSScan?.reset();
     resetRoundSync();
@@ -84,6 +88,7 @@ export default function MobileApp() {
     <main className={`m-scroll ${session.step === 'guide' ? 'is-guide' : session.step === 'ban' ? 'is-scan' : ''}`} ref={scrollRef}>
       {session.step === 'ban' && <div className="m-scan-layout"><section className="m-scan-controls" aria-label="识别与校正">
         <CovenantScanner appliedId={session.scanId} scanner={scanner} />
+        <MobileLanPanel onSyncGuide={handleLanSync} />
         <div className="m-ban-result"><div className="m-result-heading"><strong>{session.scanComplete ? '26 项已确认' : session.scanId ? `已确认 ${session.confirmedCovenants?.length || 0}/26` : '本局条件'} · {session.bans.bannedCovenants.length} 项受限</strong><button className="m-text-button" aria-expanded={correcting} onClick={() => setCorrecting(true)}>补录 / 校正</button></div>
           <div className="m-restricted-chips">{session.bans.bannedCovenants.map(name => <button key={name} onClick={() => dispatch({ type: 'ban', group: 'bannedCovenants', name })} aria-label={`将${name}改为可用`}>{name}<X size={12} /></button>)}</div>
         </div>
@@ -129,7 +134,10 @@ export default function MobileApp() {
         {blocked.length > 0 && <details className="m-card"><summary>受限方案 <span>{blocked.length} 套</span><ChevronDown size={16} /></summary>{blocked.map(item => <div className="m-blocked" key={item.comp.id}><h3>{item.comp.title}</h3><ul>{item.blockedReasons.map(line => <li key={line}>{line}</li>)}</ul><p>{item.pivotAdvice}</p><button className="m-secondary m-wide" onClick={() => dispatch({ type: 'choose', id: item.comp.id })}>查看攻略与限制</button></div>)}</details>}
       </>}
 
-      {guiding && comp && <MobileGuide comp={comp} round={round} bans={session.bans} roundSyncProgress={roundSyncProgress} onRound={value => dispatch({ type: 'round', round: value })} onBack={() => dispatch({ type: 'step', step: 'plans' })} onOpenImage={openImage} />}
+      {guiding && comp && <>
+        <MobileLanPanel onSyncGuide={handleLanSync} />
+        <MobileGuide comp={comp} round={round} bans={session.bans} roundSyncProgress={roundSyncProgress} onRound={value => dispatch({ type: 'round', round: value })} onBack={() => dispatch({ type: 'step', step: 'plans' })} onOpenImage={openImage} />
+      </>}
       {session.step === 'library' && <MobileReference onOpenImage={openImage} />}
     </main>
     {guiding && <div className="m-round-controls"><button className="m-secondary chamfer-box" aria-label="上一回合" disabled={round <= 1} onClick={() => manualRound(round - 1)}><ArrowLeft size={17} /><span>上一回合</span></button><button className="m-primary chamfer-box" aria-label="下一回合" disabled={round >= 15} onClick={() => manualRound(round + 1)}><span>{round === 15 ? '已到终盘' : '下一回合'}</span><ArrowRight size={17} /></button></div>}

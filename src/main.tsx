@@ -3,12 +3,15 @@ import './index.css';
 
 declare const __PRODUCT_MODE__: 'full' | 'telemetry';
 
+const searchParams = new URLSearchParams(window.location.search);
 const mobile =
-  new URLSearchParams(window.location.search).get('mobile') === '1' ||
+  searchParams.get('mobile') === '1' ||
   /Android|iPhone/i.test(navigator.userAgent);
 const root = createRoot(document.getElementById('root')!);
 
-if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('battle-demo')) {
+if (searchParams.get('hud') === '1') {
+  void import('./desktop/HudStripApp').then(({default: HudStripApp}) => root.render(<HudStripApp />));
+} else if (import.meta.env.DEV && searchParams.has('battle-demo')) {
   void import('./desktop/demo/BattleReportDemo').then(({default: Demo}) => root.render(<Demo />));
 } else if (__PRODUCT_MODE__ === 'telemetry') {
   if (import.meta.env.MODE === 'android' || mobile) {

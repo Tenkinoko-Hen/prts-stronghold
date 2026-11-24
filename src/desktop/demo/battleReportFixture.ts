@@ -1,6 +1,6 @@
 import { REPORT_ROUNDS } from '../battleReportData';
 
-export type DemoScene = 'settled' | 'assisting' | 'opening';
+export type DemoScene = 'settled' | 'assisting' | 'opening' | 'solo_dps';
 const enemies = [
   ['enemy_1002_nsabr', '士兵'], ['enemy_1009_lurker', '潜伏者'], ['enemy_1006_shield', '重装防御者'],
   ['enemy_1023_jmage', '隐形术师'], ['enemy_9034_acblk', '假想敌：影役'], ['enemy_1509_mousek', '鼠王'],
@@ -16,6 +16,41 @@ const plans = REPORT_ROUNDS.flatMap(round => Array.from({ length: round <= 12 ? 
   return { round, action: Math.floor(i / 4), enemy_id, name, count: (i + round) % 6 + 1 };
 }));
 export function demoReport(scene: DemoScene) {
+  if (scene === 'solo_dps') {
+    return {
+      capture: { match: 1001, round: 1, self: 1 },
+      players: { 1: '博士' },
+      battle_config: { mode_id: 'mode_solo_stage', stage_id: 'act38side_ex08', stage_name: 'EX-8 突袭 · 熔炉边界' },
+      rounds: { 1: { phase: 'self', self_leaks: 0, leaks: { 1: 0 }, leaks_status: 'reported', assists_status: 'skipped' } },
+      spawn_plan: [],
+      telemetry: {
+        scope: 'solo_stage',
+        source: 'memory_readonly',
+        coverage: 'full',
+        logic_seconds: 64.5,
+        team_total_damage: 342800,
+        team_total_healing: 41200,
+        enemy_pool: { active_count: 3, defeated_count: 42, respawn_resets: 1, live_hp: 38500, live_max_hp: 120000,
+          boss: { enemy_id: 'enemy_1521_dslily', name: '领袖假想敌', hp: 38500, max_hp: 120000 } },
+        operators: [
+          { char_id: 'char_1035_wisdel', name: '维什戴尔', seat: 1, on_field: true, total_damage: 168400, summon_damage: 42100,
+            physical: 152400, arts: 16000, true: 0, elemental: 0, healing: 0, active_dps: 5420, pulse_dps: 6180, span_dps: 3210,
+            active_hps: 0, pulse_hps: 0, span_hps: 0, active_seconds: 31.1, presence_seconds: 52.4, share_ratio: 0.4912,
+            children: [{ unit_id: 'token_10042_wisdel_soul', name: '魂影残响', total_damage: 42100, physical: 26100, arts: 16000, true: 0, elemental: 0, healing: 0, on_field: true }] },
+          { char_id: 'char_4133_logos', name: '逻各斯', seat: 1, on_field: true, total_damage: 112600, summon_damage: 0,
+            physical: 0, arts: 84200, true: 4400, elemental: 24000, healing: 0, active_dps: 3890, pulse_dps: 4120, span_dps: 2340,
+            active_hps: 0, pulse_hps: 0, span_hps: 0, active_seconds: 28.9, presence_seconds: 48.1, share_ratio: 0.3285, children: [] },
+          { char_id: 'char_4116_blkkgt', name: '锏', seat: 1, on_field: true, total_damage: 61800, summon_damage: 0,
+            physical: 61800, arts: 0, true: 0, elemental: 0, healing: 0, active_dps: 3150, pulse_dps: 2200, span_dps: 1580,
+            active_hps: 0, pulse_hps: 0, span_hps: 0, active_seconds: 19.6, presence_seconds: 39.1, share_ratio: 0.1803, children: [] },
+          { char_id: 'char_2025_shu', name: '黍', seat: 1, on_field: true, total_damage: 0, summon_damage: 0,
+            physical: 0, arts: 0, true: 0, elemental: 0, healing: 41200, active_dps: 0, pulse_dps: 0, span_dps: 0,
+            active_hps: 1280, pulse_hps: 1450, span_hps: 890, active_seconds: 0, presence_seconds: 46.3, share_ratio: 0, children: [] },
+        ],
+        stage_devices: [{ unit_id: 'trap_042_originium', name: '源石祭坛', total_damage: 18500, physical: 0, arts: 0, true: 18500, elemental: 0, healing: 0 }],
+      },
+    };
+  }
   const rounds: Record<number, object> = {};
   if (scene !== 'opening') {
     for (let n = 1; n < 9; n++) {

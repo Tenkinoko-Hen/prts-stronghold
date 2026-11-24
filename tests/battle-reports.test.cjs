@@ -6,6 +6,7 @@ const test = require('node:test');
 const { diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails } = require('../electron/battle-reports.cjs');
 const { pickLatestNpcapInstaller } = require('../electron/npcap-installer.cjs');
 const { classifyBadgeBgra, evaluateOcrLines, extractCovenantBoxesFromLine, looksLikeCovenantScreen } = require('../electron/covenant-ocr.cjs');
+const { installLanSync, isPrivateLanIp, verifyPin } = require('../electron/lan-sync.cjs');
 
 const loadProduct = (id) =>
   JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'products', id, 'product.json'), 'utf8'));
@@ -117,4 +118,49 @@ test('covenant OCR line extractor and BGRA badge classifier distinguish availabl
   assert.deepEqual(evaluated.seenCovenants, ['炎', '维多利亚']);
   assert.deepEqual(evaluated.bannedCovenants, ['维多利亚']);
   assert.equal(looksLikeCovenantScreen(bgra, width, height).match, true);
+});
+
+test('LAN sync restricts access to RFC1918/loopback IPs and enforces 4-digit PIN pairing', async () => {
+  assert.equal(isPrivateLanIp('127.0.0.1'), true);
+  assert.equal(isPrivateLanIp('::ffff:192.168.31.18'), true);
+  assert.equal(isPrivateLanIp('10.0.4.12'), true);
+  assert.equal(isPrivateLanIp('172.20.1.5'), true);
+  assert.equal(isPrivateLanIp('8.8.8.8'), false);
+  assert.equal(isPrivateLanIp('172.32.0.1'), false);
+  assert.equal(isPrivateLanIp('192.169.0.1'), false);
+  assert.equal(verifyPin('4829', '4829'), true);
+  assert.equal(verifyPin('4829', '4820'), false);
+  assert.equal(verifyPin('4829', '12'), false);
+
+  const handlers = new Map();
+  const fakeMain = {
+    isDestroyed: () => false,
+    mainFrame: { url: 'prts://app/' },
+    webContents: {
+      mainFrame: { url: 'prts://app/' },
+      send: () => {},
+    },
+  };
+  const fakeIpc = {
+    handle: (name, fn) => handlers.set(name, fn),
+  };
+  const lan = installLanSync({ mainWindow: fakeMain, ipcMain: fakeIpc, product: loadProduct('stronghold') });
+  const senderEvent = { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame };
+  try {
+    lan.updateGuideState({ bannedCovenants: ['炎', '奥术'], currentRound: 6, compTitle: '杜遥夜四本炎' });
+    const started = await handlers.get('lan-sync-enable')(senderEvent, true);
+    assert.equal(started.enabled, true);
+
+    const badRes = await fetch(`http://127.0.0.1:${started.port}/api/v1/state?pin=0000`);
+    assert.equal(badRes.status, 401);
+
+    const okRes = await fetch(`http://127.0.0.1:${started.port}/api/v1/state?pin=${started.pin}`);
+    assert.equal(okRes.status, 200);
+    const body = await okRes.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.guide.currentRound, 6);
+    assert.deepEqual(body.guide.bannedCovenants, ['炎', '奥术']);
+  } finally {
+    lan.dispose();
+  }
 });

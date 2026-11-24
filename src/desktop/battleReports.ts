@@ -42,12 +42,58 @@ export interface CovenantOcrBridge {
   onState(callback: (state: CovenantOcrState) => void): () => void;
 }
 
+export interface HudOverlayState {
+  open: boolean;
+  locked: boolean;
+  shortcut: string;
+  shortcutAvailable?: boolean;
+  status: ReportStatus;
+  report: unknown;
+  guide: {
+    round: number;
+    compTitle: string;
+    paceTip: string;
+  };
+}
+export interface HudOverlayBridge {
+  getState(): Promise<HudOverlayState>;
+  setOpen(flag: boolean): Promise<HudOverlayState>;
+  setLocked(locked: boolean): Promise<HudOverlayState>;
+  syncGuide(guide: { round?: number; compTitle?: string; paceTip?: string }): Promise<HudOverlayState>;
+  onState(callback: (state: HudOverlayState) => void): () => void;
+}
+
+export interface LanSyncState {
+  enabled: boolean;
+  port: number;
+  pin: string;
+  addresses: string[];
+  peerCount: number;
+  lastSyncAt: number | null;
+  error: string;
+}
+export interface LanSyncBridge {
+  getState(): Promise<LanSyncState>;
+  setEnabled(enabled: boolean): Promise<LanSyncState>;
+  refreshPin(): Promise<LanSyncState>;
+  syncGuide(guide: {
+    bannedCovenants?: string[];
+    currentRound?: number;
+    selectedCompId?: string;
+    compTitle?: string;
+    paceTip?: string;
+  }): Promise<LanSyncState>;
+  onState(callback: (state: LanSyncState) => void): () => void;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
       setAlwaysOnTop(flag: boolean): Promise<boolean>;
       battleReports?: BattleReportsBridge;
       covenantOcr?: CovenantOcrBridge;
+      hud?: HudOverlayBridge;
+      lanSync?: LanSyncBridge;
     };
   }
 }
@@ -160,7 +206,17 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
     ? [...defeatedSet].sort((a, b) => a - b)
     : incoming.defeatedBossRounds;
   if (defeatedBossRounds !== incoming.defeatedBossRounds) changed = true;
-  return changed ? { ...incoming, names, bannedCovenants, defeatedBossRounds, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
+  let lineups = incoming.lineups;
+  if (!Object.keys(lineups).length && Object.keys(previous.lineups).length) {
+    lineups = previous.lineups;
+    changed = true;
+  }
+  let telemetry = incoming.telemetry;
+  if (!telemetry && previous.telemetry) {
+    telemetry = previous.telemetry;
+    changed = true;
+  }
+  return changed ? { ...incoming, names, bannedCovenants, defeatedBossRounds, lineups, telemetry, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
 }
 
 export function updateLiveReport(records: ReportRecords, report: BattleReport | null, run: number, now: number): ReportRecords {

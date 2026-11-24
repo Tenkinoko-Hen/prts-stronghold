@@ -4,6 +4,7 @@ import { PEPE_POSITION_IMAGE } from '../data/ngaCommunityComps';
 import { calculateStackingProjection } from '../utils/tacticalLogic';
 import { BossRoutes } from '../components/BossRoutes';
 import { AegirReferenceButton, AegirReferenceGallery } from '../components/AegirReferenceGallery';
+import { MobileDpsEstimator } from './MobileDpsEstimator';
 
 export function MobileReference({ onOpenImage }: { onOpenImage: (url: string, title: string) => void }) {
   const [tab, setTab] = useState('原图');
@@ -26,9 +27,10 @@ export function MobileReference({ onOpenImage }: { onOpenImage: (url: string, ti
 
   return <div className={`m-reference ${tab === 'Boss资料' || tab === '阿戈尔站位' ? 'is-tactical-reference' : ''}`}>
     <div className="m-section-heading"><div><span className="m-eyebrow">REFERENCE / 随时查阅</span><h1>资料手册</h1></div></div>
-    <div className="m-chips">{['原图', '阿戈尔站位', 'Boss资料', '站位', '盟约', '转职', '叠层'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => { setTab(label); setQuery(''); }}>{label}</button>)}</div>
+    <div className="m-chips">{['原图', '阿戈尔站位', 'Boss资料', '站位', '盟约', '转职', '叠层', '折损推演'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => { setTab(label); setQuery(''); }}>{label}</button>)}</div>
     {tab === 'Boss资料' && <BossRoutes onOpenImage={onOpenImage} />}
     {tab === '阿戈尔站位' && <AegirReferenceGallery />}
+    {tab === '折损推演' && <MobileDpsEstimator />}
     {['原图', '盟约', '转职'].includes(tab) && <input className="m-input" aria-label="搜索资料" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称或关键词" />}
     {tab === '原图' && <><p className="m-muted">{UPLOADED_GALLERY_ITEMS.length} 张原始资料，点击查看与放大。</p><div className="m-gallery">{UPLOADED_GALLERY_ITEMS.filter(item => JSON.stringify(item).includes(query.trim())).map(item => <button key={item.id} onClick={() => onOpenImage(item.url, item.title)}><img loading="lazy" src={item.url} alt="" /><strong>{item.title}</strong></button>)}</div></>}
     {tab === '盟约' && [...COVENANT_GUIDES, ...SUB_COVENANT_GUIDES].filter(item => JSON.stringify(item).includes(query.trim())).map(item => <details className="m-card" key={item.id}><summary>{item.name}<span>{item.difficulty}</span></summary><p>{item.subtitle}</p><h3>盟约效果</h3><p>{item.pactSummary}</p><h3>叠层核心</h3><p>{item.stackCore}</p><div className="m-tags">{item.synergySubPacts.map((tag, i) => <span key={i}>{tag}</span>)}</div>{item.operators.map((op, i) => <div className="m-reference-row" key={i}><h3>{op.name} · {op.tier}</h3><small>{op.category}</small><p>{op.effect}</p></div>)}<ul>{item.proTips.map((tip, i) => <li key={i}>{tip}</li>)}</ul>{item.imageUrl && <button className="m-secondary" onClick={() => onOpenImage(item.imageUrl, item.name)}>查看原图</button>}</details>)}

@@ -8,6 +8,8 @@ from threading import Event, Thread
 from time import monotonic
 
 from .analyzer import Analyzer
+from .combat_meter import ArenaTelemetryCoordinator
+from .pc_inspector import PcBattleInspector
 from .wave_power import enemy_template
 from .windows_capture import RetiredConnections, segments
 
@@ -48,15 +50,22 @@ def serve() -> None:
             print_event({"kind": "status", "status": value})
             last_status = value
 
-    collect_reports(segments(stopped, status), stopped, status)
+    inspector = PcBattleInspector()
+    try:
+        collect_reports(segments(stopped, status), stopped, status, inspector=inspector)
+    finally:
+        inspector.close()
 
 
-def collect_reports(results, stopped: Event, status) -> None:
+def collect_reports(results, stopped: Event, status, *, inspector: PcBattleInspector | None = None) -> None:
     analyzer = Analyzer()
+    telemetry_coord = ArenaTelemetryCoordinator()
     last_report = None
     last_count = -1
     last_progress = None
+    last_telemetry_tick = -1
     next_report = 0.0
+    next_inspector_poll = 0.0
     next_diagnostics = 0.0
     next_recovery = 0.0
     payloads = {"up": 0, "down": 0}
@@ -67,18 +76,57 @@ def collect_reports(results, stopped: Event, status) -> None:
     processing_errors = 0
     data_errors = (ValueError, TypeError, KeyError, IndexError, OverflowError)
 
-    def send_report(force: bool = False, idle: bool = False) -> None:
+    def poll_inspector(force: bool = False) -> bool:
+        nonlocal next_inspector_poll, last_telemetry_tick
+        if inspector is None:
+            return False
+        now = monotonic()
+        if not force and now < next_inspector_poll:
+            return False
+        next_inspector_poll = now + 0.25
+        conn = analyzer.current[1] if analyzer.current and not analyzer.current[1].closed else None
+        in_stronghold = conn is not None
+        mode_id = str(conn.model.battle_config.get("mode_id") or "") if conn else ""
+        round_no = conn.model.current_round if conn else 0
+        phase = conn.last_phase[1] if conn and conn.last_phase else ""
+        frame = inspector.poll()
+        snap = telemetry_coord.accept_battle_frame(
+            frame,
+            in_stronghold=in_stronghold,
+            match_serial=conn.serial if conn else None,
+            mode_id=mode_id,
+            round_number=round_no,
+            phase=phase,
+        )
+        new_tick = snap["logic_tick"] if snap else -1
+        changed = new_tick != last_telemetry_tick
+        last_telemetry_tick = new_tick
+        return changed
+
+    def send_report(force: bool = False, idle: bool = False, telemetry_changed: bool = False) -> None:
         nonlocal last_count, last_progress, next_report, last_report, round_count, report_details
         now = monotonic()
         if not analyzer.current:
+            if inspector is not None:
+                solo = telemetry_coord.build_solo_report(inspector.status)
+                if solo is not None:
+                    encoded = json.dumps({"kind": "report", "report": solo}, ensure_ascii=False, allow_nan=False)
+                    if encoded != last_report:
+                        print(encoded, flush=True)
+                        last_report = encoded
+                    return
+                if last_report is not None:
+                    print_event({"kind": "report", "report": None})
+                    last_report = None
             return
         conn = analyzer.current[1]
         model = conn.model
         progress = (conn.generation, conn.closed, conn.serial, conn.player, model.current_round,
                     conn.last_phase, len(model.rounds), model.banned_bonds,
                     tuple(sorted(model.defeated_boss_rounds)),
-                    analyzer.report_events[311], analyzer.report_events[313])
-        if progress == last_progress and (analyzer.message_count == last_count or (not force and now < next_report)):
+                    analyzer.report_events[311], analyzer.report_events[313],
+                    len(model.squads), len(model.seat_loadouts), last_telemetry_tick)
+        if progress == last_progress and not telemetry_changed and (analyzer.message_count == last_count or (not force and now < next_report)):
             return
         if conn.closed and last_report is None and last_progress and last_progress[:3] == progress[:3]:
             return  # This closed match was already emitted and cleared.
@@ -88,7 +136,10 @@ def collect_reports(results, stopped: Event, status) -> None:
         last_count = analyzer.message_count
         last_progress = progress
         next_report = now + 0.25
-        report = analyzer.snapshot()
+        report = telemetry_coord.enrich_report(
+            analyzer.snapshot(),
+            inspector.status if inspector is not None else "standby",
+        )
         rounds = report["rounds"]
         round_count = len(rounds)
         report_details = (
@@ -162,7 +213,8 @@ def collect_reports(results, stopped: Event, status) -> None:
             if failures >= 20:
                 status("incompatible")
                 break
-            send_report(idle=result is None)
+            telemetry_changed = poll_inspector()
+            send_report(idle=result is None, telemetry_changed=telemetry_changed)
             send_diagnostics()
     except OSError:
         if not stopped.is_set():

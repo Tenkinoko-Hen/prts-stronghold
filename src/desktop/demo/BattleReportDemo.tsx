@@ -7,7 +7,7 @@ import { REPORT_BRAND } from '../../brand/productBrand';
 import '../desktop.css';
 import './battleReportDemo.css';
 
-const scenes = { settled: 'R9 协防已结算', assisting: 'R9 协防进行中', opening: '开局仅预告' };
+const scenes = { settled: 'R9 协防已结算', assisting: 'R9 协防进行中', opening: '开局仅预告', solo_dps: '单人算力遥测' };
 export default function BattleReportDemo() {
   const [scene, setScene] = useState<DemoScene>('settled');
   const [half, setHalf] = useState(false);

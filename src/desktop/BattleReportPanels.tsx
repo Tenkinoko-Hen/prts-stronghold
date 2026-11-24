@@ -3,6 +3,8 @@ import { ChevronRight } from 'lucide-react';
 import type { BossEncounter } from '../data/bossEncounterData';
 import { REPORT_SEATS, hasBossDamage, type BattleReport, type BattleRound } from './battleReportData';
 import { EnemyAvatar } from './BattleReportSpawns';
+import { CompactOperatorBadge } from './BattleReportTelemetry';
+import { isSoloMode } from './combatTelemetry';
 
 const PHASES: Record<string, string> = {
   loading: '载入', special_prep: '特殊准备', prep: '准备', self: '防守', assist: '协防', boss: 'Boss 战',
@@ -80,6 +82,8 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
   report?: BattleReport; seat?: number | null; number: 14 | 15; onRound(round: number): void; reference: ReactNode; onPreview(round: number): void;
 }) {
   const data = report?.rounds.find(row => row.number === number);
+  const solo = isSoloMode(report?.mode);
+  const seats = solo ? ([1] as const) : REPORT_SEATS;
   const hasBreakdown = data && (data.bossUplinkRows.length > 0 || data.bossOfficial.length > 0
     || Object.keys(data.bossUplink).length > 0);
   const recorded = hasBossDamage(data);
@@ -87,7 +91,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     {report?.rounds.some(row => row.number >= 14 && (Object.keys(row.bossPercent).length || Object.keys(row.bossDamage).length))
       && <div className="d-report-table"><table>
       <thead><tr><th scope="col">座位</th><th scope="col">R14 · 贡献 / 伤害</th><th scope="col">R15 · 贡献 / 伤害</th></tr></thead>
-      <tbody>{REPORT_SEATS.map(seat => <tr key={seat}><th scope="row">{seatName(seat, report, perspective)}</th>
+      <tbody>{seats.map(seat => <tr key={seat}><th scope="row">{seatName(seat, report, perspective)}</th>
         {([14, 15] as const).map(round => {
           const row = report?.rounds.find(item => item.number === round);
           const percent = row?.bossPercent[seat], damage = row?.bossDamage[seat];
@@ -125,14 +129,15 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     </div>}
     {data && hasBreakdown && <>
       <div className="d-report-table"><table>
-        <thead><tr>{['来源', '座位', '攻击编号', '类型', '伤害'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+        <thead><tr>{['来源', '座位', '参战干员 / 编号', '类型', '伤害'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>
-          {REPORT_SEATS.filter(seat => data.bossUplink[seat] !== undefined).map(seat => <tr key={`sum-${seat}`}>
+          {seats.filter(seat => data.bossUplink[seat] !== undefined).map(seat => <tr key={`sum-${seat}`}>
             <th scope="row">本端上报合计</th><td>{seatName(seat, report, perspective)}</td><td>—</td><td>—</td><td>{formatReportNumber(data.bossUplink[seat])}</td>
           </tr>)}
           {[...data.bossOfficial, ...data.bossUplinkRows].map((hit, i) => <tr key={i}>
             <th scope="row">{i < data.bossOfficial.length ? '官方榜单' : '本端上报'}</th>
-            <td>{seatName(hit.seat, report, perspective)}</td><td>{hit.identifier}</td>
+            <td>{seatName(hit.seat, report, perspective)}</td>
+            <td>{hit.operatorName ? <span className="d-boss-op"><CompactOperatorBadge name={hit.operatorName} size={20} /><span>{hit.operatorName}</span><small className="d-muted">#{hit.identifier}</small></span> : hit.identifier}</td>
             <td>{hit.source === null ? '—' : bossSourceLabels[hit.source] ?? '未知'}</td><td>{formatReportNumber(hit.damage)}</td>
           </tr>)}
         </tbody>

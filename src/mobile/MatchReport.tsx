@@ -1,6 +1,10 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
-import {BookOpen, FileDown, Flag, ImageDown, Plus} from 'lucide-react';
+import {BookOpen, FileDown, Flag, ImageDown, Plus, ScanText} from 'lucide-react';
 import {RoundSync, type RoundSyncProgress} from './RoundSync';
+import {MobileLanPanel} from './MobileLanPanel';
+import {parseSettlementQuickText} from './settlementQuickParse';
+import type {BattleReport} from '../desktop/battleReportData';
+import {formatTelemetryRate, formatTelemetryTotal} from '../desktop/combatTelemetry';
 import atlas from '../desktop/enemyPortraits.json';
 import atlasUrl from '../desktop/enemyPortraits.webp';
 import catalog from './reportEnemyNames.json';
@@ -12,7 +16,13 @@ type Row = {ocr?:number; manual?:number; leaks?:number; helps?:number; boss?:num
 type Match = {started:number; ended?:number; current?:number; rounds:Record<string,Row>};
 type Snapshot = {active?:Match; history?:Match[]; error?:boolean};
 declare global { interface Window {
-  PRTSJournal?: {snapshot():string;start():boolean;finish(id:string):boolean;record(id:string,round:number,data:string):boolean};
+  PRTSJournal?: {
+    snapshot():string;
+    start():boolean;
+    finish(id:string):boolean;
+    record(id:string,round:number,data:string):boolean;
+    importLanMatch?(raw:string):boolean;
+  };
   PRTSFiles?: {save(kind:string,name:string,base64:string):string};
 } }
 const date = (n:number)=>new Date(n).toLocaleString('zh-CN',{hour12:false});
@@ -103,6 +113,7 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
   const [message,notify]=useState('');
   const [busy,setBusy]=useState(false);
   const [confirmEnd,confirm]=useState(false);
+  const [quickText,setQuickText]=useState('');
   const progress=useRef<RoundSyncProgress>({id:'',handled:'',synchronized:false,pending:null});
   const refresh=useCallback(()=>{
     try{setSnap(JSON.parse(journal?.snapshot()??'{}'));}catch{notify('无法读取本机对局');}
@@ -113,6 +124,55 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
   const live=!!active && !active.ended && match===active;
   const current=active?.current;
   useEffect(()=>{if(!editing&&live&&current)setRound(current);},[current,live]);
+  useEffect(()=>{
+    if (live && round) {
+      window.PRTSOverlay?.updateStrip(round, REPORT_BRAND.name, `正在记录 R${round} · 已录 ${match ? sorted(match).length : 0} 回合`);
+    }
+  },[live,round,match]);
+  const handleImportLanReport = useCallback((pcReport: BattleReport) => {
+    const roundsPayload: Record<string, Row> = {};
+    for (const r of pcReport.rounds) {
+      const teamLeaks = Object.values(r.leaks).reduce((a, b) => a + b, 0);
+      const teamHelps = Object.values(r.assists).reduce((a, b) => a + b, 0);
+      const teamBoss = Object.values(r.bossDamage).reduce((a, b) => a + b, 0);
+      const roundTeleOps = pcReport.telemetry?.rounds[r.number]?.operators.slice(0, 3) ?? [];
+      const teleSummary = roundTeleOps.length
+        ? `主力算力：${roundTeleOps.map(o => `${o.name} ${formatTelemetryTotal(o.totalDamage)}${o.activeDps != null ? `(${formatTelemetryRate(o.activeDps)})` : ''}`).join(' · ')}`
+        : '';
+      roundsPayload[String(r.number)] = {
+        leaks: r.selfLeaks ?? teamLeaks,
+        helps: teamHelps,
+        ...(teamBoss > 0 ? { boss: teamBoss } : {}),
+        ...(teleSummary ? { note: teleSummary } : {}),
+      };
+    }
+    if (!Object.keys(roundsPayload).length && pcReport.telemetry?.operators.length) {
+      const top = pcReport.telemetry.operators.slice(0, 4);
+      roundsPayload['1'] = {
+        leaks: 0,
+        helps: 0,
+        boss: Math.round(pcReport.telemetry.teamTotalDamage),
+        note: `算力榜：${top.map(o => `${o.name} ${formatTelemetryTotal(o.totalDamage)}(${formatTelemetryRate(o.activeDps)})`).join(' · ')}`,
+      };
+    }
+    if (!Object.keys(roundsPayload).length) {
+      notify('电脑端当前尚无实战回合可导入');
+      return;
+    }
+    const raw = JSON.stringify({
+      current: pcReport.current || pcReport.rounds.at(-1)?.number || 1,
+      ended: pcReport.rounds.at(-1)?.phase === 'end',
+      rounds: roundsPayload,
+    });
+    if (journal?.importLanMatch?.(raw)) {
+      select(0);
+      edit(false);
+      refresh();
+      notify('已同步电脑端战报与算力明细，可直接保存到手机相册');
+    } else {
+      notify('请在安卓端安装版中使用一键导入');
+    }
+  }, [journal, refresh]);
   const count=match?sorted(match).length:0;
   const previous=match?.rounds?.[round];
   const start=()=>{if(!journal?.start()){notify('无法开始记录，请重试');return;}
@@ -120,6 +180,7 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
   const save=async(kind:'image'|'document')=>{if(!match||busy)return;setBusy(true);try{notify(await exportMatch(match,kind));}catch{notify('战报导出失败，请重试');}finally{setBusy(false);}};
   const standalone = PRODUCT_BRAND.mode === 'telemetry';
   return <main className="match-report"><header>{standalone ? <img src={`${import.meta.env.BASE_URL}${PRODUCT_BRAND.faviconFile}`} width="28" height="28" alt=""/> : <strong>{REPORT_BRAND.name}</strong>}<h1>{REPORT_BRAND.mobileHeaderTitle}</h1>{onGuide && <button onClick={onGuide}><BookOpen size={16}/>游戏攻略</button>}</header>
+    <MobileLanPanel onImportReport={handleImportLanReport} />
     <section><div className="mr-bar"><h2>{live?'本局战报':'对局记录'}</h2>
       {active&&<select aria-label="对局" value={selected} onChange={e=>{select(Number(e.target.value));edit(false);confirm(false);}}>
         <option value={0}>{active.ended?'最近对局':'当前对局'}</option>{[...(snap.history??[])].reverse().map(m=><option key={m.started} value={m.started}>{date(m.started)}</option>)}</select>}</div>
@@ -129,15 +190,44 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
       {confirmEnd&&live&&<><button onClick={()=>{if(journal?.finish(String(active.started))){window.PRTSRound?.stop();confirm(false);edit(false);refresh();}else notify('结束记录失败');}}>确认结束本局</button><button onClick={()=>confirm(false)}>继续记录</button></>}</div>
       {snap.error&&<p role="alert">本机战报暂时无法读取</p>}
     </section>
-    {match&&<section><div className="mr-bar"><h2>逐回合明细</h2>{live&&<button onClick={()=>edit(!editing)}>{editing?'收起':'手动补记'}</button>}</div>
-      {editing&&live&&<form key={`${match.started}-${round}`} onSubmit={e=>{
+    {match&&<section><div className="mr-bar"><h2>逐回合明细</h2>{live&&<button onClick={()=>edit(!editing)}>{editing?'收起':'补记 / 识图解析'}</button>}</div>
+      {editing&&live&&<>
+        <div className="mr-quick-ocr" style={{display:'grid',gap:'6px',marginBottom:'10px',padding:'8px',border:'1px solid #39424e',borderRadius:'4px'}}>
+          <label style={{fontSize:'12.5px'}}>结算文字 / 识图文本快捷提取
+            <input value={quickText} onChange={e=>setQuickText(e.target.value)} placeholder="粘贴或输入如：R14 漏怪2 协防5 Boss伤害 145000 32%" />
+          </label>
+          <button type="button" onClick={()=>{
+            const parsed = parseSettlementQuickText(quickText);
+            const targetRound = parsed.round ?? round;
+            if (parsed.leaks === undefined && parsed.helps === undefined && parsed.boss === undefined && !parsed.note) {
+              notify('未识别到数值，请包含如「R6 漏怪2 协防4」或「伤害 120000」');
+              return;
+            }
+            const prevRow = match.rounds?.[targetRound];
+            const payload = {
+              leaks: parsed.leaks ?? prevRow?.leaks ?? null,
+              helps: parsed.helps ?? prevRow?.helps ?? null,
+              boss: parsed.boss ?? prevRow?.boss ?? null,
+              note: [prevRow?.note, parsed.note].filter(Boolean).join(' · '),
+              spawns: prevRow?.spawns ?? [],
+            };
+            if (journal?.record(String(match.started), targetRound, JSON.stringify(payload))) {
+              setRound(targetRound);
+              setQuickText('');
+              edit(false);
+              notify(`已自动提取并录入 R${targetRound}`);
+              refresh();
+            }
+          }}><ScanText size={14}/>一键解析填入战报</button>
+        </div>
+        <form key={`${match.started}-${round}`} onSubmit={e=>{
         e.preventDefault();const form=new FormData(e.currentTarget);
         const data=Object.fromEntries(fields.map(k=>[k,form.get(k)===''?null:Number(form.get(k))]));
         if(!journal?.record(String(match.started),round,JSON.stringify({...data,note:form.get('note'),spawns:JSON.parse(String(form.get('spawns')||'[]'))}))){notify('请至少记录一项数值、出怪或备注');return;}
         edit(false);notify(`R${round} 已保存`);refresh();
       }}><label>回合<select value={round} onChange={e=>setRound(Number(e.target.value))}>{Array.from({length:15},(_,i)=><option key={i} value={i+1}>R{i+1}</option>)}</select></label>
       {fields.map(k=><label key={k}>{fieldNames[k]}<input name={k} type="number" inputMode="numeric" min={0} max={1000000000} step={1} defaultValue={previous?.[k]??''} placeholder="未记录"/></label>)}
-      <SpawnEditor initial={previous?.spawns??[]}/><label>备注<textarea name="note" maxLength={400} defaultValue={previous?.note??''}/></label><button>保存本回合</button></form>}
+      <SpawnEditor initial={previous?.spawns??[]}/><label>备注<textarea name="note" maxLength={400} defaultValue={previous?.note??''}/></label><button>保存本回合</button></form></>}
       {count===0&&<p>等待识别游戏回合，或手动补记。</p>}
       {sorted(match).map(([n,r])=><article key={n}><h3>R{n.padStart(2,'0')} <small>{source(r)}</small></h3>
         <div className="mr-stats">{fields.map(k=><label key={k}>{fieldNames[k]}<b>{r[k]??'—'}</b></label>)}</div>

@@ -20,9 +20,10 @@ function sectionHead(n: number, title: string, note = '') {
 
 function playerTable(r: ReportSummary) {
   const showBoss = r.bosses.length > 0;
-  return `<table class="players${showBoss ? '' : ' no-boss'}" aria-label="四人战绩总览"><colgroup><col class="identity-col"><col><col><col class="ratio-col">${showBoss ? '<col class="damage-col">' : ''}</colgroup>
+  const rows = r.solo ? r.players.slice(0, 1) : r.players;
+  return `<table class="players${showBoss ? '' : ' no-boss'}" aria-label="${r.solo ? '单兵战绩总览' : '四人战绩总览'}"><colgroup><col class="identity-col"><col><col><col class="ratio-col">${showBoss ? '<col class="damage-col">' : ''}</colgroup>
 <thead><tr><th scope="col">席位与干员</th><th scope="col">累计漏怪</th><th scope="col">累计协防</th><th scope="col">零漏占比</th>${showBoss ? '<th scope="col">Boss 输出</th>' : ''}</tr></thead>
-<tbody>${r.players.map(p => `<tr data-seat="${p.seat}"><th scope="row"><div class="identity"><span class="seat-index">${p.seat}号</span><bdi>${html(p.name)}</bdi>${p.self ? '<small class="self-mark">我</small>' : ''}${p.top ? `<small class="top-mark">${html(p.top)}</small>` : ''}</div></th>
+<tbody>${rows.map(p => `<tr data-seat="${p.seat}"><th scope="row"><div class="identity"><span class="seat-index">${p.seat}号</span><bdi>${html(p.name)}</bdi>${p.self ? '<small class="self-mark">我</small>' : ''}${p.top ? `<small class="top-mark">${html(p.top)}</small>` : ''}</div></th>
 <td>${leakValue(p.leaks)}</td><td>${exportCount(p.helps)}</td><td>${html(p.cleanRatio).replace(/（\d+\/\d+）$/, '<wbr><span class="ratio-base">$&</span>')}</td>${showBoss ? `<td>${exportCount(p.boss)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
 }
 
@@ -48,6 +49,13 @@ function bossSection(waves: BossWave[]) {
 ${w.seats.map(s => `<div class="damage" data-seat="${s.seat}"><span class="damage-seat"><i class="seat-dot" aria-hidden="true"></i>${s.seat}号</span><span class="track${s.share === null ? ' missing' : ''}" aria-hidden="true">${s.share === null ? '' : `<i style="width:${Math.min(100, s.share)}%"></i>`}</span><span class="share">${html(s.shareText)}</span><strong>${exportCount(s.damage)}</strong></div>`).join('')}
 ${notes.map(n => `<p class="wave-note">${html(n)}</p>`).join('')}</article>`;
   }).join('')}</div></section>`;
+}
+
+function telemetrySection(r: ReportSummary, sectionNumber: number) {
+  if (!r.telemetryOperators?.length) return '';
+  return `<section>${sectionHead(sectionNumber, '干员算力贡献明细', '激战秒伤按局内定点数逻辑帧计算，自动剥离暂停与倍速干扰')}<table class="tele-table" aria-label="干员算力贡献明细">
+<thead><tr><th scope="col">干员</th><th scope="col">属性构成</th><th scope="col">占比</th><th scope="col">激战秒伤</th><th scope="col">累计输出</th></tr></thead>
+<tbody>${r.telemetryOperators.map(op => `<tr><th scope="row">${html(op.name)}${!r.solo && op.seat ? ` <small class="ratio-base">${op.seat}号</small>` : ''}</th><td class="tele-chan">${html(op.channelsText)}</td><td>${html(op.shareText)}</td><td>${html(op.activeDpsText)}</td><td><strong>${html(op.totalText)}</strong></td></tr>`).join('')}</tbody></table></section>`;
 }
 
 function laneEvents(row: Round) {
@@ -111,6 +119,17 @@ export function renderBattleReportHtml(
   const legend = r.hasPartial
     ? '注：部分回合缺少全队完整结算，汇总为已记录数据合计（≥ 为已知下限，— 为未记录）。零漏占比仅计本席已确认回合。'
     : '注：— 为未记录，≥ 为已知下限。零漏占比仅计本席漏怪数已确认的回合。';
+  let nextSection = 2;
+  const bossHtml = bossSection(r.bosses);
+  if (r.bosses.length) nextSection++;
+  const hasTelemetry = Boolean(r.telemetryOperators?.length);
+  const teleHtml = hasTelemetry ? telemetrySection(r, r.soloStage ? 1 : nextSection++) : '';
+  const bodySections = r.soloStage
+    ? teleHtml
+    : `<section>${sectionHead(1, r.solo ? '单兵战绩总览' : '四人战绩总览')}${playerTable(r)}<p class="legend">${legend}</p></section>
+${bossHtml}
+${teleHtml}<section>${sectionHead(nextSection, '逐回合实战与协防明细')}<table class="rounds" aria-label="逐回合实战与协防明细"><colgroup><col class="c-round"><col class="c-lanes"><col class="c-links"><col></colgroup>
+<thead><tr><th scope="col">回合</th><th scope="col">战况与席位</th><th scope="col">全部协防链路</th><th scope="col">怪种明细</th></tr></thead><tbody>${r.rounds.map(row => roundRow(row, iconSlots, iconCount)).join('')}</tbody></table></section>`;
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
@@ -118,9 +137,6 @@ export function renderBattleReportHtml(
 <header class="mast"><div><div class="brand"><b>${html(brand.name)}</b><span>/ 作战归档</span></div><h1>${html(r.title)}</h1>
 <div class="meta"><strong>${html(r.name)}</strong><span>开始时间 <time>${html(r.start)}</time></span><span>导出时间 <time>${html(r.exported)}</time></span></div></div>
 <dl class="kpis" aria-label="对局概览">${kpis.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl></header>
-<section>${sectionHead(1, '四人战绩总览')}${playerTable(r)}<p class="legend">${legend}</p></section>
-${bossSection(r.bosses)}
-<section>${sectionHead(r.bosses.length ? 3 : 2, '逐回合实战与协防明细')}<table class="rounds" aria-label="逐回合实战与协防明细"><colgroup><col class="c-round"><col class="c-lanes"><col class="c-links"><col></colgroup>
-<thead><tr><th scope="col">回合</th><th scope="col">战况与席位</th><th scope="col">全部协防链路</th><th scope="col">怪种明细</th></tr></thead><tbody>${r.rounds.map(row => roundRow(row, iconSlots, iconCount)).join('')}</tbody></table></section>
+${bodySections}
 <footer>${html(brand.footer)}</footer></main></body></html>`;
 }

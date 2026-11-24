@@ -4,6 +4,8 @@ const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, net, protocol, Tray, Menu } = require('electron');
 const { installBattleReports } = require('./battle-reports.cjs');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
+const { installHudOverlay } = require('./hud-overlay.cjs');
+const { installLanSync } = require('./lan-sync.cjs');
 const { loadRuntimeProduct, brandingAssetPath } = require('./product-runtime.cjs');
 
 protocol.registerSchemesAsPrivileged([
@@ -70,8 +72,23 @@ app.whenReady().then(() => {
     return mainWindow.isAlwaysOnTop();
   });
 
+  const hudOverlay = process.platform === 'win32'
+    ? installHudOverlay({ mainWindow, ipcMain, globalShortcut, product })
+    : null;
+  const lanSync = process.platform === 'win32'
+    ? installLanSync({ mainWindow, ipcMain, product })
+    : null;
   const battleReports = process.platform === 'win32'
-    ? installBattleReports({ app, mainWindow, ipcMain, product })
+    ? installBattleReports({
+        app,
+        mainWindow,
+        ipcMain,
+        product,
+        onPublish: (feed) => {
+          hudOverlay?.updateBattleFeed(feed);
+          lanSync?.updateBattleFeed(feed);
+        },
+      })
     : null;
   const covenantOcr = process.platform === 'win32' && product.mode === 'full'
     ? installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut })
@@ -95,6 +112,8 @@ app.whenReady().then(() => {
 
   mainWindow.on('closed', () => {
     tray?.destroy();
+    hudOverlay?.dispose();
+    lanSync?.dispose();
     covenantOcr?.dispose();
     battleReports?.dispose();
   });

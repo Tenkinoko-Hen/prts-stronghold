@@ -42,6 +42,7 @@ export function restoreSession(raw: string | null): MobileSession {
 
 export type MobileAction =
   | { type: 'applyScan'; scan: CovenantScan }
+  | { type: 'applyLanSync'; bannedCovenants: string[]; round: number; selectedCompId?: string }
   | { type: 'ban'; group: keyof BanPickState; name: string }
   | { type: 'step'; step: MobileStep }
   | { type: 'choose'; id: string }
@@ -57,6 +58,25 @@ export function mobileReducer(state: MobileSession, action: MobileAction): Mobil
       const next = scan.status === 'ready' ? emptySession() : state;
       return { ...next, step: 'ban', scanId: scan.id, scanComplete: scan.complete, confirmedCovenants: [...covenantNames].filter(name => scan.seenCovenants.includes(name)),
         bans: { ...next.bans, bannedCovenants: scan.bannedCovenants } };
+    }
+    case 'applyLanSync': {
+      const cleanBans = [...new Set(action.bannedCovenants.filter(name => covenantNames.has(name)))];
+      const clampedRound = Math.max(1, Math.min(15, Math.trunc(action.round || 1)));
+      const nextCompId = state.compId || (action.selectedCompId && compIds.has(action.selectedCompId) ? action.selectedCompId : null);
+      const nextRounds = nextCompId ? { ...state.rounds, [nextCompId]: clampedRound } : state.rounds;
+      return {
+        ...state,
+        compId: nextCompId,
+        rounds: nextRounds,
+        ...(cleanBans.length > 0
+          ? {
+              scanId: 'lan-sync',
+              scanComplete: true,
+              confirmedCovenants: [...covenantNames],
+              bans: { ...state.bans, bannedCovenants: cleanBans },
+            }
+          : {}),
+      };
     }
     case 'ban': {
       const list = state.bans[action.group];

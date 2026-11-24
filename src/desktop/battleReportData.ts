@@ -1,4 +1,5 @@
 import { BOSS_ENCOUNTERS } from '../data/bossEncounterData';
+import { mapBannedBondsToCovenants } from './covenantBonds';
 
 export const REPORT_SEATS = [1, 2, 3, 4] as const;
 export const REPORT_ROUNDS = Array.from({ length: 15 }, (_, i) => i + 1);
@@ -110,6 +111,8 @@ export interface BattleReport {
   difficulty: string;
   boss: string;
   hiddenBoss: string;
+  bannedCovenants: string[];
+  defeatedBossRounds: number[];
   names: Record<number, string>;
   hp: Record<number, number>;
   eliminated: Record<number, number>;
@@ -262,7 +265,10 @@ export function readBattleReport(input: unknown): BattleReport {
       waveConfirmed: array(waveReport?.confirmed_players).flatMap(value => seat(value) ?? []), rows: lines,
     });
   }
-  if (!result.length && !preview.length && !mode) throw new Error('战报里没有对局数据。');
+  const bannedCovenants = mapBannedBondsToCovenants(config?.banned_bonds);
+  const defeatedBossRounds = [...new Set(array(root.defeated_boss_rounds)
+    .flatMap(value => value === 14 || value === 15 ? [value] : []))].sort((a, b) => a - b);
+  if (!result.length && !preview.length && !mode && !bannedCovenants.length) throw new Error('战报里没有对局数据。');
   const single = /^mode_single_(\d+)$/.exec(mode);
   const self = seat(capture?.self);
   return { match: number(capture?.match), current: round(capture?.round), self, mode,
@@ -270,6 +276,7 @@ export function readBattleReport(input: unknown): BattleReport {
     selfManual: false,
     difficulty: single ? `规程等级 ${single[1]}` : Object.hasOwn(modes, mode) ? modes[mode] : '',
     boss: text(config?.boss_id), hiddenBoss: text(config?.hidden_boss_id),
+    bannedCovenants, defeatedBossRounds,
     names: Object.fromEntries(REPORT_SEATS.map(id => [id, text(players[id]).trim()])),
     hp: numberTable(root.hp), eliminated: numberTable(root.eliminated), rounds: result,
     preview: preview.sort((a, b) => a.round - b.round),

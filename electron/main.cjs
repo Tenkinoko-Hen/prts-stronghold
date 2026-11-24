@@ -1,8 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, ipcMain, net, protocol, desktopCapturer, clipboard, globalShortcut, Tray, Menu } = require('electron');
-const { installCovenantOcr } = require('./covenant-ocr.cjs');
+const { app, BrowserWindow, ipcMain, net, protocol, Tray, Menu } = require('electron');
 const { installBattleReports } = require('./battle-reports.cjs');
 const { loadRuntimeProduct, brandingAssetPath } = require('./product-runtime.cjs');
 
@@ -70,9 +69,6 @@ app.whenReady().then(() => {
     return mainWindow.isAlwaysOnTop();
   });
 
-  const scanner = product.mode === 'full'
-    ? installCovenantOcr({ app, mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut, product })
-    : null;
   const battleReports = process.platform === 'win32'
     ? installBattleReports({ app, mainWindow, ipcMain, product })
     : null;
@@ -95,7 +91,6 @@ app.whenReady().then(() => {
 
   mainWindow.on('closed', () => {
     tray?.destroy();
-    scanner?.dispose();
     battleReports?.dispose();
   });
   mainWindow.once('ready-to-show', () => {

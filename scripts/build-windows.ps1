@@ -44,7 +44,7 @@ try {
 
     $probe = '' | & $workerExe '--battle-report-check'
     if ($LASTEXITCODE -ne 0 -or $probe -notcontains 'PRTS_BATTLE_REPORT_READY') {
-        throw "战报运行库未就绪，请先运行 ./scripts/build-windows-ocr.ps1 -Product $Product。"
+        throw "战报运行库未就绪，请先运行 ./scripts/build-windows-worker.ps1 -Product $Product。"
     }
 
     & node.exe './scripts/package-windows.cjs' $Product $Version

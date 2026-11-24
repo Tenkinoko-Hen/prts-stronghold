@@ -100,12 +100,22 @@ def help_frame(number, kills, *, remaining=(), rejoin=False):
     return frame(313, body)
 
 
-def roster_frame(self_seat, players):
+def roster_frame(self_seat, players, *, banned_bonds=(), banned_units=None, scene_round=0, truncate_scene=False):
     body = b''.join(wire_text(value) for value in ('mode_multi_hard', 'synthetic', '', ''))
-    body += struct.pack('!iBHH', 42, self_seat, 0, len(players))
+    body += struct.pack('!iBH', 42, self_seat, len(banned_bonds))
+    body += b''.join(wire_text(bond) for bond in banned_bonds)
+    body += struct.pack('!H', len(players))
+    banned_units = banned_units or {}
     for seat, label in players.items():
-        body += struct.pack('!HbHH', 0, seat, 0, 0) + wire_text(label) + bytes(22)
-    body += struct.pack('!bBBq', 0, 1, 0, 0) + bytes(24)
+        body += struct.pack('!HbHH', 0, seat, 0, 0) + wire_text(label) + bytes(20)
+        seat_bans = banned_units.get(seat, ())
+        body += struct.pack('!H', len(seat_bans))
+        for bond_id, ids in seat_bans:
+            body += wire_text(bond_id) + struct.pack(f'!H{len(ids)}h', len(ids), *ids)
+    if truncate_scene:
+        body += struct.pack('!bBBq', 0, 1, scene_round, 0) + b'\x00'
+    else:
+        body += struct.pack('!bBBq', 0, 1, scene_round, 0) + bytes(24)
     return frame(300, body)
 
 
@@ -602,6 +612,36 @@ class BossCaptureTests(unittest.TestCase):
         self.assertEqual(row['boss_uplink'], {4: 2500})
         self.assertEqual(row['boss_uplink_rows'], [{'player': 4, 'attacker': 42, 'source': 1, 'damage': 2500}])
         self.assertEqual(self.analyzer.boss_events['inferred'], 2)
+
+    def test_full_state_extracts_banned_bonds_and_defeated_boss_rounds(self):
+        opening = roster_frame(2, {1: 'A', 2: 'B'}, banned_bonds=('yanShip', 'preciShip'))
+        self.down(opening)
+        self.down(boss_scene_frame(14, 8, totals={2: 9000}, records=(14,), hp=10000))
+        report = self.analyzer.snapshot()
+        self.assertEqual(self.analyzer.parse_errors, 0)
+        self.assertEqual(report['battle_config']['banned_bonds'], ['yanShip', 'preciShip'])
+        self.assertEqual(report['defeated_boss_rounds'], [14])
+
+    def test_partial_opening_300_with_banned_units_aligns_and_keeps_bans(self):
+        partial = roster_frame(
+            1, {1: 'Self'}, banned_bonds=('sargonShip', 'arcaneShip'),
+            banned_units={1: [('sargonShip', (101, 102))]}, scene_round=1, truncate_scene=True,
+        )
+        self.down(partial)
+        report = self.analyzer.snapshot()
+        self.assertEqual(self.analyzer.parse_errors, 0)
+        self.assertEqual(report['players'], {1: 'Self'})
+        self.assertEqual(report['battle_config']['banned_bonds'], ['sargonShip', 'arcaneShip'])
+
+    def test_downlink_gap_recovers_via_phase_anchor_without_ack(self):
+        self.down(boss_scene_frame(3, 3))
+        # Simulate a dropped downlink segment followed by a buffered R6 scene without peer ACK.
+        r6 = b'\xde\xad\xbe\xef' + boss_scene_frame(6, 4)
+        self.analyzer.accept(Segment(1.0, *OLD[::-1], r6, self.seq + 50, False, True, False, False), 'down')
+        self.assertEqual(self.analyzer.snapshot()['capture']['round'], 3)
+        self.analyzer.resume_acknowledged_gaps(2.0)
+        self.assertEqual(self.analyzer.snapshot()['capture']['round'], 6)
+        self.assertEqual(self.analyzer.snapshot()['rounds'][6]['phase'], 'self')
 
 
 class LiveCaptureTests(unittest.TestCase):

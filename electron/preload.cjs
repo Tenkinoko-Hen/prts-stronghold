@@ -1,7 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const telemetryOnly = process.argv.includes('--prts-mode=telemetry');
-
 contextBridge.exposeInMainWorld('electronAPI', {
   setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', Boolean(flag)),
   ...(process.platform === 'win32' ? {
@@ -13,21 +11,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         const listener = (_event, state) => callback(state);
         ipcRenderer.on('battle-reports-state', listener);
         return () => ipcRenderer.removeListener('battle-reports-state', listener);
-      },
-    },
-  } : {}),
-  ...(!telemetryOnly ? {
-    covenantOcr: {
-      listSources: () => ipcRenderer.invoke('covenant-ocr-sources'),
-      getState: () => ipcRenderer.invoke('covenant-ocr-state'),
-      selectSource: (id) => ipcRenderer.invoke('covenant-ocr-select', id),
-      start: (mode) => ipcRenderer.invoke('covenant-ocr-start', mode),
-      cancel: () => ipcRenderer.invoke('covenant-ocr-cancel'),
-      reset: () => ipcRenderer.invoke('covenant-ocr-reset'),
-      onState: (callback) => {
-        const listener = (_event, state) => callback(state);
-        ipcRenderer.on('covenant-ocr-state', listener);
-        return () => ipcRenderer.removeListener('covenant-ocr-state', listener);
       },
     },
   } : {}),

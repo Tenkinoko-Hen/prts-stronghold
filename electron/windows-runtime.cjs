@@ -2,8 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 function windowsWorkerPath(app, product) {
-  const workerName = product?.desktop?.workerName || 'PRTS-OCR';
-  const runtimeDir = product?.desktop?.workerRuntimeDir || 'work/windows-ocr/runtime/PRTS-OCR';
+  const workerName = product?.desktop?.workerName || 'PRTS-Worker';
+  const runtimeDir = product?.desktop?.workerRuntimeDir || 'work/windows-worker/runtime/PRTS-Worker';
   if (app.isPackaged) {
     const workerExe = path.join(process.resourcesPath, 'worker', `${workerName}.exe`);
     if (fs.existsSync(workerExe)) return workerExe;
@@ -12,4 +12,13 @@ function windowsWorkerPath(app, product) {
   return path.join(app.getAppPath(), ...runtimeDir.split('/'), `${workerName}.exe`);
 }
 
-module.exports = { windowsWorkerPath };
+function windowsWorkerLaunch(app, product) {
+  const executable = windowsWorkerPath(app, product);
+  if (app.isPackaged || fs.existsSync(executable)) {
+    return { command: executable, args: [], cwd: path.dirname(executable) };
+  }
+  const script = path.join(app.getAppPath(), 'electron', 'battle-report-worker.py');
+  return { command: 'python', args: [script], cwd: path.dirname(script) };
+}
+
+module.exports = { windowsWorkerPath, windowsWorkerLaunch };

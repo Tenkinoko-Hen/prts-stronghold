@@ -42,7 +42,8 @@ test('product manifests isolate stronghold and pure telemetry branding, IDs and 
   assert.equal(diagnosticsDialogTitle(telemetry), '卫戍战报仪 · 战报诊断');
   assert.equal(stronghold.reportBrand.exportPrefix, 'PRTS战报');
   assert.equal(telemetry.reportBrand.exportPrefix, '卫戍战报仪');
-  assert.equal(stronghold.desktop.workerKind, 'full');
+  assert.equal(stronghold.desktop.workerKind, 'report-only');
+  assert.equal(stronghold.desktop.workerName, 'PRTS-Worker');
   assert.equal(telemetry.desktop.workerKind, 'report-only');
   assert.ok(!telemetry.publicAssetDirs.desktop.includes('community'));
   assert.ok(!telemetry.publicAssetDirs.android.includes('boss-routes'));

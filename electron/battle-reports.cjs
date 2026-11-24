@@ -1,7 +1,6 @@
 const { spawn } = require('node:child_process');
-const { dirname } = require('node:path');
 const { createInterface } = require('node:readline');
-const { windowsWorkerPath } = require('./windows-runtime.cjs');
+const { windowsWorkerLaunch } = require('./windows-runtime.cjs');
 
 const WORKER_STATUSES = new Set(['waiting', 'connecting', 'listening', 'permission', 'unavailable', 'incompatible']);
 const MAX_REPORT = 8 * 1024 * 1024;
@@ -68,9 +67,9 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
 
   function start() {
     if (disposed || worker) return state;
-    const executable = windowsWorkerPath(app, product);
-    const child = spawn(executable, ['--battle-report'], {
-      cwd: dirname(executable), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+    const { command, args, cwd } = windowsWorkerLaunch(app, product);
+    const child = spawn(command, [...args, '--battle-report'], {
+      cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     });
     worker = child;
     diagnostics = undefined;

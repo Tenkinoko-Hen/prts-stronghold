@@ -1,8 +1,8 @@
 import { StrategyBadge } from './StrategyBadge';
 import React, { useEffect, useState } from 'react';
 import { Ban, Check, ChevronLeft, ChevronRight, CircleHelp, RotateCcw } from 'lucide-react';
-import { DesktopCovenantScan as DesktopScanPanel } from './DesktopCovenantScan';
-import { type DesktopCovenantScan } from '../desktop/covenantOcr';
+import { DesktopBanSync } from './DesktopBanSync';
+import { type BattleBanSyncState } from '../desktop/battleBanSync';
 import { DesktopDialog } from '../desktop/DesktopDialog';
 import { DesktopCompGuide } from '../desktop/DesktopCompGuide';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATORS, META_COMPS } from '../data/strongholdData';
@@ -14,8 +14,8 @@ interface MetaCompsViewProps {
   visible: boolean;
   banState: BanPickState;
   onChangeBanState: React.Dispatch<React.SetStateAction<BanPickState>>;
-  desktopScan: DesktopCovenantScan | null;
-  onCancelScan(): Promise<void>;
+  banSync: BattleBanSyncState;
+  onResyncBans(): void;
   onClearBans(): Promise<void>;
   selectedCompId: string;
   onSelectCompId(id: string): void;
@@ -28,7 +28,7 @@ interface MetaCompsViewProps {
 }
 
 export function MetaCompsView(props: MetaCompsViewProps) {
-  const { banState, onChangeBanState, desktopScan, onClearBans, selectedCompId, onSelectCompId } = props;
+  const { banState, onChangeBanState, banSync, onResyncBans, onClearBans, selectedCompId, onSelectCompId } = props;
   const [stage, setStage] = useState<'picker' | 'detail'>('picker');
   const [difficulty, setDifficulty] = useState('全部');
   const [page, setPage] = useState(0);
@@ -57,11 +57,11 @@ export function MetaCompsView(props: MetaCompsViewProps) {
   return <main className="desktop-page" hidden={!props.visible}>
     {stage === 'picker' ? <div className="d-picker" data-testid="desktop-picker">
       <aside className="d-pick-side d-panel">
-        <div className="d-section-head"><h1><span className="d-step">1</span>识别与校正</h1><div className="d-inline">
-          <button className="d-icon" aria-label="识别与筛选帮助" onClick={() => setDialog('help')}><CircleHelp size={17} /></button>
-          <button className="d-button d-small" data-testid="clear-bans" disabled={desktopScan?.status === 'scanning'} onClick={() => { setResetError(''); setDialog('reset'); }}><RotateCcw size={13} />新局</button>
+        <div className="d-section-head"><h1><span className="d-step">1</span>本局禁选</h1><div className="d-inline">
+          <button className="d-icon" aria-label="禁选与筛选帮助" onClick={() => setDialog('help')}><CircleHelp size={17} /></button>
+          <button className="d-button d-small" data-testid="clear-bans" onClick={() => { setResetError(''); setDialog('reset'); }}><RotateCcw size={13} />新局</button>
         </div></div>
-        <DesktopScanPanel scan={desktopScan} onCancel={props.onCancelScan} />
+        <DesktopBanSync sync={banSync} currentBanned={banState.bannedCovenants} onResync={onResyncBans} />
         <section className="d-corrections" aria-label="核对与校正">
           <div className="d-section-head"><h2>核对与校正</h2><span className="d-muted">{banState.bannedCovenants.length} 项受限</span></div>
           <h3>核心盟约 <small>10</small></h3>{chips(ALL_CORE_COVENANT_NAMES, 'core')}
@@ -97,7 +97,7 @@ export function MetaCompsView(props: MetaCompsViewProps) {
     </div> : <DesktopCompGuide comp={activeComp} evaluations={evaluations} bans={banState} round={props.currentRound} onRound={props.onChangeRound}
       onSelectComp={onSelectCompId} onBack={() => setStage('picker')} onOpenImage={props.onOpenImage} onTransfers={props.onJumpToTransfers} onCovenants={props.onJumpToPriorityCovenants} />}
     {dialog === 'operators' && <DesktopDialog title="本局禁用核心干员" onClose={() => setDialog(null)}><div className="d-ban-operator-grid">{BAN_SENSITIVE_OPERATORS.map(op => <button key={op.name} data-testid={`ban-op-${op.name}`} aria-pressed={banState.bannedOperators.includes(op.name)} onClick={() => toggle('bannedOperators', op.name)}><OperatorAvatar name={op.name} size="sm" /><span>{banState.bannedOperators.includes(op.name) ? '已禁用' : '未禁用'}</span></button>)}</div></DesktopDialog>}
-    {dialog === 'help' && <DesktopDialog title="识别与筛选帮助" onClose={() => setDialog(null)}><p>在游戏打开「确认本局信息」，完整露出核心与两排附加盟约后识别。26 项读全后自动刷新右侧推荐；缺项或失败时保留原条件。</p><p>截图仅在本机处理，不保存、不上传。OCR 只识别盟约，实际被禁的核心干员请手动标记。扫描结束后点击标签即可纠正结果。</p><p>适配分衡量构筑风险，不是胜率。攻略标注「推导」的回合由多份资料补全，请根据经济、来牌与承压调整。</p></DesktopDialog>}
+    {dialog === 'help' && <DesktopDialog title="禁选与筛选帮助" onClose={() => setDialog(null)}><p>Windows 版通过本地实时采集自动从开局场景同步本局 Ban 盟约（需安装 Npcap 并以管理员身份启动），也可随时直接点击下方标签手动勾选或修改。</p><p>所有抓包数据仅在本机内存中处理，不保存原始包、不上传网络。附加盟约受限不代表其全部干员被禁，实际被禁的核心干员可在「手动禁用干员」中补充标记。</p><p>适配分衡量构筑风险，不是胜率。攻略标注「推导」的回合由多份资料补全，请根据经济、来牌与承压调整。</p></DesktopDialog>}
     {dialog === 'reset' && <DesktopDialog title="开始新局" onClose={() => setDialog(null)}><p>清空本局盟约与干员禁用条件，并回到 R1？</p><div className="d-inline"><button className="d-button" onClick={() => setDialog(null)}>保留本局</button><button className="d-button d-primary" onClick={() => void reset()}>确认开始新局</button></div>{resetError && <p role="alert">{resetError}</p>}</DesktopDialog>}
   </main>;
 }

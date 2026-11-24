@@ -12,8 +12,7 @@ import { CovenantEncyclopediaView } from './components/CovenantEncyclopediaView'
 import { StackingCalculatorView } from './components/StackingCalculatorView';
 import { TransferItemsView } from './components/TransferItemsView';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
-import { DesktopScanStatus } from './components/DesktopCovenantScan';
-import { useDesktopCovenantScan } from './desktop/covenantOcr';
+import { useBattleBanSync } from './desktop/battleBanSync';
 import { BanPickState } from './utils/tacticalLogic';
 import './desktop/desktop.css';
 
@@ -43,17 +42,15 @@ export default function App() {
   const [selectedCompId, setSelectedCompId] = useState<string>(META_COMPS[0].id);
   const [currentRound, setCurrentRound] = useState<number>(1);
   const [banState, setBanState] = useState<BanPickState>({ bannedCovenants: [], bannedOperators: [] });
-  const [matchScanId, setMatchScanId] = useState('');
-  const { scan, reset: resetScan, cancel: cancelScan } = useDesktopCovenantScan(value => {
+  const [matchSyncId, setMatchSyncId] = useState('');
+  const { sync: banSync, resync: resyncBans, reset: resetBanSync } = useBattleBanSync(value => {
     setBanState({ bannedCovenants: value.bannedCovenants, bannedOperators: [] });
     setSelectedCompId(META_COMPS[0].id);
     setCurrentRound(1);
-    setMatchScanId(value.id);
-    setLightboxImage(null);
-    setActiveView('comps');
+    setMatchSyncId(value.matchKey);
   });
   const clearBans = async () => {
-    await resetScan();
+    resetBanSync();
     setBanState({ bannedCovenants: [], bannedOperators: [] });
     setSelectedCompId(META_COMPS[0].id);
   };
@@ -256,12 +253,12 @@ export default function App() {
       )}
 
       <MetaCompsView
-        key={matchScanId}
+        key={matchSyncId}
         visible={activeView === 'comps'}
         banState={banState}
         onChangeBanState={setBanState}
-        desktopScan={scan}
-        onCancelScan={cancelScan}
+        banSync={banSync}
+        onResyncBans={resyncBans}
         onClearBans={clearBans}
         selectedCompId={selectedCompId}
         onSelectCompId={setSelectedCompId}
@@ -305,7 +302,6 @@ export default function App() {
           </Suspense>
         </div>
       )}
-      <DesktopScanStatus scan={scan} onCancel={cancelScan} floating />
 
       {/* 3. High-Resolution Original Image Lightbox Modal */}
       {lightboxImage && (

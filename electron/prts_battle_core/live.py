@@ -75,13 +75,14 @@ def collect_reports(results, stopped: Event, status) -> None:
         conn = analyzer.current[1]
         model = conn.model
         progress = (conn.generation, conn.closed, conn.serial, conn.player, model.current_round,
-                    conn.last_phase, len(model.rounds),
+                    conn.last_phase, len(model.rounds), model.banned_bonds,
+                    tuple(sorted(model.defeated_boss_rounds)),
                     analyzer.report_events[311], analyzer.report_events[313])
         if progress == last_progress and (analyzer.message_count == last_count or (not force and now < next_report)):
             return
         if conn.closed and last_report is None and last_progress and last_progress[:3] == progress[:3]:
             return  # This closed match was already emitted and cleared.
-        if not (last_report or model.rounds or model.battle_config or force or idle):
+        if not (last_report or model.rounds or model.battle_config or model.banned_bonds or force or idle):
             # 同一批数据里的初始预告和场景合并显示；即使缺场景，空闲时也会发出预告。
             return
         last_count = analyzer.message_count

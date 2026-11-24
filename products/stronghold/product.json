@@ -29,9 +29,9 @@
     "height": 900,
     "minWidth": 1024,
     "minHeight": 700,
-    "workerKind": "full",
-    "workerName": "PRTS-OCR",
-    "workerRuntimeDir": "work/windows-ocr/runtime/PRTS-OCR",
+    "workerKind": "report-only",
+    "workerName": "PRTS-Worker",
+    "workerRuntimeDir": "work/windows-worker/runtime/PRTS-Worker",
     "splashTitle": "卫戍协议战术终端 · PRTS Stronghold",
     "splashAccent": "#FFE600"
   },

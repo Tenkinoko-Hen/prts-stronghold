@@ -55,12 +55,16 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     <div className="d-section-head">
       <h2>Boss 明细</h2>
       <div className="d-inline">
-        {([14, 15] as const).map(round => <button type="button" className="d-button d-small" key={round}
-          aria-pressed={number === round} onClick={() => onRound(round)}>R{round}</button>)}
+        {([14, 15] as const).map(round => {
+          const defeated = report?.defeatedBossRounds.includes(round);
+          return <button type="button" className="d-button d-small" key={round}
+            aria-pressed={number === round} onClick={() => onRound(round)}>R{round}{defeated ? ' · 已击败' : ''}</button>;
+        })}
       </div>
     </div>
     {reference}
-    {data && (recorded || data.bossHp !== null) && <p className="d-muted">
+    {data && (recorded || data.bossHp !== null || report?.defeatedBossRounds.includes(number)) && <p className="d-muted">
+      {report?.defeatedBossRounds.includes(number) && <strong className="d-success">已击败首领 · </strong>}
       {data.bossHp !== null && <>Boss 血量 {formatReportNumber(data.bossHp)} · </>}
       {data.bossStatus === 'settlement' ? '已取得服务器伤害结算'
         : data.bossEnded ? '战斗阶段已结束，未取得服务器伤害结算'

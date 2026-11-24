@@ -13,6 +13,15 @@ export interface BattleReportsBridge {
   onState(callback: (state: ReportFeed) => void): () => void;
 }
 
+declare global {
+  interface Window {
+    electronAPI?: {
+      setAlwaysOnTop(flag: boolean): Promise<boolean>;
+      battleReports?: BattleReportsBridge;
+    };
+  }
+}
+
 export type ManualNames = Partial<Record<(typeof REPORT_SEATS)[number], string>>;
 export type ReportSeat = (typeof REPORT_SEATS)[number];
 export interface ReportRecord {
@@ -111,7 +120,17 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
       changed = true;
     }
   }
-  return changed ? { ...incoming, names, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
+  let bannedCovenants = incoming.bannedCovenants;
+  if (!bannedCovenants.length && previous.bannedCovenants.length) {
+    bannedCovenants = previous.bannedCovenants;
+    changed = true;
+  }
+  const defeatedSet = new Set([...previous.defeatedBossRounds, ...incoming.defeatedBossRounds]);
+  const defeatedBossRounds = defeatedSet.size > incoming.defeatedBossRounds.length
+    ? [...defeatedSet].sort((a, b) => a - b)
+    : incoming.defeatedBossRounds;
+  if (defeatedBossRounds !== incoming.defeatedBossRounds) changed = true;
+  return changed ? { ...incoming, names, bannedCovenants, defeatedBossRounds, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
 }
 
 export function updateLiveReport(records: ReportRecords, report: BattleReport | null, run: number, now: number): ReportRecords {

@@ -38,6 +38,29 @@ class WireError(ValueError):
     def __init__(self, reason: str, *, offset: int | None=None):
         super().__init__(reason)
         self.offset = offset
+        self.roster = None
+        self.scene_round = None
+
+
+def find_downstream_phase(data: bytes, minimum_round: int = 1) -> tuple[int, int, str] | None:
+    """Locate the first decodable 300/302 phase frame inside buffered downlink bytes."""
+    offset = 4
+    while (offset := data.find(b'\x00\x00\x01', offset)) != -1:
+        start = offset - 4
+        offset += 1
+        if start + _HEADER.size > len(data):
+            return None
+        length, message_id = _HEADER.unpack_from(data, start)
+        end = start + _HEADER.size + length
+        if message_id not in (300, 302) or not (_DOWN_MIN_BODY[message_id] <= length <= _MAX_BODY) or end > len(data):
+            continue
+        try:
+            event = decode_message(Message(message_id, data[start + _HEADER.size:end], 'down'))
+        except WireError:
+            continue
+        if event and event['kind'] == 'phase' and max(1, minimum_round) <= event['round'] <= 15:
+            return (start, event['round'], event['phase'])
+    return None
 @dataclass(frozen=True, slots=True)
 class Message:
     message_id: int
@@ -100,11 +123,18 @@ class WireDecoder:
                         if decode_message(candidate) is None:
                             offset += 1
                             continue
-                    except WireError:
-                        if direction == "down" and message_id in (300, 302):
-                            self.scene_candidate_rejections += 1
-                        offset += 1
-                        continue
+                    except WireError as exc:
+                        # 0.2.19: 开局 R0/R1 的 300 帧若已完整解出 roster+banned_units，允许对齐并交由上层提取禁选。
+                        partial_opening = (
+                            direction == "down" and message_id == 300
+                            and bool((exc.roster or {}).get('banned_units'))
+                            and exc.scene_round in (0, 1)
+                        )
+                        if not partial_opening:
+                            if direction == "down" and message_id in (300, 302):
+                                self.scene_candidate_rejections += 1
+                            offset += 1
+                            continue
                 stream.aligned = True
             if end > len(pending):
                 break
@@ -243,92 +273,136 @@ def _boss_round(reader: _Reader) -> dict:
         group, = reader.read('B')
         groups[group] = tuple(reader.take(reader.count()))
     return {'id': boss_id, 'hidden': hidden, 'group_sizes': [{'group': group, 'players': len(players)} for group, players in sorted(groups.items())]}
-def _scene(reader: _Reader) -> dict:
-    # ***<module>._scene: Failure: Different control flow
+def _scene_header(reader: _Reader) -> tuple[int, int]:
     _, state, round_number, _ = reader.read('bBBq')
     if round_number > 15:
         raise WireError('scene round out of range')
     if state not in _STATES:
         raise WireError('unknown scene state')
-    else:
-        runtime, player_status = _runtime(reader)
-        spawn_preview = tuple((_spawn_preview(reader) for _ in range(reader.count())))
-        _skip(reader, (('list', _SP_PREPARATION),))
-        shops = []
-        preparations = tuple((_preparation(reader, shops) for _ in range(reader.count())))
-        boss_rounds = tuple((_boss_round(reader) for _ in range(reader.count())))
-        spawn_groups = _spawn_groups(reader)
-        escaped_enemies = None
-        for _ in range(reader.count()):
-            escaped_enemies = tuple((_escaped_enemy(reader) for _ in range(reader.count())))
-            _skip(reader, (('list', (*_DEPLOYMENT, ('list', _CHAR_BATTLE_STATUS))),))
-        boss_hp = None
-        boss_spawns = []
-        for _ in range(reader.count()):
-            _, boss_hp, _ = reader.read('Bih')
-            boss_spawns.extend((_spawn_group(reader, reader.read('B')[0]) for _ in range(reader.count())))
-            _skip(reader, (('list', _DEPLOYMENT),))
-        last_hp_cost = dict((reader.read('Bh') for _ in range(reader.count())))
-        boss_record_rounds = []
-        for _ in range(reader.count()):
-            reader.take(1)
-            for _ in range(reader.count()):
-                reader.take(reader.count())
-                reader.boolean()
-                boss_record_rounds.append(15 if reader.boolean() else 14)
-        global_effects = _special_effects(reader)
-        if escaped_enemies is None:
-            escaped_enemies_tuples = None
-            escaped_players = None
-        else:
-            escaped_enemies_tuples = tuple((enemy.owner, enemy.instance, enemy.is_token) for enemy in escaped_enemies)
-            escaped_players = tuple(enemy.owner for enemy in escaped_enemies)
-        return {
-            'kind': 'phase',
-            'round': round_number,
-            'state': state,
-            'phase': _PHASES.get(state, 'other'),
-            'runtime': runtime,
-            'player_status': player_status,
-            'last_hp_cost': last_hp_cost,
-            'boss_record_rounds': tuple(boss_record_rounds),
-            'boss_hp': boss_hp,
-            'spawn_preview': spawn_preview,
-            'preparations': preparations,
-            'global_effects': global_effects,
-            'shops': shops,
-            'boss_plan': next((plan for plan in boss_rounds if plan['hidden'] == (round_number == 15)), None),
-            'spawn_groups': spawn_groups,
-            'boss_spawns': tuple(boss_spawns),
-            'escaped_details': escaped_enemies,
-            'escaped_enemies': escaped_enemies_tuples,
-            'escaped_players': escaped_players,
-        }
+    return (state, round_number)
 
-def _full_state(reader: _Reader) -> dict:
-    # ***<module>._full_state: Failure: Different bytecode
+
+def _scene(reader: _Reader, header: tuple[int, int] | None = None) -> dict:
+    state, round_number = header if header is not None else _scene_header(reader)
+    runtime, player_status = _runtime(reader)
+    spawn_preview = tuple((_spawn_preview(reader) for _ in range(reader.count())))
+    _skip(reader, (('list', _SP_PREPARATION),))
+    shops = []
+    preparations = tuple((_preparation(reader, shops) for _ in range(reader.count())))
+    boss_rounds = tuple((_boss_round(reader) for _ in range(reader.count())))
+    spawn_groups = _spawn_groups(reader)
+    escaped_enemies = None
+    for _ in range(reader.count()):
+        escaped_enemies = tuple((_escaped_enemy(reader) for _ in range(reader.count())))
+        _skip(reader, (('list', (*_DEPLOYMENT, ('list', _CHAR_BATTLE_STATUS))),))
+    boss_hp = None
+    boss_spawns = []
+    for _ in range(reader.count()):
+        _, boss_hp, _ = reader.read('Bih')
+        boss_spawns.extend((_spawn_group(reader, reader.read('B')[0]) for _ in range(reader.count())))
+        _skip(reader, (('list', _DEPLOYMENT),))
+    last_hp_cost = dict((reader.read('Bh') for _ in range(reader.count())))
+    boss_record_rounds = []
+    defeated_boss_rounds = []
+    for _ in range(reader.count()):
+        reader.take(1)
+        for _ in range(reader.count()):
+            reader.take(reader.count())
+            defeated = reader.boolean()
+            boss_round = 15 if reader.boolean() else 14
+            boss_record_rounds.append(boss_round)
+            if defeated:
+                defeated_boss_rounds.append(boss_round)
+    global_effects = _special_effects(reader)
+    if escaped_enemies is None:
+        escaped_enemies_tuples = None
+        escaped_players = None
+    else:
+        escaped_enemies_tuples = tuple((enemy.owner, enemy.instance, enemy.is_token) for enemy in escaped_enemies)
+        escaped_players = tuple(enemy.owner for enemy in escaped_enemies)
+    return {
+        'kind': 'phase',
+        'round': round_number,
+        'state': state,
+        'phase': _PHASES.get(state, 'other'),
+        'runtime': runtime,
+        'player_status': player_status,
+        'last_hp_cost': last_hp_cost,
+        'boss_record_rounds': tuple(boss_record_rounds),
+        'defeated_boss_rounds': tuple(defeated_boss_rounds),
+        'boss_hp': boss_hp,
+        'spawn_preview': spawn_preview,
+        'preparations': preparations,
+        'global_effects': global_effects,
+        'shops': shops,
+        'boss_plan': next((plan for plan in boss_rounds if plan['hidden'] == (round_number == 15)), None),
+        'spawn_groups': spawn_groups,
+        'boss_spawns': tuple(boss_spawns),
+        'escaped_details': escaped_enemies,
+        'escaped_enemies': escaped_enemies_tuples,
+        'escaped_players': escaped_players,
+    }
+
+
+def _roster(reader: _Reader) -> dict:
     mode_id = reader.string()
     stage_id = reader.string()
     boss_id = reader.string()
     hidden_boss_id = reader.string()
     stage_seed, = reader.read('i')
     self_uid, = reader.read('B')
-    _skip(reader, (('list', ('str',)),))
+    banned_bonds = tuple(reader.string() for _ in range(reader.count()))
     players = {}
+    accounts = {}
+    squads = {}
+    banned_units = {}
     count = reader.count()
     if count > 4:
         raise WireError('player roster exceeds four slots')
-    else:
-        for _ in range(count):
-            reader.take(reader.count())
-            uid, = reader.read('b')
-            _skip(reader, (('list', _SQUAD_SLOT), 'str'))
-            players[uid] = reader.string()
-            _skip(reader, ('str', 'str', 'str', 'str', 'str', 5, 'str', 1, 'str', ('list', ('str', ('list', (2,))))))
-        scene = _scene(reader)
-        enemy_types = tuple((reader.string() for _ in range(reader.count())))
-        scene.update(players=players, self_uid=self_uid, stage_id=stage_id, stage_seed=stage_seed, enemy_types=enemy_types, mode_id=mode_id, boss_id=boss_id, hidden_boss_id=hidden_boss_id)
-        return scene
+    for _ in range(count):
+        account = reader.take(reader.count())
+        uid, = reader.read('b')
+        if not 1 <= uid <= 4 or uid in players:
+            raise WireError('invalid player roster seat', offset=reader.offset)
+        slots = []
+        for _ in range(reader.count()):
+            chess_id = reader.string()
+            char_id = reader.string()
+            _skip(reader, ('str', 'str', 'str', 'str', 3))
+            bonds = tuple(reader.string() for _ in range(reader.count()))
+            slots.append(dict(chess_id=chess_id, char_id=char_id, bonds=bonds, is_banned=reader.boolean()))
+        squads[uid] = slots
+        _skip(reader, ('str',))
+        players[uid] = reader.string()
+        accounts[uid] = account
+        _skip(reader, ('str', 'str', 'str', 'str', 'str', 5, 'str', 1, 'str'))
+        banned_units[uid] = [
+            dict(bond_id=reader.string(), chess_identifiers=[reader.read('h')[0] for _ in range(reader.count())])
+            for _ in range(reader.count())
+        ]
+    return dict(
+        players=players, accounts=accounts, self_uid=self_uid, stage_id=stage_id,
+        stage_seed=stage_seed, mode_id=mode_id, boss_id=boss_id,
+        hidden_boss_id=hidden_boss_id, banned_bonds=banned_bonds,
+        squads=squads, banned_units=banned_units,
+    )
+
+
+def _full_state(reader: _Reader) -> dict:
+    roster = _roster(reader)
+    header = None
+    try:
+        header = _scene_header(reader)
+        scene = _scene(reader, header)
+        scene['enemy_types'] = tuple(reader.string() for _ in range(reader.count()))
+        reader.finish()
+    except WireError as exc:
+        exc.roster = roster
+        if header is not None:
+            exc.scene_round = header[1]
+        raise
+    scene.update(roster)
+    return scene
 def _actions(reader: _Reader) -> tuple[tuple[int, tuple[int, ...]], ...]:
     actions = []
     for _ in range(reader.count()):

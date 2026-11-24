@@ -32,6 +32,23 @@ class TcpStream:
         self.next_seq = self.pending[0][0]
         return self._drain([])
 
+    def contiguous_after_gap(self) -> tuple[int, bytes]:
+        if not self.pending:
+            return (0, b"")
+        start = end = self.pending[0][0]
+        chunks = []
+        for position, payload in sorted(self.pending):
+            if position > end:
+                break
+            extra = payload[end - position:]
+            chunks.append(extra)
+            end += len(extra)
+        return (start, b"".join(chunks))
+
+    def resume_at(self, sequence: int) -> bytes:
+        self.next_seq = sequence
+        return self._drain([])
+
     @property
     def missing_bytes(self):
         return self.pending[0][0] - self.next_seq if self.pending else 0

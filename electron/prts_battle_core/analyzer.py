@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from itertools import count
 from .stats import BOSS_ROUNDS, MatchStats
 from .tcp import TcpStream
-from .wire import WireDecoder, WireError, decode_message
+from .wire import WireDecoder, WireError, decode_message, find_downstream_phase
 
 # 给乱序段留出补齐时间，之后仍须有对端的累计 ACK 才跳过缺口。
 _GAP_GRACE = 0.5
@@ -135,6 +135,12 @@ class Analyzer:
                 stream = conn.streams[direction]
                 previous_seq = stream.next_seq
                 data = stream.resume_acknowledged()
+                if not data and direction == 'down' and stream.pending:
+                    start, pending = stream.contiguous_after_gap()
+                    anchor = find_downstream_phase(pending, conn.model.current_round)
+                    if anchor is not None:
+                        offset, _number, _phase = anchor
+                        data = stream.resume_at(start + offset)
                 if not data:
                     continue
                 gap['status'] = 'resumed'
@@ -165,6 +171,32 @@ class Analyzer:
             try:
                 event = decode_message(msg)
             except WireError as exc:
+                if (direction == 'down' and msg.message_id == 300 and exc.roster
+                        and exc.roster.get('banned_units') and exc.scene_round in (0, 1)):
+                    partial_event = {
+                        'kind': 'phase',
+                        'round': exc.scene_round,
+                        'phase': 'loading' if exc.scene_round == 0 else 'other',
+                        'runtime': {},
+                        'player_status': {},
+                        'last_hp_cost': {},
+                        'boss_record_rounds': (),
+                        'defeated_boss_rounds': (),
+                        'boss_hp': None,
+                        'spawn_preview': (),
+                        'preparations': (),
+                        'global_effects': (),
+                        'shops': [],
+                        'boss_plan': None,
+                        'spawn_groups': (),
+                        'boss_spawns': (),
+                        'escaped_details': None,
+                        'escaped_enemies': None,
+                        'escaped_players': None,
+                        **exc.roster,
+                    }
+                    self._record_event(conn, key, msg.message_id, partial_event, recovered=recovered)
+                    continue
                 self.parse_errors += 1
                 error_key = f'{direction} {msg.message_id}'
                 previous = self.parse_error_details.pop(error_key, None)
@@ -430,6 +462,12 @@ class Analyzer:
                         conn.model.set_players(event['players'])
                     if event.get('mode_id'):
                         conn.model.battle_config = {key: event[key] for key in ['mode_id', 'boss_id', 'hidden_boss_id']}
+                    if event.get('banned_bonds'):
+                        conn.model.banned_bonds = tuple(event['banned_bonds'])
+                    if event.get('defeated_boss_rounds'):
+                        conn.model.defeated_boss_rounds.update(
+                            round_no for round_no in event['defeated_boss_rounds'] if round_no in BOSS_ROUNDS
+                        )
                     if event.get('enemy_types'):
                         conn.model.enemy_types = event['enemy_types']
                     if conn.pending_plan:

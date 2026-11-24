@@ -11,6 +11,8 @@ import { BattleReportRoster } from './BattleReportRoster';
 import { defaultBossRound, hasBossDamage, ownLeakKinds, ownLeakPower, ownRoundLeaks, readBattleReport, reportProgress, resolvePreviewRound,
   roundMetrics, visibleSpawnRows, type BattleReport, type ReportRoundFilter } from './battleReportData';
 import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport } from './battleReports';
+import { BOND_ID_TO_COVENANT, mapBannedBondsToCovenants } from './covenantBonds';
+import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES } from '../data/strongholdData';
 import portraits from './enemyPortraits.json';
 
 const report = (match: number, current: number, rounds: Record<number, unknown>, self: number | null = 1) =>
@@ -560,4 +562,36 @@ test('round matrix shows match strip, missing round gaps, inferred skipped-assis
     report: data, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
   }));
   assert.match(bossHtml, /Npcap/);
+});
+
+test('all 26 V3_1 bond IDs map cleanly to covenant names and defeated Boss rounds render badges', () => {
+  const expected = new Set<string>([...ALL_CORE_COVENANT_NAMES, ...ALL_SUB_COVENANT_NAMES]);
+  const mapped = new Set(Object.values(BOND_ID_TO_COVENANT));
+  assert.equal(Object.keys(BOND_ID_TO_COVENANT).length, 26);
+  assert.deepEqual(mapped, expected);
+  assert.deepEqual(mapBannedBondsToCovenants(['yanShip', 'preciShip', 'unknownShip', 'yanShip']), ['炎', '精准']);
+
+  const opening = readBattleReport({
+    capture: { match: 7, round: 0, self: 1 },
+    players: { 1: 'Self' },
+    battle_config: { mode_id: 'mode_multi_hard', banned_bonds: ['sargonShip', 'arcaneShip'] },
+    defeated_boss_rounds: [14],
+    rounds: { 14: { phase: 'end', boss_ended: true, boss_damage: { 1: 12000 }, boss_status: 'settlement' } },
+  });
+  assert.deepEqual(opening.bannedCovenants, ['萨尔贡', '奥术']);
+  assert.deepEqual(opening.defeatedBossRounds, [14]);
+
+  const merged = updateLiveReport(
+    updateLiveReport({ history: [] }, opening, 1, 10),
+    report(7, 15, { 15: { phase: 'prep' } }, 1),
+    1, 20,
+  ).live!.report;
+  assert.deepEqual(merged.bannedCovenants, ['萨尔贡', '奥术']);
+  assert.deepEqual(merged.defeatedBossRounds, [14]);
+
+  const bossHtml = renderToStaticMarkup(createElement(BossDamage, {
+    report: opening, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.match(bossHtml, /R14 · 已击败/);
+  assert.match(bossHtml, /已击败首领/);
 });

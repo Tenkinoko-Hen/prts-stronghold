@@ -8,8 +8,8 @@
 
 | 产品变体 | 名称与标识 | 定位与内容 | 应用 ID / 导出与相册 |
 | --- | --- | --- | --- |
-| `stronghold`（默认） | 卫戍协议战术终端 · PRTS Stronghold | 完整版：全套攻略、盟约识别、2D 站位、Boss 路线与内嵌战报 | `com.prts.stronghold` / `com.prts.stronghold.mobile`，导出 `PRTS战报`，相册 `Pictures/PRTS` |
-| `telemetry`（A 模式） | 卫戍战报仪 · Stronghold Telemetry | 纯净战报版：仅保留实时战报与 Boss 路线参照，剥离攻略资源与桌面盟约 OCR | `com.stronghold.telemetry`，配置 `%APPDATA%\com.stronghold.telemetry`，导出 `卫戍战报仪`，相册 `Pictures/卫戍战报仪` |
+| `stronghold`（默认） | 卫戍协议战术终端 · PRTS Stronghold | 完整版：全套攻略、Windows 抓包自动同步禁选 / Android 本地识别、2D 站位、Boss 路线与内嵌战报 | `com.prts.stronghold` / `com.prts.stronghold.mobile`，导出 `PRTS战报`，相册 `Pictures/PRTS` |
+| `telemetry`（A 模式） | 卫戍战报仪 · Stronghold Telemetry | 纯净战报版：仅保留实时战报与 Boss 路线参照，剥离攻略资源与移动端盟约扫描 | `com.stronghold.telemetry`，配置 `%APPDATA%\com.stronghold.telemetry`，导出 `卫戍战报仪`，相册 `Pictures/卫戍战报仪` |
 
 日常开发、修复与实局验证全部直接在 `main` 上进行，不再维护平行分支或 Git 子模块；待战报功能成熟后，直接以 `-Product telemetry` 从同一份 `main` 源码打出独立双端包。
 
@@ -26,9 +26,9 @@
 
 ### Windows（x64 便携包）
 
-1. 构建后端运行库：
-   - 主线完整版（RapidOCR + 战报核心）：`pwsh -File scripts/build-windows-ocr.ps1 -Product stronghold`
-   - 独立战报版（纯 Python 标准库轻量 Worker，无 OCR 依赖）：`pwsh -File scripts/build-windows-ocr.ps1 -Product telemetry`
+1. 构建后端运行库（双产品均使用纯 Python 标准库轻量战报 Worker，已彻底移除桌面 RapidOCR 依赖）：
+   - 主线完整版：`pwsh -File scripts/build-windows-worker.ps1 -Product stronghold`
+   - 独立战报版：`pwsh -File scripts/build-windows-worker.ps1 -Product telemetry`
 2. 打包便携 EXE（自动校验对应 `dist/product.json` 与 Worker，输出 EXE 及 `.sha256`）：
    - 主线：`pwsh -File scripts/build-windows.ps1 -Product stronghold -Version 1.4.17`
    - 独立战报：`pwsh -File scripts/build-windows.ps1 -Product telemetry -Version 1.0.0`
@@ -50,6 +50,6 @@
 
 这是非官方、非商业的玩家项目。游戏图像与设定归相应权利方所有；干员和盟约资料参考 [PRTS Wiki](https://prts.wiki/)，阵容资料参考社区攻略（出处见对应数据文件）。思源黑体附带 [SIL OFL 1.1 许可](public/assets/fonts/SourceHanSans-LICENSE.txt)。
 
-战报核心沿用获准公开分发的 **ArkLogs Beta 0.2.6** 源码，保留原始来源标注；`prts_battle_core` 是本项目内的模块名，不改变其原有权属。敌人头像来自[可露希尔 Wiki](https://closure.wiki/zh-cn/stronghold-protocol/3)，领袖属性与路线参考 [WakingSeasons 卫戍工具](https://wakingseasons.github.io/garrison-tool/)，两者均不作为本局结算数据。
+战报核心基于获准公开分发的 **ArkLogs Beta（0.2.6 / 0.2.19 协议特性）** 演进，保留原始来源标注；`prts_battle_core` 是本项目内的模块名，不改变其原有权属。敌人头像来自[可露希尔 Wiki](https://closure.wiki/zh-cn/stronghold-protocol/3)，领袖属性与路线参考 [WakingSeasons 卫戍工具](https://wakingseasons.github.io/garrison-tool/)，两者均不作为本局结算数据。
 
 项目自有代码采用 [MIT 许可](LICENSE)。该许可不覆盖第三方游戏素材、图鉴资料、社区攻略或第三方依赖。

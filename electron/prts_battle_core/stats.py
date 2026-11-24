@@ -107,6 +107,8 @@ class MatchStats:
         self.eliminated = {}
         self.enemy_types = ()
         self.battle_config = {}
+        self.banned_bonds: tuple[str, ...] = ()
+        self.defeated_boss_rounds: set[int] = set()
     def add_spawn_plan(self, previews: Iterable[SpawnPreview], source: str, seen_round: int=0) -> None:
         """Keep every previewed batch under its own round, with the earliest round it was seen in.\n\n        seen_round 0 means loading, before the first round.\n        """
         for preview in previews:
@@ -137,6 +139,9 @@ class MatchStats:
     def merge_reconnect(self, observed: 'MatchStats') -> None:
         """同一局的新连接可能先收到结算，随后才收到能确认对局身份的场景。"""
         self.set_players(observed.players)
+        if observed.banned_bonds and not self.banned_bonds:
+            self.banned_bonds = observed.banned_bonds
+        self.defeated_boss_rounds.update(observed.defeated_boss_rounds)
         for number, incoming in observed.rounds.items():
             row = self.rounds.setdefault(number, incoming)
             if row is incoming:
@@ -576,6 +581,9 @@ class MatchStats:
                     "sources": list(entry["sources"]),
                 }
             )
+        battle_config = dict(self.battle_config)
+        if self.banned_bonds:
+            battle_config["banned_bonds"] = list(self.banned_bonds)
         return {
             "players": players,
             "rounds": rounds,
@@ -583,5 +591,6 @@ class MatchStats:
             "enemy_types": list(self.enemy_types),
             "hp": dict(sorted(self.hp.items())),
             "eliminated": dict(sorted(self.eliminated.items())),
-            "battle_config": dict(self.battle_config),
+            "battle_config": battle_config,
+            "defeated_boss_rounds": sorted(self.defeated_boss_rounds),
         }

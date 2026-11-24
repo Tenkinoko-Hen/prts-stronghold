@@ -1,11 +1,12 @@
 :root {
   color-scheme:dark;
   --page:#0c0e11; --surface:#13171e; --line:#262d37; --text:#f0f3f7; --muted:#9aa3b2; --rule:#fff;
-  --yellow:#e6c828; --red:#f06565; --green:#34d399; --blue:#38bdf8; --orange:#fb923c; --stamp-ink:#0c0e11;
-  --mono:Consolas,"SFMono-Regular","Microsoft YaHei",monospace;
+  --yellow:#d8bf4b; --red:#d64840; --green:#3fa67a; --blue:#3698cc; --orange:#d8bf4b; --stamp-ink:#0c0e11;
+  --sans:"Source Han Sans CN","HarmonyOS Sans SC","Noto Sans SC","Microsoft YaHei UI",sans-serif;
+  --mono:"Bahnschrift","DIN Alternate","Source Han Sans CN",sans-serif;
 }
 * { box-sizing:border-box; }
-body { margin:0; color:var(--text); background:var(--page); font:15px/1.55 "Segoe UI","Microsoft YaHei",sans-serif; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+body { margin:0; color:var(--text); background:var(--page); font:15px/1.55 var(--sans); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 main { width:100%; max-width:1160px; margin:auto; padding:28px 34px 36px; }
 h1,h2,h3,p,dl,dd,ul { margin:0; }
 footer { margin-top:20px; padding-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }

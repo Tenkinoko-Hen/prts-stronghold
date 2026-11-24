@@ -13,9 +13,9 @@
 
 @layer base {
   :root {
-    --font-sans: "Source Han Sans CN", "Microsoft YaHei", "PingFang SC", sans-serif;
-    --font-display: var(--font-sans);
-    --font-mono: "DIN Alternate", Consolas, "Roboto Mono", monospace;
+    --font-sans: "Source Han Sans CN", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+    --font-display: "Source Han Sans CN", "Bahnschrift", "DIN Alternate", sans-serif;
+    --font-mono: "Bahnschrift", "DIN Alternate", "Source Han Sans CN", "Roboto", sans-serif;
     --bg-canvas:#0b0c0e;
     --bg-surface:#131519;
     --bg-elevated:#1a1d23;
@@ -44,10 +44,15 @@
   body {
     font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
     background: var(--protocol-dots), var(--bg-canvas);
     color: var(--text-primary);
     margin: 0;
     padding: 0;
+  }
+
+  button, input, select, textarea, svg, text {
+    font-family: inherit;
   }
 
   h1, h2, h3, .font-display {

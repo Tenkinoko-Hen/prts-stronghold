@@ -7,6 +7,7 @@ import { seatDisplayText, seatName } from './BattleReportPanels';
 import { batchName, EnemyLabel, SpawnRounds } from './BattleReportSpawns';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { formatTelemetryRate, formatTelemetryTotal, isSoloMode } from './combatTelemetry';
+import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM } from './prtsChartKit';
 
 const icons = { clean: ShieldCheck, assisting: Clock3, covered: CheckCheck, partial: ShieldAlert, breached: ShieldOff, unknown: CircleHelp };
 function OutcomeLabel({ tone, label, note }: ReturnType<typeof roundOutcome>) {
@@ -46,6 +47,7 @@ function RoundTrendBarChart({
   selected: ReportRoundFilter | null | undefined;
   onSelect(round: number): void;
 }) {
+  const gridId = useId();
   if (rows.length < 2) return null;
   const points = rows.map(row => {
     const leak = laneLeaks(row, report, seat)?.value ?? 0;
@@ -57,45 +59,123 @@ function RoundTrendBarChart({
   const hasAny = points.some(p => p.leak > 0 || p.help > 0);
   if (!hasAny) return null;
 
+  const { top: yTop, ticks } = niceTicks(maxVal, 3);
+  const width = 560;
+  const height = 138;
+  const padL = 32;
+  const padR = 12;
+  const padT = 18;
+  const padB = 24;
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+  const baseY = padT + innerH;
+  const slotW = innerW / points.length;
+  const barW = solo ? Math.min(18, Math.max(8, slotW * 0.34)) : Math.min(12, Math.max(6, slotW * 0.24));
+  const barGap = 3;
+
   return (
     <section className="d-round-trend" aria-label="各回合漏怪与兜底趋势图">
       <header className="d-round-trend-head">
-        <span>各回合承压趋势</span>
+        <span><b className="d-prts-slash">//</b>各回合承压趋势</span>
         <div className="d-round-trend-legend">
           <span><i className="is-leak" />本路漏怪</span>
           {!solo && <span><i className="is-help" />我方兜底</span>}
         </div>
       </header>
-      <div className="d-round-trend-bars">
-        {points.map(pt => {
-          const leakH = pt.leak > 0 ? Math.max(10, Math.round((pt.leak / maxVal) * 44)) : 0;
-          const helpH = pt.help > 0 ? Math.max(10, Math.round((pt.help / maxVal) * 44)) : 0;
-          const active = selected === pt.round;
+      <svg className="d-prts-svg d-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="各回合漏怪与兜底柱状图">
+        <defs>
+          <pattern id={`trend-grid-${gridId}`} width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke={PRTS_CHART.gridSubtle} strokeWidth="1" />
+          </pattern>
+        </defs>
+        <rect x={padL} y={padT} width={innerW} height={innerH} fill={PRTS_CHART.plotBg} />
+        <rect x={padL} y={padT} width={innerW} height={innerH} fill={`url(#trend-grid-${gridId})`} />
+
+        {ticks.map((tick, idx) => {
+          const y = baseY - (tick / yTop) * innerH;
           return (
-            <button
-              key={pt.round}
-              type="button"
-              className="d-trend-col"
-              data-active={active}
-              data-elim={pt.elim}
-              onClick={() => onSelect(pt.round)}
-              title={`R${pt.round}${pt.elim ? '（已淘汰）' : ` · 漏 ${pt.leak}${!solo ? ` / 兜 +${pt.help}` : ''}`}`}
-            >
-              <span className="d-trend-stack">
-                {pt.elim ? (
-                  <i className="d-trend-dead" />
-                ) : (
-                  <>
-                    <i className="d-trend-bar is-leak" style={{ height: `${leakH}px` }} />
-                    {!solo && <i className="d-trend-bar is-help" style={{ height: `${helpH}px` }} />}
-                  </>
-                )}
-              </span>
-              <small>R{pt.round}</small>
-            </button>
+            <g key={tick}>
+              <line
+                x1={padL}
+                y1={y}
+                x2={width - padR}
+                y2={y}
+                stroke={idx === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine}
+                strokeWidth={idx === 0 ? 1.2 : 1}
+                strokeDasharray={idx === 0 ? undefined : '3 3'}
+              />
+              <text x={padL - 6} y={y + 3.5} textAnchor="end" fill={PRTS_CHART.labelMuted} fontSize="9.5" fontFamily={PRTS_FONT_NUM}>
+                {formatAxisNumber(tick)}
+              </text>
+            </g>
           );
         })}
-      </div>
+
+        {points.map((pt, idx) => {
+          const x0 = padL + idx * slotW;
+          const cx = x0 + slotW / 2;
+          const active = selected === pt.round;
+          const leakH = pt.leak > 0 ? Math.max(3, (pt.leak / yTop) * innerH) : 0;
+          const helpH = pt.help > 0 ? Math.max(3, (pt.help / yTop) * innerH) : 0;
+          const leakX = solo ? cx - barW / 2 : cx - barW - barGap / 2;
+          const helpX = cx + barGap / 2;
+          return (
+            <g
+              key={pt.round}
+              className="d-trend-svg-col"
+              role="button"
+              tabIndex={0}
+              aria-label={`选择 R${pt.round}${pt.elim ? '（已淘汰）' : `，漏怪 ${pt.leak}${!solo ? `，兜底 ${pt.help}` : ''}`}`}
+              onClick={() => onSelect(pt.round)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(pt.round); } }}
+            >
+              <title>{`R${pt.round}${pt.elim ? '（已淘汰）' : ` · 漏 ${pt.leak}${!solo ? ` / 兜 +${pt.help}` : ''}`}`}</title>
+              <rect
+                x={x0 + 2}
+                y={padT}
+                width={Math.max(4, slotW - 4)}
+                height={innerH}
+                fill={active ? 'rgba(54, 152, 204, 0.12)' : 'transparent'}
+              />
+              {active && <rect x={x0 + 2} y={padT} width={Math.max(4, slotW - 4)} height="2" fill={PRTS_CHART.ochreBright} />}
+
+              {pt.elim ? (
+                <line x1={cx - 6} y1={baseY - 4} x2={cx + 6} y2={baseY - 4} stroke={PRTS_CHART.slate} strokeWidth="2" />
+              ) : (
+                <>
+                  {leakH > 0 && (
+                    <>
+                      <rect x={leakX} y={baseY - leakH} width={barW} height={leakH} fill={PRTS_CHART.crimson} />
+                      <text x={leakX + barW / 2} y={baseY - leakH - 3.5} textAnchor="middle" fill="#E88B85" fontSize="9.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+                        {pt.leak}
+                      </text>
+                    </>
+                  )}
+                  {!solo && helpH > 0 && (
+                    <>
+                      <rect x={helpX} y={baseY - helpH} width={barW} height={helpH} fill={PRTS_CHART.blue} />
+                      <text x={helpX + barW / 2} y={baseY - helpH - 3.5} textAnchor="middle" fill="#8CCAE8" fontSize="9.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+                        +{pt.help}
+                      </text>
+                    </>
+                  )}
+                </>
+              )}
+              <text
+                x={cx}
+                y={height - 7}
+                textAnchor="middle"
+                fill={active ? PRTS_CHART.ochreBright : PRTS_CHART.labelMuted}
+                fontSize="10"
+                fontWeight={active ? '700' : '500'}
+                fontFamily={PRTS_FONT_NUM}
+              >
+                R{pt.round}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </section>
   );
 }

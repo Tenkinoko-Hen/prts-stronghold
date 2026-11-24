@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { Lock, ShieldCheck, Swords, Unlock, X } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
 import { readBattleReport, reportBossRounds } from './battleReportData';
+import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { formatTelemetryRate, formatTelemetryTotal } from './combatTelemetry';
+import { PRTS_CHART } from './prtsChartKit';
 import type { HudOverlayState } from './battleReports';
 import './desktop.css';
 import './battleReports.css';
@@ -119,7 +121,7 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
         background: 'transparent',
         userSelect: 'none',
         overflow: 'hidden',
-        fontFamily: 'var(--font-sans, "Microsoft YaHei", sans-serif)',
+        fontFamily: 'var(--font-sans)',
       }}
     >
       <section
@@ -154,7 +156,7 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
               padding: '0 5px',
               background: 'rgba(255, 230, 0, 0.16)',
               color: '#ffe600',
-              fontFamily: 'var(--font-mono, Consolas, monospace)',
+              fontFamily: 'var(--font-mono)',
               fontWeight: 700,
               borderRadius: '2px',
             }}
@@ -166,7 +168,7 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
           </span>
 
           {state.locked ? (
-            <span style={{ color: '#ffe600', fontSize: '10px', fontFamily: 'var(--font-mono, monospace)', flexShrink: 0 }}>
+            <span style={{ color: '#ffe600', fontSize: '10px', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
               穿透已锁 · {state.shortcut}
             </span>
           ) : (
@@ -251,12 +253,12 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
           >
             {opRows.length > 0 ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '10px' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#00e5ff', fontWeight: 600 }}>
-                    <Swords size={10} />当回合干员输出 · {opRows.length} 人（可向下滚动）
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#8894a6', fontSize: '10px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: PRTS_CHART.blue, fontWeight: 650 }}>
+                    <Swords size={10} />// 当回合干员输出 · {opRows.length} 人（可向下滚动）
                   </span>
                   {bossPool && (
-                    <span style={{ color: '#fca5a5', fontFamily: 'var(--font-mono, monospace)' }}>
+                    <span style={{ color: '#e88b85', fontFamily: 'var(--font-mono)' }}>
                       首领余 {formatTelemetryTotal(bossPool.hp)}
                     </span>
                   )}
@@ -266,22 +268,23 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
                     key={op.key}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '1.5em minmax(4.5em, 6.2em) 1fr auto auto',
+                      gridTemplateColumns: '1.4em 18px minmax(3.8em, 5.4em) 1fr auto auto',
                       alignItems: 'center',
-                      gap: '6px',
-                      minHeight: '18px',
+                      gap: '5px',
+                      minHeight: '20px',
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    <small style={{ color: '#64748b', fontFamily: 'var(--font-mono, monospace)', fontSize: '10px' }}>{i + 1}.</small>
-                    <strong style={{ color: '#f1f5f9', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.name}</strong>
-                    <span style={{ height: '5px', background: '#090c12', border: '1px solid #1e2633', borderRadius: '1px', overflow: 'hidden' }}>
-                      <i style={{ display: 'block', height: '100%', width: `${Math.max(6, (op.damage / maxOpDamage) * 100)}%`, background: i === 0 ? '#ffe600' : '#00e5ff' }} />
+                    <small style={{ color: '#6b7888', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{i + 1}.</small>
+                    <CompactOperatorBadge name={op.name} size={18} />
+                    <strong style={{ color: '#eef2f7', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.name}</strong>
+                    <span style={{ height: '6px', background: PRTS_CHART.plotBg, border: '1px solid #232a35', borderRadius: '1px', overflow: 'hidden' }}>
+                      <i style={{ display: 'block', height: '100%', width: `${Math.max(6, (op.damage / maxOpDamage) * 100)}%`, background: i === 0 ? PRTS_CHART.ochre : PRTS_CHART.blue }} />
                     </span>
-                    <b style={{ color: '#f8fafc', fontFamily: 'var(--font-mono, monospace)', fontSize: '11px' }}>
+                    <b style={{ color: '#f1f5f9', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
                       {formatTelemetryTotal(op.damage)}
                     </b>
-                    <small style={{ color: '#00e5ff', fontFamily: 'var(--font-mono, monospace)', fontSize: '10.5px', minWidth: '4.4em', textAlign: 'right' }}>
+                    <small style={{ color: i === 0 ? PRTS_CHART.ochreBright : PRTS_CHART.blue, fontFamily: 'var(--font-mono)', fontSize: '10.5px', minWidth: '4.4em', textAlign: 'right' }}>
                       {op.dps != null ? formatTelemetryRate(op.dps) : `${Math.round(op.share * 100)}%`}
                     </small>
                   </div>
@@ -290,19 +293,33 @@ export default function HudStripApp({ previewState }: { previewState?: HudOverla
             ) : parsed ? (
               <>
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 10px', fontSize: '11px' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: selfLeaks === 0 ? '#34d399' : selfLeaks ? '#f87171' : '#cbd5e1', fontWeight: 600 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: selfLeaks === 0 ? PRTS_CHART.sage : selfLeaks ? PRTS_CHART.crimson : '#cbd5e1', fontWeight: 650 }}>
                     <ShieldCheck size={11} />
                     {selfLeaks === undefined ? '本回合进行中' : selfLeaks === 0 ? '本路零漏' : `本路漏 ${selfLeaks} 只`}
                   </span>
-                  {!!selfAssists && <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono, monospace)' }}>兜底 +{selfAssists}</span>}
-                  {selfHp !== undefined && <span style={{ color: selfHp <= 5 ? '#f87171' : '#cbd5e1', fontFamily: 'var(--font-mono, monospace)' }}>血量 {selfHp}</span>}
-                  {selfLineup?.deployedCount ? <span style={{ color: '#94a3b8' }}>在场 {selfLineup.deployedCount}/{selfLineup.pieceCount}</span> : null}
+                  {!!selfAssists && <span style={{ color: PRTS_CHART.blue, fontFamily: 'var(--font-mono)' }}>兜底 +{selfAssists}</span>}
+                  {selfHp !== undefined && <span style={{ color: selfHp <= 5 ? PRTS_CHART.crimson : '#cbd5e1', fontFamily: 'var(--font-mono)' }}>血量 {selfHp}</span>}
+                  {selfLineup?.deployedCount ? <span style={{ color: '#8894a6' }}>在场 {selfLineup.deployedCount}/{selfLineup.pieceCount}</span> : null}
                 </div>
                 {deployedOps.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', paddingTop: '1px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', paddingTop: '2px' }}>
                     {deployedOps.map(u => (
-                      <span key={u.instId} style={{ padding: '0 5px', fontSize: '10.5px', background: '#161d29', border: `1px solid ${u.isGolden ? 'rgba(255,230,0,0.45)' : '#253042'}`, color: u.isGolden ? '#ffe600' : '#cbd5e1', borderRadius: '2px' }}>
-                        {u.name}{u.isGolden ? '★' : ''}
+                      <span
+                        key={u.instId}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '1px 6px 1px 2px',
+                          fontSize: '10.5px',
+                          background: '#141922',
+                          border: `1px solid ${u.isGolden ? 'rgba(216,191,75,0.55)' : '#253042'}`,
+                          color: u.isGolden ? PRTS_CHART.ochreBright : '#d8e0eb',
+                          borderRadius: '2px',
+                        }}
+                      >
+                        <CompactOperatorBadge name={u.name} size={16} />
+                        <span>{u.name}{u.isGolden ? '★' : ''}</span>
                       </span>
                     ))}
                   </div>

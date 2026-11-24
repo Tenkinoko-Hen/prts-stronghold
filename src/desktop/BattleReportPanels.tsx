@@ -168,11 +168,14 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
         {bossDamagePct !== null && (
           <div className="d-boss-hp-progress">
             <div className="d-boss-hp-labels">
-              <small>首领削血进度</small>
+              <small><b className="d-prts-slash">//</b>首领削血进度</small>
               <b>{defeated ? '100%（已击破）' : `${leaderDigits.format(bossDamagePct)}%`}</b>
             </div>
             <div className="d-boss-hp-bar">
               <span style={{ width: `${defeated ? 100 : bossDamagePct}%` }} data-win={defeated} />
+              <i className="d-hp-tick" style={{ left: '25%' }} />
+              <i className="d-hp-tick" style={{ left: '50%' }} />
+              <i className="d-hp-tick" style={{ left: '75%' }} />
             </div>
           </div>
         )}
@@ -187,8 +190,8 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                   {seatName(row.seat, report, perspective)}
                   {row.eliminated && <small className="d-elim-inline">R{row.elimRound}阵亡</small>}
                 </span>
-                <span className="d-bar-track" aria-hidden="true">
-                  {barW > 0 && <i className={`seat-fill-${row.seat}`} style={{ width: `${barW}%` }} />}
+                <span className="d-bar-track d-bar-axis-grid" aria-hidden="true">
+                  {barW > 0 && <i className={report?.self === row.seat ? 'is-ochre' : `seat-fill-${row.seat}`} style={{ width: `${barW}%` }} />}
                 </span>
                 <span className="d-boss-seat-nums">
                   <b>{row.damage !== null ? formatTelemetryTotal(row.damage) : '—'}</b>
@@ -206,7 +209,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     {opBars.length > 0 && (
       <section className="d-boss-op-chart" aria-label="参战干员首领输出排行">
         <header className="d-tele-subhead">
-          <span>参战干员首领输出分布（Top {Math.min(12, opBars.length)}）</span>
+          <span><b className="d-prts-slash">//</b>参战干员首领输出分布（Top {Math.min(12, opBars.length)}）</span>
           <small>{data?.bossOfficial.length ? '源自官方榜单' : '源自本端上报'} · 合计 {formatTelemetryTotal(opTotal)}</small>
         </header>
         <div className="d-boss-op-rows">
@@ -221,8 +224,8 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                   <strong>{op.name}</strong>
                   {!solo && <small>{seatDisplayText(op.seat, report)}</small>}
                 </span>
-                <span className="d-bar-track" aria-hidden="true">
-                  <i className={`seat-fill-${op.seat}`} style={{ width: `${w}%` }} />
+                <span className="d-bar-track d-bar-axis-grid" aria-hidden="true">
+                  <i className={idx === 0 ? 'is-ochre' : 'is-out'} style={{ width: `${w}%` }} />
                 </span>
                 <span className="d-boss-op-val">
                   <b>{formatTelemetryTotal(op.damage)}</b>
@@ -231,6 +234,11 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
               </div>
             );
           })}
+          <div className="d-boss-axis-scale" aria-hidden="true">
+            <span /><span /><span />
+            <div><small>0</small><small>{formatTelemetryTotal(opMax * 0.5)}</small><small>{formatTelemetryTotal(opMax)}</small></div>
+            <span />
+          </div>
         </div>
       </section>
     )}

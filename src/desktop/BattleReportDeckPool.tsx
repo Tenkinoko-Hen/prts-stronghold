@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Layers, Lock, Package, RefreshCw, Search, Sparkles, Star, Store, TrendingUp, Users } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
+import { AlertTriangle, Layers, Lock, Package, RefreshCw, Search, Sparkles, Star, Store } from 'lucide-react';
 import { REPORT_SEATS, type BattleReport } from './battleReportData';
 import { seatDisplayText } from './BattleReportPanels';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { computeEquipOdds, computeOperatorOdds, computeWishlistSummary } from './deckPoolMath';
+import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
 
 const TIER_ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'] as const;
 const pctFmt = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
@@ -16,29 +17,30 @@ function fmtPct(prob: number): string {
 }
 
 function ProbGauge({ prob, label, sub }: { prob: number; label: string; sub: string }) {
-  const r = 30;
+  const r = 32;
   const circ = 2 * Math.PI * r;
   const fill = Math.max(0, Math.min(1, prob)) * circ;
-  const color = prob >= 0.45 ? '#34d399' : prob >= 0.2 ? '#ffe600' : prob > 0 ? '#00e5ff' : '#475569';
+  const color = prob >= 0.4 ? PRTS_CHART.blue : prob >= 0.15 ? PRTS_CHART.ochre : prob > 0 ? PRTS_CHART.slateLight : PRTS_CHART.crimson;
   return (
     <div className="d-pool-gauge">
-      <svg viewBox="0 0 76 76" className="d-pool-gauge-svg" role="img" aria-label={`${label} ${fmtPct(prob)}`}>
-        <circle cx="38" cy="38" r={r} fill="none" stroke="#18202c" strokeWidth="8" />
+      <svg viewBox="0 0 84 84" className="d-pool-gauge-svg" role="img" aria-label={`${label} ${fmtPct(prob)}`}>
+        <circle cx="42" cy="42" r={r + 5} fill="none" stroke="#1d2430" strokeWidth="1" strokeDasharray="2 5" />
+        <circle cx="42" cy="42" r={r} fill="none" stroke="#1b222d" strokeWidth="6.5" />
         <circle
-          cx="38"
-          cy="38"
+          cx="42"
+          cy="42"
           r={r}
           fill="none"
           stroke={color}
-          strokeWidth="8"
+          strokeWidth="6.5"
           strokeDasharray={`${fill} ${circ}`}
           strokeLinecap="butt"
-          transform="rotate(-90 38 38)"
+          transform="rotate(-90 42 42)"
         />
-        <text x="38" y="37" textAnchor="middle" fill="#f8fafc" fontSize="13" fontWeight="700" fontFamily="Consolas, monospace">
+        <text x="42" y="40.5" textAnchor="middle" fill={PRTS_CHART.labelStrong} fontSize="13.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
           {fmtPct(prob)}
         </text>
-        <text x="38" y="49" textAnchor="middle" fill="#94a3b8" fontSize="8">
+        <text x="42" y="53" textAnchor="middle" fill={PRTS_CHART.labelMuted} fontSize="8.5" fontFamily={PRTS_FONT_SANS}>
           {sub}
         </text>
       </svg>
@@ -64,6 +66,7 @@ export function BattleReportDeckPool({
     ?? Object.values(report?.lineups ?? {}).find(l => l.shopLevel)?.shopLevel
     ?? 1;
 
+  const gridId = useId();
   const [manualLevel, setManualLevel] = useState<number | null>(null);
   const [wishChars, setWishChars] = useState<string[]>([]);
   const [wishTraps, setWishTraps] = useState<string[]>([]);
@@ -131,7 +134,6 @@ export function BattleReportDeckPool({
   const compareDiff = summary.nextLevelAnyWishPerRoll !== null
     ? summary.nextLevelAnyWishPerRoll - summary.anyWishOperatorPerRoll
     : null;
-  const compareMax = Math.max(0.05, summary.anyWishOperatorPerRoll, summary.nextLevelAnyWishPerRoll ?? 0);
 
   return (
     <div className="d-pool-shell">
@@ -193,7 +195,7 @@ export function BattleReportDeckPool({
       <div className="d-pool-dashboard">
         <section className="d-chart-card d-pool-prob-panel" aria-label="心仪抽取概率仪表盘">
           <header className="d-chart-head">
-            <span><TrendingUp size={13} />心仪抽取概率 · {shopLevel}本 ({summary.charSlots}格)</span>
+            <span><b className="d-prts-slash">//</b>心仪抽取概率 · {shopLevel}本 ({summary.charSlots}格)</span>
             <small>按剩余牌池无放回抽样实时估算</small>
           </header>
 
@@ -225,7 +227,7 @@ export function BattleReportDeckPool({
                 {wishTraps.length > 0 && (
                   <div>
                     <small>心仪装备单刷</small>
-                    <b className="is-green">{fmtPct(summary.anyWishEquipPerRoll)}</b>
+                    <b className="is-cyan">{fmtPct(summary.anyWishEquipPerRoll)}</b>
                   </div>
                 )}
               </div>
@@ -247,13 +249,18 @@ export function BattleReportDeckPool({
                   <div className="d-pool-compare-bars">
                     <div className="d-pool-cmp-row">
                       <small>{shopLevel}本</small>
-                      <span className="d-bar-track"><i className="is-out" style={{ width: `${Math.max(4, (summary.anyWishOperatorPerRoll / compareMax) * 100)}%` }} /></span>
+                      <span className="d-bar-track d-bar-axis-grid"><i className="is-out" style={{ width: `${Math.max(4, summary.anyWishOperatorPerRoll * 100)}%` }} /></span>
                       <b>{fmtPct(summary.anyWishOperatorPerRoll)}</b>
                     </div>
                     <div className="d-pool-cmp-row">
                       <small>{summary.nextLevelShopLevel}本</small>
-                      <span className="d-bar-track"><i className="is-in" style={{ width: `${Math.max(4, (summary.nextLevelAnyWishPerRoll / compareMax) * 100)}%` }} /></span>
+                      <span className="d-bar-track d-bar-axis-grid"><i className="is-ochre" style={{ width: `${Math.max(4, summary.nextLevelAnyWishPerRoll * 100)}%` }} /></span>
                       <b>{fmtPct(summary.nextLevelAnyWishPerRoll)}</b>
+                    </div>
+                    <div className="d-pool-cmp-scale" aria-hidden="true">
+                      <span />
+                      <div><small>0%</small><small>50%</small><small>100%</small></div>
+                      <span />
                     </div>
                   </div>
                 </div>
@@ -262,43 +269,96 @@ export function BattleReportDeckPool({
           )}
         </section>
 
-        {/* Tier Pool Distribution & Compression Stacked Bar Chart */}
+        {/* Tier Pool Distribution & Compression SVG Stacked Bar Chart (Endfield Supply Blue + Consumed Ochre) */}
         <section className="d-chart-card d-pool-tier-chart" aria-label="各阶牌池余量与消耗分布">
           <header className="d-chart-head">
-            <span><Users size={13} />各阶干员池余量分布</span>
+            <span><b className="d-prts-slash">//</b>各阶牌池余量与消耗</span>
             <div className="d-round-trend-legend">
-              <span><i className="is-rem" />池中剩余</span>
-              <span><i className="is-taken" />已抽走</span>
+              <span><i className="is-rem" />池中余量</span>
+              <span><i className="is-taken" />已抽消耗</span>
             </div>
           </header>
-          <div className="d-tier-bars-grid">
-            {pool.tierSummary.map(ts => {
-              const unlocked = ts.tier <= shopLevel;
-              const remH = ts.totalCopies > 0 ? Math.max(4, Math.round((ts.remainingCopies / maxTierCopies) * 64)) : 0;
-              const takenH = ts.takenCopies > 0 ? Math.max(4, Math.round((ts.takenCopies / maxTierCopies) * 64)) : 0;
-              return (
-                <button
-                  key={ts.tier}
-                  type="button"
-                  className="d-tier-col"
-                  data-locked={!unlocked}
-                  data-active={tierFilter === ts.tier}
-                  onClick={() => setTierFilter(prev => (prev === ts.tier ? 'all' : ts.tier))}
-                  title={`${TIER_ROMAN[ts.tier]} 阶（${ts.tier}本）· ${ts.operatorKinds} 名干员 · 剩余 ${ts.remainingCopies}/${ts.totalCopies} 张（已抽 ${ts.takenCopies}）· ${ts.equipKinds} 种装备`}
-                >
-                  <small className="d-tier-col-num">{ts.remainingCopies}</small>
-                  <span className="d-tier-stack">
-                    {takenH > 0 && <i className="is-taken" style={{ height: `${takenH}px` }} />}
-                    {remH > 0 && <i className="is-rem" style={{ height: `${remH}px` }} />}
-                  </span>
-                  <span className="d-tier-col-label">
-                    {!unlocked && <Lock size={9} />}
-                    {TIER_ROMAN[ts.tier]}本
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {(() => {
+            const { top: yTop, ticks } = niceTicks(Math.max(5, maxTierCopies), 3);
+            const w = 360;
+            const h = 132;
+            const padL = 28;
+            const padR = 10;
+            const padT = 18;
+            const padB = 22;
+            const innerW = w - padL - padR;
+            const innerH = h - padT - padB;
+            const baseY = padT + innerH;
+            const colW = innerW / 6;
+            const barW = 22;
+            return (
+              <svg className="d-prts-svg d-tier-svg" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="各阶干员池余量与消耗堆叠柱状图">
+                <defs>
+                  <pattern id={`tier-grid-${gridId}`} width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke={PRTS_CHART.gridSubtle} strokeWidth="1" />
+                  </pattern>
+                </defs>
+                <rect x={padL} y={padT} width={innerW} height={innerH} fill={PRTS_CHART.plotBg} />
+                <rect x={padL} y={padT} width={innerW} height={innerH} fill={`url(#tier-grid-${gridId})`} />
+                {ticks.map((tick, idx) => {
+                  const y = baseY - (tick / yTop) * innerH;
+                  return (
+                    <g key={tick}>
+                      <line
+                        x1={padL}
+                        y1={y}
+                        x2={w - padR}
+                        y2={y}
+                        stroke={idx === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine}
+                        strokeWidth={idx === 0 ? 1.2 : 1}
+                        strokeDasharray={idx === 0 ? undefined : '3 3'}
+                      />
+                      <text x={padL - 5} y={y + 3.5} textAnchor="end" fill={PRTS_CHART.labelMuted} fontSize="9.5" fontFamily={PRTS_FONT_NUM}>
+                        {formatAxisNumber(tick)}
+                      </text>
+                    </g>
+                  );
+                })}
+                {pool.tierSummary.map((ts, idx) => {
+                  const unlocked = ts.tier <= shopLevel;
+                  const active = tierFilter === ts.tier;
+                  const x0 = padL + idx * colW;
+                  const cx = x0 + colW / 2;
+                  const remH = ts.remainingCopies > 0 ? Math.max(2, (ts.remainingCopies / yTop) * innerH) : 0;
+                  const takenH = ts.takenCopies > 0 ? Math.max(2, (ts.takenCopies / yTop) * innerH) : 0;
+                  const totalH = remH + takenH;
+                  return (
+                    <g
+                      key={ts.tier}
+                      className="d-trend-svg-col"
+                      opacity={unlocked ? 1 : 0.45}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${TIER_ROMAN[ts.tier]}本，池内剩余 ${ts.remainingCopies} 张，已抽 ${ts.takenCopies} 张`}
+                      onClick={() => setTierFilter(prev => (prev === ts.tier ? 'all' : ts.tier))}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTierFilter(prev => (prev === ts.tier ? 'all' : ts.tier)); } }}
+                    >
+                      <title>{`${TIER_ROMAN[ts.tier]} 阶（${ts.tier}本）· ${ts.operatorKinds} 名干员 · 剩余 ${ts.remainingCopies}/${ts.totalCopies} 张（已抽 ${ts.takenCopies}）`}</title>
+                      <rect x={x0 + 3} y={padT} width={colW - 6} height={innerH} fill={active ? 'rgba(216,191,75,0.1)' : 'transparent'} />
+                      {active && <rect x={x0 + 3} y={padT} width={colW - 6} height="2" fill={PRTS_CHART.ochreBright} />}
+                      {remH > 0 && (
+                        <rect x={cx - barW / 2} y={baseY - remH} width={barW} height={remH} fill={PRTS_CHART.blue} />
+                      )}
+                      {takenH > 0 && (
+                        <rect x={cx - barW / 2} y={baseY - totalH - (remH > 0 ? 1 : 0)} width={barW} height={takenH} fill={PRTS_CHART.ochre} />
+                      )}
+                      <text x={cx} y={baseY - totalH - 5} textAnchor="middle" fill={PRTS_CHART.labelStrong} fontSize="9.5" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
+                        {ts.remainingCopies}/{ts.totalCopies}
+                      </text>
+                      <text x={cx} y={h - 6} textAnchor="middle" fill={active ? PRTS_CHART.ochreBright : PRTS_CHART.labelMuted} fontSize="10" fontFamily={PRTS_FONT_NUM}>
+                        {unlocked ? `${TIER_ROMAN[ts.tier]}本` : `🔒${TIER_ROMAN[ts.tier]}`}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            );
+          })()}
         </section>
       </div>
 

@@ -83,7 +83,7 @@ async function exportMatch(match:Match, kind:'image'|'document'){
 
   const blob = kind === 'document'
     ? new Blob([`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>${esc(REPORT_BRAND.title)}</title>
-<style>body{background:#0c0e11;color:#eceff4;font:14px/1.5 system-ui,sans-serif;max-width:820px;margin:auto;padding:20px}b{color:#ffe600}.kpis{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}.kpi{padding:6px 12px;border:1px solid #2b333e;background:#12161d}small{color:#94a3b8;display:block;font-size:11px}.kpi strong{font:700 18px monospace}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:12px 0}.card{padding:10px;border:1px solid #2b333e;background:#12161d}.bar-row{display:grid;grid-template-columns:7em 1fr 3em;align-items:center;gap:8px;margin:5px 0}.track{height:8px;background:#090b0f;display:block}.fill-out{height:100%;background:#38bdf8;display:block}.fill-in{height:100%;background:#34d399;display:block}.fill-leak{height:100%;background:#f87171;display:block}article{border-top:1px solid #28303b;padding:8px 0}footer{border-top:1px solid #28303b;padding-top:8px;margin-top:14px;font-size:12px;color:#94a3b8}</style>
+<style>body{background:#0c0e11;color:#eceff4;font:14px/1.5 "Source Han Sans CN","HarmonyOS Sans SC",sans-serif;max-width:820px;margin:auto;padding:20px}b{color:#ebd65c}.kpis{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}.kpi{padding:6px 12px;border:1px solid #2b333e;background:#12161d}small{color:#94a3b8;display:block;font-size:11px}.kpi strong{font:700 18px "Bahnschrift","DIN Alternate","Source Han Sans CN",sans-serif}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:12px 0}.card{padding:10px;border:1px solid #2b333e;background:#12161d}.bar-row{display:grid;grid-template-columns:7em 1fr 3em;align-items:center;gap:8px;margin:5px 0}.track{height:8px;background:#0e1218;border:1px solid #232a35;display:block}.fill-out{height:100%;background:#3698cc;display:block}.fill-in{height:100%;background:#d8bf4b;display:block}.fill-leak{height:100%;background:#d64840;display:block}article{border-top:1px solid #28303b;padding:8px 0}footer{border-top:1px solid #28303b;padding-top:8px;margin-top:14px;font-size:12px;color:#94a3b8}</style>
 <b>${esc(REPORT_BRAND.name)}</b><h1>卫戍战报速览</h1>
 <div class="kpis"><div class="kpi"><small>已录回合</small><strong>${roundEntries.length}R</strong></div><div class="kpi"><small>累计漏怪</small><strong style="color:${totalLeaks?'#f87171':'#34d399'}">${totalLeaks||'无漏'}</strong></div><div class="kpi"><small>累计兜底</small><strong style="color:#38bdf8">+${totalHelps}</strong></div>${totalBoss?`<div class="kpi"><small>首领伤害</small><strong>${esc(compactNum(totalBoss))}</strong></div>`:''}</div>
 ${(iHelped.length||helpedMe.length)?`<div class="grid">${iHelped.length?`<div class="card"><strong style="color:#38bdf8">↗ 我给谁兜 +${iHelped.reduce((s,x)=>s+x.count,0)}</strong>${iHelped.map(x=>`<div class="bar-row"><span>${esc(x.name)}</span><span class="track"><i class="fill-out" style="width:${Math.max(6,x.count/helpScale*100)}%"></i></span><strong style="text-align:right">+${x.count}</strong></div>`).join('')}</div>`:''}${helpedMe.length?`<div class="card"><strong style="color:#34d399">↙ 谁给我兜 ${helpedMe.reduce((s,x)=>s+x.count,0)}</strong>${helpedMe.map(x=>`<div class="bar-row"><span>${esc(x.name)}</span><span class="track"><i class="fill-in" style="width:${Math.max(6,x.count/helpScale*100)}%"></i></span><strong style="text-align:right">${x.count}</strong></div>`).join('')}</div>`:''}</div>`:''}
@@ -127,29 +127,29 @@ async function renderGraphicalMatchPng(
   ctx.fillStyle = '#ffe600';
   ctx.fillRect(0, 0, width, 4);
 
-  ctx.font = 'bold 24px sans-serif';
-  ctx.fillStyle = '#ffe600';
+  ctx.font = 'bold 24px "Source Han Sans CN", sans-serif';
+  ctx.fillStyle = '#ebd65c';
   ctx.fillText(REPORT_BRAND.name, 28, 42);
   ctx.fillStyle = '#f1f5f9';
-  ctx.fillText('· 局内图形战报', 28 + ctx.measureText(REPORT_BRAND.name).width + 10, 42);
+  ctx.fillText('// 局内简报', 28 + ctx.measureText(REPORT_BRAND.name).width + 10, 42);
 
   // KPI Pills
   const kpis: [string, string, string][] = [
     ['回合', `${roundEntries.length}R`, '#e2e8f0'],
-    ['漏怪', totalLeaks === 0 ? '无漏' : String(totalLeaks), totalLeaks === 0 ? '#34d399' : '#f87171'],
-    ['兜底', `+${totalHelps}`, '#38bdf8'],
+    ['漏怪', totalLeaks === 0 ? '无漏' : String(totalLeaks), totalLeaks === 0 ? '#3fa67a' : '#d64840'],
+    ['兜底', `+${totalHelps}`, '#3698cc'],
   ];
-  if (totalBoss > 0) kpis.push(['首领', compactNum(totalBoss), '#ffe600']);
+  if (totalBoss > 0) kpis.push(['首领', compactNum(totalBoss), '#ebd65c']);
   kpis.forEach(([label, val, color], idx) => {
     const x = 28 + idx * 184;
     ctx.fillStyle = '#131821';
     ctx.fillRect(x, 62, 172, 62);
     ctx.strokeStyle = '#26303d';
     ctx.strokeRect(x, 62, 172, 62);
-    ctx.font = '13px sans-serif';
+    ctx.font = '13px "Source Han Sans CN", sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText(label, x + 12, 83);
-    ctx.font = 'bold 22px monospace';
+    ctx.font = 'bold 22px "Bahnschrift", "Source Han Sans CN", sans-serif';
     ctx.fillStyle = color;
     ctx.fillText(val, x + 12, 112);
   });
@@ -157,28 +157,28 @@ async function renderGraphicalMatchPng(
   let y = 148;
   const drawAssistBlock = (title: string, items: AssistEntry[], color: string, plus: boolean) => {
     if (!items.length) return;
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 16px "Source Han Sans CN", sans-serif';
     ctx.fillStyle = color;
     ctx.fillText(`${title}  ${plus ? '+' : ''}${items.reduce((s, i) => s + i.count, 0)}`, 28, y);
     y += 12;
     for (const item of items) {
       y += 26;
-      ctx.font = '15px sans-serif';
+      ctx.font = '15px "Source Han Sans CN", sans-serif';
       ctx.fillStyle = '#e2e8f0';
       ctx.fillText(item.name.slice(0, 10), 28, y);
       ctx.fillStyle = '#141922';
       ctx.fillRect(195, y - 13, 490, 12);
       ctx.fillStyle = color;
       ctx.fillRect(195, y - 13, Math.max(12, Math.round((item.count / helpScale) * 490)), 12);
-      ctx.font = 'bold 16px monospace';
+      ctx.font = 'bold 16px "Bahnschrift", "Source Han Sans CN", sans-serif';
       ctx.fillStyle = '#f8fafc';
       ctx.fillText(`${plus ? '+' : ''}${item.count}`, 700, y);
     }
     y += 24;
   };
 
-  drawAssistBlock('↗ 我给谁兜', iHelped, '#38bdf8', true);
-  drawAssistBlock('↙ 谁给我兜', helpedMe, '#34d399', false);
+  drawAssistBlock('↗ 我给谁兜', iHelped, '#3698cc', true);
+  drawAssistBlock('↙ 谁给我兜', helpedMe, '#d8bf4b', false);
 
   for (const [n, r] of roundEntries) {
     ctx.strokeStyle = '#1e2631';
@@ -187,43 +187,43 @@ async function renderGraphicalMatchPng(
     ctx.lineTo(width - 28, y);
     ctx.stroke();
     y += 24;
-    ctx.font = 'bold 17px monospace';
-    ctx.fillStyle = '#22d3ee';
+    ctx.font = 'bold 17px "Bahnschrift", "Source Han Sans CN", sans-serif';
+    ctx.fillStyle = '#3698cc';
     ctx.fillText(`R${n.padStart(2, '0')}`, 28, y);
 
     // Leak bar
     const leakVal = r.leaks ?? 0;
-    ctx.font = '13px sans-serif';
+    ctx.font = '13px "Source Han Sans CN", sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('漏', 92, y);
     ctx.fillStyle = '#141922';
     ctx.fillRect(114, y - 11, 210, 9);
     if (leakVal > 0) {
-      ctx.fillStyle = '#f87171';
+      ctx.fillStyle = '#d64840';
       ctx.fillRect(114, y - 11, Math.max(8, Math.round((leakVal / roundScale) * 210)), 9);
     }
-    ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = leakVal === 0 && r.leaks !== undefined ? '#34d399' : '#fca5a5';
+    ctx.font = 'bold 14px "Bahnschrift", "Source Han Sans CN", sans-serif';
+    ctx.fillStyle = leakVal === 0 && r.leaks !== undefined ? '#3fa67a' : '#e88b85';
     ctx.fillText(r.leaks === undefined ? '—' : leakVal === 0 ? '无漏' : String(leakVal), 332, y);
 
     // Help bar
     const helpVal = r.helps ?? 0;
-    ctx.font = '13px sans-serif';
+    ctx.font = '13px "Source Han Sans CN", sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('兜', 410, y);
     ctx.fillStyle = '#141922';
     ctx.fillRect(432, y - 11, 210, 9);
     if (helpVal > 0) {
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = '#3698cc';
       ctx.fillRect(432, y - 11, Math.max(8, Math.round((helpVal / roundScale) * 210)), 9);
     }
-    ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = helpVal > 0 ? '#38bdf8' : '#64748b';
+    ctx.font = 'bold 14px "Bahnschrift", "Source Han Sans CN", sans-serif';
+    ctx.fillStyle = helpVal > 0 ? '#3698cc' : '#64748b';
     ctx.fillText(helpVal > 0 ? `+${helpVal}` : '0', 650, y);
 
     if (r.note || r.boss) {
       y += 20;
-      ctx.font = '12.5px sans-serif';
+      ctx.font = '12.5px "Source Han Sans CN", sans-serif';
       ctx.fillStyle = '#94a3b8';
       const sub = [r.boss ? `首领 ${compactNum(r.boss)}` : '', r.note || ''].filter(Boolean).join(' · ');
       ctx.fillText(sub.slice(0, 56), 92, y);

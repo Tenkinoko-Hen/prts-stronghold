@@ -5,7 +5,7 @@
 .desktop-app :focus-visible, .desktop-dialog :focus-visible { outline:2px solid #40d9c1; outline-offset:2px; }
 .d-global-header { position:fixed; inset:0 0 auto; z-index:30; height:52px; display:flex; align-items:center; justify-content:space-between; gap:22px; padding:0 20px; background:#0a0e14; border-bottom:1px solid #263346; }
 .d-wordmark { display:flex; align-items:center; gap:7px; flex:none; font-size:17px; font-weight:800; white-space:nowrap; }
-.d-wordmark small { color:#aab2bf; font:500 12px/1.2 system-ui,sans-serif; }
+.d-wordmark small { color:#aab2bf; font:500 12px/1.2 var(--font-sans); }
 .d-global-nav { display:flex; align-items:center; gap:24px; font-size:13px; font-weight:700; color:#cbd5e1; min-width:0; overflow-x:auto; }
 .d-global-header > div > button { padding:7px 10px; font-size:12px; }
 .desktop-page { position:absolute; inset:52px 0 0; padding:12px 16px; overflow:hidden; }

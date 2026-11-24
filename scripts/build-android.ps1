@@ -148,7 +148,7 @@ try {
         $propagation = [Security.AccessControl.PropagationFlags]::None
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', $inherit, $propagation, 'Allow'))
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-18'), 'FullControl', $inherit, $propagation, 'Allow'))
-        Set-Acl -LiteralPath $signingRoot -AclObject $acl
+        [IO.Directory]::SetAccessControl($signingRoot, $acl)
         $passwordFile = Join-Path $signingRoot $signing.passwordFile
         if (!(Test-Path -LiteralPath $passwordFile)) {
             if (Test-Path -LiteralPath $keyStore) { throw '签名密码文件缺失，请恢复原签名资料；不会覆盖已有私钥。' }

@@ -145,7 +145,7 @@ export function LanSyncDialog({
               style={{
                 fontSize: '22px',
                 letterSpacing: '0.18em',
-                fontFamily: 'var(--font-mono, Consolas, monospace)',
+                fontFamily: 'var(--font-mono)',
                 color: '#ffe600',
               }}
             >

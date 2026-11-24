@@ -136,7 +136,7 @@ export function MobileLanPanel({
           {topOps.map((op, i) => (
             <div key={op.charId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
               <span>{i + 1}. <strong>{op.name}</strong></span>
-              <span style={{ fontFamily: 'monospace', color: '#ffe600' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', color: '#ebd65c' }}>
                 {formatTelemetryTotal(op.totalDamage)}
                 {op.activeDps != null ? ` (${formatTelemetryRate(op.activeDps)})` : ''}
               </span>

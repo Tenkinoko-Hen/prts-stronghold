@@ -17,10 +17,11 @@ import {
   type TelemetryMetricMode,
   type TimelinePoint,
 } from './combatTelemetry';
+import { buildSmoothSplinePath, formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
 
 const pctFmt = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
 const secFmt = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
-const DONUT_PALETTE = ['#ffe600', '#00e5ff', '#34d399', '#c7b1ff', '#fb923c', '#94a3b8'];
+const DONUT_PALETTE = PRTS_CHART.series;
 
 export function CompactOperatorBadge({ name, size = 28 }: { name: string; size?: number }) {
   const resolved = resolveOperatorAvatars(name)[0];
@@ -42,90 +43,207 @@ export function CompactOperatorBadge({ name, size = 28 }: { name: string; size?:
   );
 }
 
-function DpsAreaChart({ timeline, operators }: { timeline: TimelinePoint[]; operators: OperatorTelemetry[] }) {
-  const gradId = useId();
-  // If protocol timeline has >=2 points, plot real elapsed curve; else synthesize bar profile from top ops
+function DpsAreaChart({ timeline, operators, avgDps }: {
+  timeline: TimelinePoint[];
+  operators: OperatorTelemetry[];
+  avgDps: number | null;
+}) {
+  const uid = useId();
+  const gradId = `prts-dps-area-${uid}`;
+  const gridId = `prts-dps-grid-${uid}`;
   const hasCurve = timeline.length >= 2;
+
   if (!hasCurve) {
     if (!operators.length) return null;
     const top = operators.slice(0, 8);
     const maxDmg = Math.max(1, ...top.map(o => o.totalDamage));
+    const { top: yTop, ticks } = niceTicks(maxDmg, 3);
+    const width = 560;
+    const height = 164;
+    const padL = 44;
+    const padR = 14;
+    const padT = 18;
+    const padB = 26;
+    const innerW = width - padL - padR;
+    const innerH = height - padT - padB;
+    const slotW = innerW / top.length;
+    const barW = Math.min(28, Math.max(14, slotW * 0.46));
+
     return (
       <section className="d-chart-card" aria-label="干员输出柱状对比图">
         <header className="d-chart-head">
-          <span><Activity size={13} />干员总伤对比分布</span>
+          <span><b className="d-prts-slash">//</b>干员输出分布对比</span>
           <small>Top {top.length}</small>
         </header>
-        <div className="d-mini-col-chart">
-          {top.map((op, i) => {
-            const h = Math.max(8, Math.round((op.totalDamage / maxDmg) * 76));
+        <svg className="d-prts-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="干员输出柱状对比图">
+          <rect x={padL} y={padT} width={innerW} height={innerH} fill={PRTS_CHART.plotBg} />
+          {ticks.map((tick, idx) => {
+            const y = padT + innerH - (tick / yTop) * innerH;
             return (
-              <div key={`${op.seat ?? 0}:${op.charId}`} className="d-mini-col-item" title={`${op.name} · ${formatTelemetryTotal(op.totalDamage)}`}>
-                <small className="d-mini-col-val">{formatTelemetryTotal(op.totalDamage)}</small>
-                <span className="d-mini-col-track">
-                  <i style={{ height: `${h}px`, background: DONUT_PALETTE[i % DONUT_PALETTE.length] }} />
-                </span>
-                <span className="d-mini-col-name">{op.name}</span>
-              </div>
+              <g key={tick}>
+                <line x1={padL} y1={y} x2={width - padR} y2={y} stroke={idx === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine} strokeDasharray={idx === 0 ? undefined : '3 3'} />
+                <text x={padL - 6} y={y + 3.5} textAnchor="end" fill={PRTS_CHART.labelMuted} fontSize="10" fontFamily={PRTS_FONT_NUM}>
+                  {formatAxisNumber(tick)}
+                </text>
+              </g>
             );
           })}
-        </div>
+          {top.map((op, i) => {
+            const cx = padL + slotW * (i + 0.5);
+            const h = Math.max(2, (op.totalDamage / yTop) * innerH);
+            const y = padT + innerH - h;
+            return (
+              <g key={`${op.seat ?? 0}:${op.charId}`}>
+                <rect x={cx - barW / 2} y={y} width={barW} height={h} fill={i === 0 ? PRTS_CHART.ochre : PRTS_CHART.blue} />
+                <text x={cx} y={y - 4} textAnchor="middle" fill={PRTS_CHART.labelStrong} fontSize="9.5" fontWeight="600" fontFamily={PRTS_FONT_NUM}>
+                  {formatAxisNumber(op.totalDamage)}
+                </text>
+                <text x={cx} y={height - 8} textAnchor="middle" fill={PRTS_CHART.labelMuted} fontSize="10" fontFamily={PRTS_FONT_SANS}>
+                  {op.name.slice(0, 4)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
       </section>
     );
   }
 
-  const width = 460;
-  const height = 112;
-  const padL = 38;
-  const padR = 12;
-  const padT = 12;
-  const padB = 20;
+  const width = 580;
+  const height = 176;
+  const padL = 46;
+  const padR = 16;
+  const padT = 22;
+  const padB = 26;
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
   const maxT = Math.max(1, timeline[timeline.length - 1].t);
-  const maxDps = Math.max(10, ...timeline.map(p => p.dps));
+  const rawMaxDps = Math.max(10, ...timeline.map(p => p.dps), avgDps ?? 0);
+  const { top: yTop, ticks } = niceTicks(rawMaxDps * 1.06, 4);
   const peakPt = timeline.reduce((best, p) => (p.dps > best.dps ? p : best), timeline[0]);
 
   const toX = (t: number) => padL + (t / maxT) * innerW;
-  const toY = (v: number) => padT + innerH - (v / maxDps) * innerH;
+  const toY = (v: number) => padT + innerH - (Math.max(0, v) / yTop) * innerH;
 
-  const linePoints = timeline.map(p => `${toX(p.t).toFixed(1)},${toY(p.dps).toFixed(1)}`).join(' ');
-  const areaPath = `M ${toX(timeline[0].t).toFixed(1)},${(padT + innerH).toFixed(1)} `
-    + timeline.map(p => `L ${toX(p.t).toFixed(1)},${toY(p.dps).toFixed(1)}`).join(' ')
-    + ` L ${toX(timeline[timeline.length - 1].t).toFixed(1)},${(padT + innerH).toFixed(1)} Z`;
+  const pts = timeline.map(p => ({ x: toX(p.t), y: toY(p.dps) }));
+  const smoothLine = buildSmoothSplinePath(pts);
+  const baseY = padT + innerH;
+  const smoothArea = `${smoothLine} L ${pts[pts.length - 1].x.toFixed(1)},${baseY.toFixed(1)} L ${pts[0].x.toFixed(1)},${baseY.toFixed(1)} Z`;
+  const peakX = toX(peakPt.t);
+  const peakY = toY(peakPt.dps);
+  const avgY = avgDps && avgDps > 0 ? toY(avgDps) : null;
+  const xTicks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <section className="d-chart-card" aria-label="实时 DPS 脉冲趋势图">
+    <section className="d-chart-card" aria-label="实时 DPS 输出趋势简报">
       <header className="d-chart-head">
-        <span><Activity size={13} />实时 DPS 输出趋势</span>
-        <small>峰值 {formatTelemetryRate(peakPt.dps)} @ {secFmt.format(peakPt.t)}s</small>
+        <span><b className="d-prts-slash">//</b>实时 DPS 走势</span>
+        <div className="d-round-trend-legend">
+          <span><i style={{ background: PRTS_CHART.blue }} />瞬时 DPS</span>
+          {avgY !== null && <span><i style={{ background: PRTS_CHART.ochre }} />全程均值</span>}
+          <small>峰值 {formatTelemetryRate(peakPt.dps)} @ {secFmt.format(peakPt.t)}s</small>
+        </div>
       </header>
-      <svg className="d-area-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="实时秒伤趋势面积图">
+      <svg className="d-prts-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="实时秒伤趋势曲线图">
         <defs>
+          <pattern id={gridId} width="24" height="24" patternUnits="userSpaceOnUse">
+            <path d="M 24 0 L 0 0 0 24" fill="none" stroke={PRTS_CHART.gridSubtle} strokeWidth="1" />
+          </pattern>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.42" />
-            <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.02" />
+            <stop offset="0%" stopColor={PRTS_CHART.blueFill} stopOpacity="0.42" />
+            <stop offset="100%" stopColor={PRTS_CHART.blueFill} stopOpacity="0.04" />
           </linearGradient>
         </defs>
-        {[0, 0.5, 1].map(f => {
-          const y = padT + innerH * (1 - f);
+
+        {/* Endfield matte plot area with micro-grid */}
+        <rect x={padL} y={padT} width={innerW} height={innerH} fill={PRTS_CHART.plotBg} />
+        <rect x={padL} y={padT} width={innerW} height={innerH} fill={`url(#${gridId})`} />
+
+        {/* Horizontal dashed BI gridlines & Y-axis ticks */}
+        {ticks.map((tick, idx) => {
+          const y = toY(tick);
           return (
-            <g key={f}>
-              <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#1f2733" strokeDasharray={f === 0 ? undefined : '3 3'} />
-              <text x={padL - 5} y={y + 3} textAnchor="end" fill="#7c8799" fontSize="9" fontFamily="Consolas, monospace">
-                {formatTelemetryTotal(maxDps * f)}
+            <g key={tick}>
+              <line
+                x1={padL}
+                y1={y}
+                x2={width - padR}
+                y2={y}
+                stroke={idx === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine}
+                strokeWidth={idx === 0 ? 1.2 : 1}
+                strokeDasharray={idx === 0 ? undefined : '3 3'}
+              />
+              <text x={padL - 7} y={y + 3.5} textAnchor="end" fill={PRTS_CHART.labelMuted} fontSize="10" fontFamily={PRTS_FONT_NUM}>
+                {formatAxisNumber(tick)}
               </text>
             </g>
           );
         })}
-        <path d={areaPath} fill={`url(#${gradId})`} />
-        <polyline points={linePoints} fill="none" stroke="#00e5ff" strokeWidth="1.8" strokeLinejoin="round" />
-        <circle cx={toX(peakPt.t)} cy={toY(peakPt.dps)} r="3.2" fill="#ffe600" stroke="#0b0c0e" strokeWidth="1.2" />
-        {[0, 0.5, 1].map(f => (
-          <text key={`t-${f}`} x={padL + innerW * f} y={height - 4} textAnchor={f === 0 ? 'start' : f === 1 ? 'end' : 'middle'} fill="#7c8799" fontSize="9" fontFamily="Consolas, monospace">
-            {secFmt.format(maxT * f)}s
-          </text>
-        ))}
+
+        {/* Smooth BI area & stroke */}
+        <path d={smoothArea} fill={`url(#${gradId})`} />
+        <path d={smoothLine} fill="none" stroke={PRTS_CHART.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Average DPS horizontal reference line (Endfield Ochre) */}
+        {avgY !== null && avgDps !== null && (
+          <g>
+            <line x1={padL} y1={avgY} x2={width - padR} y2={avgY} stroke={PRTS_CHART.ochre} strokeWidth="1.2" strokeDasharray="5 4" opacity="0.88" />
+            <rect x={width - padR - 86} y={avgY - 15} width="84" height="13" rx="1" fill="#161b23" stroke="rgba(216,191,75,0.45)" strokeWidth="0.8" />
+            <text x={width - padR - 44} y={avgY - 5.5} textAnchor="middle" fill={PRTS_CHART.ochreBright} fontSize="9.2" fontWeight="600" fontFamily={PRTS_FONT_NUM}>
+              均值 {formatAxisNumber(avgDps)}/s
+            </text>
+          </g>
+        )}
+
+        {/* Ringed BI data point markers */}
+        {pts.map((pt, idx) => {
+          const isPeak = timeline[idx] === peakPt;
+          return (
+            <circle
+              key={idx}
+              cx={pt.x}
+              cy={pt.y}
+              r={isPeak ? 4 : 2.6}
+              fill={PRTS_CHART.plotBg}
+              stroke={isPeak ? PRTS_CHART.ochreBright : PRTS_CHART.blue}
+              strokeWidth={isPeak ? 2 : 1.5}
+            />
+          );
+        })}
+
+        {/* Direct Peak Value Callout */}
+        <line x1={peakX} y1={peakY + 4} x2={peakX} y2={baseY} stroke={PRTS_CHART.ochre} strokeWidth="1" strokeDasharray="2 3" opacity="0.45" />
+        <text
+          x={Math.min(width - padR - 26, Math.max(padL + 26, peakX))}
+          y={Math.max(13, peakY - 7)}
+          textAnchor="middle"
+          fill={PRTS_CHART.ochreBright}
+          fontSize="10"
+          fontWeight="700"
+          fontFamily={PRTS_FONT_NUM}
+        >
+          {formatAxisNumber(peakPt.dps)}/s
+        </text>
+
+        {/* X-axis ticks */}
+        {xTicks.map(f => {
+          const x = padL + innerW * f;
+          return (
+            <g key={`t-${f}`}>
+              <line x1={x} y1={baseY} x2={x} y2={baseY + 4} stroke={PRTS_CHART.axisLine} />
+              <text
+                x={x}
+                y={height - 6}
+                textAnchor={f === 0 ? 'start' : f === 1 ? 'end' : 'middle'}
+                fill={PRTS_CHART.labelMuted}
+                fontSize="10"
+                fontFamily={PRTS_FONT_NUM}
+              >
+                {secFmt.format(maxT * f)}s
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </section>
   );
@@ -145,10 +263,10 @@ function CompositionDonut({ operators, totalDamage, metric }: {
     const arts = operators.reduce((s, o) => s + o.arts, 0);
     const elem = operators.reduce((s, o) => s + o.elemental, 0);
     const trueD = operators.reduce((s, o) => s + o.trueDamage, 0);
-    if (phys > 0) slices.push({ label: '物理', value: phys, color: '#d8dee9' });
-    if (arts > 0) slices.push({ label: '法术', value: arts, color: '#00e5ff' });
-    if (elem > 0) slices.push({ label: '元素', value: elem, color: '#ffe600' });
-    if (trueD > 0) slices.push({ label: '真实', value: trueD, color: '#ff3b30' });
+    if (phys > 0) slices.push({ label: '物理', value: phys, color: '#C5CFD9' });
+    if (arts > 0) slices.push({ label: '法术', value: arts, color: PRTS_CHART.blue });
+    if (elem > 0) slices.push({ label: '元素', value: elem, color: PRTS_CHART.ochre });
+    if (trueD > 0) slices.push({ label: '真实', value: trueD, color: PRTS_CHART.crimson });
   } else {
     const top = operators.slice(0, 5);
     top.forEach((op, idx) => {
@@ -156,27 +274,27 @@ function CompositionDonut({ operators, totalDamage, metric }: {
       if (val > 0) slices.push({ label: op.name, value: val, color: DONUT_PALETTE[idx % DONUT_PALETTE.length] });
     });
     const rest = operators.slice(5).reduce((s, o) => s + (metric === 'healing' ? o.healing : o.totalDamage), 0);
-    if (rest > 0) slices.push({ label: '其余干员', value: rest, color: '#475569' });
+    if (rest > 0) slices.push({ label: '其余干员', value: rest, color: PRTS_CHART.slate });
   }
 
   const sum = slices.reduce((s, x) => s + x.value, 0);
   if (sum <= 0) return null;
 
-  const r = 34;
-  const cx = 46;
-  const cy = 46;
+  const r = 40;
+  const cx = 52;
+  const cy = 52;
   const circ = 2 * Math.PI * r;
   let acc = 0;
 
   return (
     <section className="d-chart-card d-donut-card" aria-label="输出构成环形图">
       <header className="d-chart-head">
-        <span>{hasChannels ? '属性伤害构成' : metric === 'healing' ? '治疗贡献构成' : '主力输出占比'}</span>
+        <span><b className="d-prts-slash">//</b>{hasChannels ? '属性伤害构成' : metric === 'healing' ? '治疗贡献构成' : '主力输出占比'}</span>
         <small>{slices.length} 项</small>
       </header>
       <div className="d-donut-body">
-        <svg viewBox="0 0 92 92" className="d-donut-svg" role="img" aria-label="构成环形图">
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#181f2a" strokeWidth="11" />
+        <svg viewBox="0 0 104 104" className="d-donut-svg" role="img" aria-label="构成环形图">
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1b212b" strokeWidth="9" />
           {slices.map(sl => {
             const frac = sl.value / sum;
             const len = frac * circ;
@@ -190,38 +308,45 @@ function CompositionDonut({ operators, totalDamage, metric }: {
                 r={r}
                 fill="none"
                 stroke={sl.color}
-                strokeWidth="11"
-                strokeDasharray={`${Math.max(1, len - 1)} ${circ}`}
+                strokeWidth="9"
+                strokeDasharray={`${Math.max(1.5, len - 1.5)} ${circ}`}
                 strokeDashoffset={offset}
                 transform={`rotate(-90 ${cx} ${cy})`}
               />
             );
           })}
-          <text x={cx} y={cy - 2} textAnchor="middle" fill="#f8fafc" fontSize="11.5" fontWeight="700" fontFamily="Consolas, monospace">
+          <text x={cx} y={cy - 2} textAnchor="middle" fill={PRTS_CHART.labelStrong} fontSize="12" fontWeight="700" fontFamily={PRTS_FONT_NUM}>
             {formatTelemetryTotal(sum)}
           </text>
-          <text x={cx} y={cy + 11} textAnchor="middle" fill="#8e99aa" fontSize="8.5">
+          <text x={cx} y={cy + 12} textAnchor="middle" fill={PRTS_CHART.labelMuted} fontSize="8.5" fontFamily={PRTS_FONT_SANS}>
             {metric === 'healing' ? '累计治疗' : '累计输出'}
           </text>
         </svg>
         <ul className="d-donut-legend">
-          {slices.map(sl => (
-            <li key={sl.label}>
-              <i style={{ background: sl.color }} />
-              <span className="d-donut-name">{sl.label}</span>
-              <b>{pctFmt.format((sl.value / sum) * 100)}%</b>
-            </li>
-          ))}
+          {slices.map(sl => {
+            const pct = (sl.value / sum) * 100;
+            return (
+              <li key={sl.label}>
+                <i style={{ background: sl.color }} />
+                <span className="d-donut-name">{sl.label}</span>
+                <span className="d-donut-mini-bar" aria-hidden="true">
+                  <em style={{ width: `${Math.max(4, pct)}%`, background: sl.color }} />
+                </span>
+                <b>{pctFmt.format(pct)}%</b>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </section>
   );
 }
 
-function SegmentedEnergyBar({ op, maxValue, metric }: {
+function SegmentedEnergyBar({ op, maxValue, metric, rank = 1 }: {
   op: OperatorTelemetry;
   maxValue: number;
   metric: TelemetryMetricMode;
+  rank?: number;
 }) {
   if (metric === 'healing') {
     const width = maxValue > 0 ? Math.min(100, (op.healing / maxValue) * 100) : 0;
@@ -240,7 +365,7 @@ function SegmentedEnergyBar({ op, maxValue, metric }: {
     const width = Math.min(100, (total / maxValue) * 100);
     return (
       <div className="d-tele-bar-track" aria-hidden="true">
-        <span className="d-tele-seg is-arts" style={{ width: `${width}%` }} title={`协议总伤 ${formatTelemetryTotal(total)}`} />
+        <span className={`d-tele-seg ${rank === 0 ? 'is-lead' : 'is-arts'}`} style={{ width: `${width}%` }} title={`协议总伤 ${formatTelemetryTotal(total)}`} />
       </div>
     );
   }
@@ -514,7 +639,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
       {/* Dual Visual Charts: Trend Area SVG + Composition Donut SVG */}
       {visibleOps.length > 0 && (
         <div className="d-tele-charts-grid">
-          <DpsAreaChart timeline={timeline} operators={visibleOps} />
+          <DpsAreaChart timeline={timeline} operators={visibleOps} avgDps={avgDps} />
           <CompositionDonut operators={visibleOps} totalDamage={totalMetricSum} metric={metric} />
         </div>
       )}
@@ -597,7 +722,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
                         {summonPct > 0 ? `召唤物 ${summonPct}%` : op.hits ? `有效记录 ${op.hits} 次` : '参战干员'}
                       </small>
                     </span>
-                    <SegmentedEnergyBar op={op} maxValue={maxPrimary} metric={metric} />
+                    <SegmentedEnergyBar op={op} maxValue={maxPrimary} metric={metric} rank={index} />
                     <span className="d-tele-total">
                       <b>{formatTelemetryTotal(primaryVal, midstream)}</b>
                       <small>{pctFmt.format(share)}%</small>

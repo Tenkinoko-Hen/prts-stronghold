@@ -21,6 +21,7 @@ import {
   computeWishlistSummary,
   hypergeometricAtLeastOne,
 } from './deckPoolMath';
+import { buildSmoothSplinePath, formatAxisNumber, niceTicks } from './prtsChartKit';
 import { demoReport } from './demo/battleReportFixture';
 import { computeEffectiveDps } from '../mobile/MobileDpsEstimator';
 import { parseSettlementQuickText } from '../mobile/settlementQuickParse';
@@ -216,4 +217,17 @@ test('coop_elim tracks eliminated seat, clean board lineup, and deck pool hyperg
   assert.equal(summary.nextLevelShopLevel, 5);
   assert.ok(summary.anyWishOperatorPerRoll > 0);
   assert.ok(summary.nextLevelAnyWishPerRoll !== null && summary.nextLevelAnyWishPerRoll > 0);
+
+  const scale = niceTicks(52400, 4);
+  assert.equal(scale.ticks[0], 0);
+  assert.ok(scale.top >= 52400 && scale.ticks.at(-1) === scale.top);
+  assert.equal(formatAxisNumber(20000), '2万');
+  assert.equal(formatAxisNumber(1500), '1.5k');
+  const spline = buildSmoothSplinePath([
+    { x: 0, y: 100 },
+    { x: 50, y: 40 },
+    { x: 100, y: 80 },
+    { x: 150, y: 20 },
+  ]);
+  assert.match(spline, /^M 0\.0,100\.0 C /);
 });

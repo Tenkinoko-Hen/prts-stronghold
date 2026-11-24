@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { readBattleReport } from './battleReportData';
-import type { ReportFeed, ReportStatus } from './battleReports';
+import type { NpcapInstallState, ReportFeed, ReportStatus } from './battleReports';
 
 export interface BattleBanSyncState {
   available: boolean;
@@ -8,6 +8,8 @@ export interface BattleBanSyncState {
   matchKey: string;
   bannedCovenants: string[];
   hasDownlink: boolean;
+  npcapInstalled?: boolean;
+  npcapInstall?: NpcapInstallState;
 }
 
 export function useBattleBanSync(onSync: (payload: { matchKey: string; bannedCovenants: string[] }) => void) {
@@ -42,7 +44,15 @@ export function useBattleBanSync(onSync: (payload: { matchKey: string; bannedCov
           // Ignore unreadable snapshots; report page handles incompatible status.
         }
       }
-      setState({ available: true, status: feed.status, matchKey, bannedCovenants, hasDownlink });
+      setState({
+        available: true,
+        status: feed.status,
+        matchKey,
+        bannedCovenants,
+        hasDownlink,
+        npcapInstalled: feed.npcapInstalled,
+        npcapInstall: feed.npcapInstall,
+      });
       if (matchKey && bannedCovenants.length > 0) {
         const signature = `${matchKey}:${bannedCovenants.join(',')}`;
         if (signature !== appliedRef.current) {

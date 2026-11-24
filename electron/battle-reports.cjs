@@ -1,6 +1,7 @@
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const { windowsWorkerLaunch } = require('./windows-runtime.cjs');
+const { NPCAP_DOWNLOAD_PAGE, hasNpcap, runNpcapInstaller } = require('./npcap-installer.cjs');
 
 const WORKER_STATUSES = new Set(['waiting', 'connecting', 'listening', 'permission', 'unavailable', 'incompatible']);
 const MAX_REPORT = 8 * 1024 * 1024;
@@ -39,7 +40,13 @@ function diagnosticsDialogTitle(product) {
 }
 
 function installBattleReports({ app, mainWindow, ipcMain, product }) {
-  let state = { status: 'starting', report: null, reportRun: 0 };
+  let state = {
+    status: 'starting',
+    report: null,
+    reportRun: 0,
+    npcapInstalled: hasNpcap(),
+    npcapInstall: { status: 'idle', message: '' },
+  };
   let run = 0;
   let worker;
   let startupTimer;
@@ -47,6 +54,7 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
   let details;
   let bossDetails, unknownDetails, lastBossSummary;
   let backend, traffic;
+  let installingNpcap = false;
   let disposed = false;
 
   function publish(patch) {
@@ -54,6 +62,26 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('battle-reports-state', state);
     return state;
   }
+
+  function hotSwitchToNpcap(message) {
+    const installed = hasNpcap();
+    if (!installed) return publish({ npcapInstalled: false });
+    const wasPaused = state.status === 'paused';
+    stop();
+    publish({
+      npcapInstalled: true,
+      npcapInstall: { status: 'installed', message: message || 'Npcap 已安装，已自动切换至驱动采集通道。' },
+    });
+    if (!wasPaused) start();
+    return state;
+  }
+
+  const onWindowFocus = () => {
+    if (!disposed && !installingNpcap && !state.npcapInstalled && hasNpcap()) {
+      hotSwitchToNpcap('检测到 Npcap 已就绪，已自动切换至驱动采集通道。');
+    }
+  };
+  mainWindow.on('focus', onWindowFocus);
 
   function stop() {
     const previous = worker;
@@ -207,7 +235,12 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
     }
   });
   const handlers = {
-    'battle-reports-get': () => state,
+    'battle-reports-get': () => {
+      if (!state.npcapInstalled && hasNpcap()) {
+        return hotSwitchToNpcap('检测到 Npcap 已就绪，已自动切换至驱动采集通道。');
+      }
+      return state;
+    },
     'battle-reports-diagnostics': showDiagnostics,
     'battle-reports-enable': (enabled) => {
       if (typeof enabled !== 'boolean') throw new Error('Invalid capture request');
@@ -215,6 +248,49 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
       if (enabled) return start();
       stop();
       return publish({ status: 'paused' });
+    },
+    'battle-reports-install-npcap': async () => {
+      if (installingNpcap) return state;
+      if (hasNpcap()) return hotSwitchToNpcap('Npcap 已安装，已切换至驱动采集通道。');
+      installingNpcap = true;
+      try {
+        const result = await runNpcapInstaller({
+          onProgress: (installStatus, message) => {
+            publish({ npcapInstall: { status: installStatus, message } });
+          },
+        });
+        if (result.installed) {
+          return hotSwitchToNpcap(
+            `Npcap ${result.version ? `v${result.version} ` : ''}安装完成，已自动切换至驱动采集通道（无需重启软件）。`,
+          );
+        }
+        return publish({
+          npcapInstalled: false,
+          npcapInstall: { status: 'error', message: '安装向导已关闭但未检测到 Npcap，请确认完成安装或重试。' },
+        });
+      } catch (err) {
+        return publish({
+          npcapInstalled: hasNpcap(),
+          npcapInstall: {
+            status: 'error',
+            message: err instanceof Error ? err.message : '拉起 Npcap 官方安装失败，请点击打开官网手动安装。',
+          },
+        });
+      } finally {
+        installingNpcap = false;
+      }
+    },
+    'battle-reports-recheck-npcap': () => {
+      if (hasNpcap()) return hotSwitchToNpcap('检测到 Npcap 已安装，已自动切换至驱动采集通道。');
+      return publish({
+        npcapInstalled: false,
+        npcapInstall: { status: 'idle', message: '尚未检测到 Npcap（wpcap.dll）。' },
+      });
+    },
+    'battle-reports-open-npcap': async () => {
+      const { shell } = require('electron');
+      await shell.openExternal(NPCAP_DOWNLOAD_PAGE);
+      return true;
     },
   };
   for (const [channel, handle] of Object.entries(handlers)) {
@@ -229,6 +305,7 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
     start,
     dispose() {
       disposed = true;
+      if (!mainWindow.isDestroyed()) mainWindow.removeListener('focus', onWindowFocus);
       stop();
       for (const channel of Object.keys(handlers)) ipcMain.removeHandler(channel);
     },

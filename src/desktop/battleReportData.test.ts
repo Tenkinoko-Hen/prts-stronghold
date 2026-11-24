@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BossDamage } from './BattleReportPanels';
+import { NpcapSetupBanner } from './NpcapSetupBanner';
 import { RoundMatrix, WaveDetails } from './BattleReportRounds';
 import { SpawnPreview } from './BattleReportSpawns';
 import { laneKinds, laneLeaks, roundOutcome } from './battleRoundOutcome';
@@ -594,4 +595,24 @@ test('all 26 V3_1 bond IDs map cleanly to covenant names and defeated Boss round
   }));
   assert.match(bossHtml, /R14 · 已击败/);
   assert.match(bossHtml, /已击败首领/);
+
+  const mockApi = {
+    getState: async () => ({ status: 'listening' as const, report: null, reportRun: 1 }),
+    showDiagnostics: async () => {},
+    setEnabled: async () => ({ status: 'listening' as const, report: null, reportRun: 1 }),
+    installNpcap: async () => ({ status: 'listening' as const, report: null, reportRun: 1 }),
+    openNpcapPage: async () => true,
+    recheckNpcap: async () => ({ status: 'listening' as const, report: null, reportRun: 1 }),
+    onState: () => () => {},
+  };
+  const missingHtml = renderToStaticMarkup(createElement(NpcapSetupBanner, {
+    api: mockApi, npcapInstalled: false, installState: { status: 'idle' },
+  }));
+  assert.match(missingHtml, /未检测到 Npcap 驱动/);
+  assert.match(missingHtml, /一键安装 Npcap/);
+  const doneHtml = renderToStaticMarkup(createElement(NpcapSetupBanner, {
+    api: mockApi, npcapInstalled: true, installState: { status: 'installed', message: '已自动切换至驱动采集通道' },
+  }));
+  assert.match(doneHtml, /Npcap 驱动通道已就绪/);
+  assert.doesNotMatch(doneHtml, /一键安装 Npcap/);
 });

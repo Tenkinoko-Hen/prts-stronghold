@@ -4,6 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails } = require('../electron/battle-reports.cjs');
+const { pickLatestNpcapInstaller } = require('../electron/npcap-installer.cjs');
 
 const loadProduct = (id) =>
   JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'products', id, 'product.json'), 'utf8'));
@@ -47,4 +48,20 @@ test('product manifests isolate stronghold and pure telemetry branding, IDs and 
   assert.equal(telemetry.desktop.workerKind, 'report-only');
   assert.ok(!telemetry.publicAssetDirs.desktop.includes('community'));
   assert.ok(!telemetry.publicAssetDirs.android.includes('boss-routes'));
+});
+
+test('npcap installer picker selects highest numeric version from official directory HTML', () => {
+  const html = `
+    <a href="npcap-1.9.exe">npcap-1.9.exe</a>
+    <a href="npcap-1.89.exe">npcap-1.89.exe</a>
+    <a href="npcap-1.100.exe">npcap-1.100.exe</a>
+    <a href="npcap-1.90.exe">npcap-1.90.exe</a>
+  `;
+  const latest = pickLatestNpcapInstaller(html);
+  assert.deepEqual(latest, {
+    version: '1.100',
+    filename: 'npcap-1.100.exe',
+    url: 'https://npcap.com/dist/npcap-1.100.exe',
+  });
+  assert.equal(pickLatestNpcapInstaller('no installers here'), null);
 });

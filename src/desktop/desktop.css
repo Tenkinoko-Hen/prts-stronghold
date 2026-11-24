@@ -45,6 +45,15 @@
 .d-scan-actions button { padding:10px 6px; }
 .d-scan-status { background:#091419; border-radius:6px; padding:8px 10px; color:#aebfc7; font-size:12px; line-height:1.5; }
 .d-scan-status p + p, .d-scan-status button { margin-top:5px; }
+.d-npcap-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 14px; padding:10px 12px; border:1px solid #6b541f; border-radius:8px; background:#1a160c; color:#e9eef5; font-size:12px; line-height:1.5; }
+.d-npcap-banner.is-done { border-color:#1f5e4d; background:#0d211c; }
+.d-npcap-banner.is-compact { margin:0; padding:9px 10px; flex-direction:column; align-items:stretch; gap:8px; }
+.d-npcap-copy { flex:1; min-width:220px; display:flex; flex-direction:column; gap:3px; }
+.d-npcap-banner.is-compact .d-npcap-copy { min-width:0; }
+.d-npcap-copy strong { display:inline-flex; align-items:center; gap:5px; color:#f6c54a; font-size:12.5px; }
+.d-npcap-banner.is-done .d-npcap-copy strong { color:#58dec7; }
+.d-npcap-copy p { margin:0; color:#cbd5e1; font-size:12px; }
+.d-npcap-actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; flex-shrink:0; }
 .d-scan-float { position:fixed; bottom:16px; right:16px; z-index:35; width:min(340px, calc(100% - 32px)); border:1px solid var(--border-hairline); box-shadow:0 8px 24px #0007; }
 .d-scan-float > .d-icon { float:right; margin:0 0 4px 8px; }
 .desktop-app:has(.desktop-page:not([hidden]) .d-picker) > .d-scan-float { display:none; }

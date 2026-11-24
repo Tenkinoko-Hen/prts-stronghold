@@ -9,8 +9,9 @@ import { RoundMatrix } from './BattleReportRounds';
 import { SpawnPreview } from './BattleReportSpawns';
 import { BattleReportRoster } from './BattleReportRoster';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
+import { NpcapSetupBanner } from './NpcapSetupBanner';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
-import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type ReportFeed,
+import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type NpcapInstallState, type ReportFeed,
   type ReportRecords, type ReportSeat, type ReportStatus } from './battleReports';
 import { PRODUCT_BRAND } from '../brand/productBrand';
 import './battleReports.css';
@@ -39,6 +40,8 @@ export default function BattleReportsView({ api, visible, sourceLabel }: { api: 
   const [tab, setTab] = useState<Tab>('rounds');
   const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
   const [status, setStatus] = useState<ReportStatus>('starting');
+  const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(undefined);
+  const [npcapInstall, setNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
   const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
   const [bossFilter, setBossFilter] = useState<{ key: string; round: 14 | 15 } | null>(null);
   const [exported, setExported] = useState<ReportSummary | null>(null);
@@ -52,6 +55,8 @@ export default function BattleReportsView({ api, visible, sourceLabel }: { api: 
     let latestRun: number | undefined;
     const accept = (feed: ReportFeed) => {
       setStatus(feed.status);
+      if (feed.npcapInstalled !== undefined) setNpcapInstalled(feed.npcapInstalled);
+      if (feed.npcapInstall !== undefined) setNpcapInstall(feed.npcapInstall);
       if (latest === feed.report && latestRun === feed.reportRun) return;
       latest = feed.report;
       latestRun = feed.reportRun;
@@ -125,6 +130,7 @@ export default function BattleReportsView({ api, visible, sourceLabel }: { api: 
           onSetSelfSeat={value => { setRecords(previous => setReportSelfSeat(previous, entry.key, value)); setPerspective(null); }} />}
       </header>
       {!sourceLabel && ['failed', 'permission', 'unavailable', 'incompatible'].includes(status) && <p className="d-warning d-report-error">{STATUS[status]}</p>}
+      {!sourceLabel && <NpcapSetupBanner api={api} npcapInstalled={npcapInstalled} installState={npcapInstall} />}
       <nav className="d-report-tabs" aria-label="战报视图">
         {(Object.keys(TABS) as Tab[]).map(name => { const Icon = TAB_ICONS[name]; return <button key={name} type="button"
           aria-pressed={tab === name} onClick={() => openTab(name)}><Icon size={15} />{name === 'rounds' && replay ? '战报回放' : TABS[name]}</button>; })}

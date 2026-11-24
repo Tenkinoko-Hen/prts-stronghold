@@ -120,11 +120,13 @@ FunctionEnd`);
       win: {
         target: ['portable'],
         icon: `products/${productId}/electron/app.ico`,
+        requestedExecutionLevel: 'requireAdministrator',
         signAndEditExecutable: true,
         signExecutable: false,
       },
       portable: {
         artifactName: desktop.artifactName,
+        requestExecutionLevel: 'admin',
       },
     }, null, 2));
 

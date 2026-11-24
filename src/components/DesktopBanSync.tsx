@@ -1,6 +1,7 @@
 import React from 'react';
 import { Radio, RefreshCw } from 'lucide-react';
 import type { BattleBanSyncState } from '../desktop/battleBanSync';
+import { NpcapSetupBanner } from '../desktop/NpcapSetupBanner';
 
 interface Props {
   sync: BattleBanSyncState;
@@ -50,6 +51,12 @@ export function DesktopBanSync({ sync, currentBanned, onResync }: Props) {
           </button>
         )}
       </div>
+      <NpcapSetupBanner
+        api={window.electronAPI?.battleReports}
+        npcapInstalled={sync.npcapInstalled}
+        installState={sync.npcapInstall}
+        compact
+      />
     </section>
   );
 }

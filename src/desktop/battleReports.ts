@@ -1,15 +1,24 @@
 import { mergeBossRound, REPORT_SEATS, type BattleReport, type BattleRound } from './battleReportData';
 
 export type ReportStatus = 'starting' | 'waiting' | 'connecting' | 'listening' | 'permission' | 'paused' | 'unavailable' | 'incompatible' | 'failed';
+export interface NpcapInstallState {
+  status: 'idle' | 'downloading' | 'installing' | 'installed' | 'error';
+  message?: string;
+}
 export interface ReportFeed {
   status: ReportStatus;
   report: unknown;
   reportRun: number;
+  npcapInstalled?: boolean;
+  npcapInstall?: NpcapInstallState;
 }
 export interface BattleReportsBridge {
   getState(): Promise<ReportFeed>;
   showDiagnostics(): Promise<void>;
   setEnabled(enabled: boolean): Promise<ReportFeed>;
+  installNpcap?(): Promise<ReportFeed>;
+  recheckNpcap?(): Promise<ReportFeed>;
+  openNpcapPage?(): Promise<boolean>;
   onState(callback: (state: ReportFeed) => void): () => void;
 }
 

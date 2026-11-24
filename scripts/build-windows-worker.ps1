@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
-    $productConfig = Get-Content -LiteralPath "products/$Product/product.json" -Raw | ConvertFrom-Json
+    $productConfig = Get-Content -LiteralPath "products/$Product/product.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     $venv = Join-Path $root 'work/windows-worker/venv/Scripts/python.exe'
     if (-not (Test-Path -LiteralPath $venv)) {
         & $Python -m venv 'work/windows-worker/venv'

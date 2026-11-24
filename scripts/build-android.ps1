@@ -25,13 +25,21 @@ function Invoke-BuildTool([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "构建失败：$Executable，退出码 $LASTEXITCODE" }
 }
+function Get-RelPath([string]$BaseDir, [string]$FullPath) {
+    $normBase = [IO.Path]::GetFullPath($BaseDir).TrimEnd('\', '/') + '\'
+    $normFull = [IO.Path]::GetFullPath($FullPath)
+    if ($normFull.StartsWith($normBase, [StringComparison]::OrdinalIgnoreCase)) {
+        return $normFull.Substring($normBase.Length).Replace('\', '/')
+    }
+    return ([Uri]$normBase).MakeRelativeUri([Uri]$normFull).ToString()
+}
 
 $previousJavaHome = $env:JAVA_HOME
 $previousProduct = $env:PRTS_PRODUCT
 $env:JAVA_HOME = $JavaHome
 Push-Location $projectRoot
 try {
-    $productConfig = Get-Content -LiteralPath "products\$Product\product.json" -Raw | ConvertFrom-Json
+    $productConfig = Get-Content -LiteralPath "products\$Product\product.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     $androidConfig = $productConfig.android
     $targetVersion = if ($Version) { $Version } else { [string]$androidConfig.versionName }
     $targetVersionCode = if ($VersionCode -gt 0) { $VersionCode } else { [int]$androidConfig.versionCode }
@@ -45,7 +53,7 @@ try {
     if (!(Test-Path -LiteralPath "$WebRoot\index.html") -or !(Test-Path -LiteralPath "$WebRoot\product.json")) {
         throw "缺少手机网页构建产物：$WebRoot"
     }
-    $builtProduct = Get-Content -LiteralPath "$WebRoot\product.json" -Raw | ConvertFrom-Json
+    $builtProduct = Get-Content -LiteralPath "$WebRoot\product.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($builtProduct.id -ne $Product) {
         throw "手机网页产物属于 $($builtProduct.id)，与目标产品 $Product 不一致。"
     }
@@ -102,12 +110,12 @@ try {
         # aapt2 的 Windows 文件枚举不能正确处理中文头像名，使用 UTF-8 ZIP 条目打包资产。
         foreach ($asset in Get-ChildItem -LiteralPath $WebRoot -File -Recurse) {
             if ($asset.Name -eq 'product.json') { continue }
-            $entryName = 'assets/' + [IO.Path]::GetRelativePath((Join-Path $projectRoot $WebRoot), $asset.FullName).Replace('\', '/')
+            $entryName = 'assets/' + (Get-RelPath (Join-Path $projectRoot $WebRoot) $asset.FullName)
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $asset.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
         }
         foreach ($assetRoot in $ocr.Assets) {
             foreach ($asset in Get-ChildItem -LiteralPath $assetRoot -File -Recurse) {
-                $entryName = 'assets/' + [IO.Path]::GetRelativePath($assetRoot, $asset.FullName).Replace('\', '/')
+                $entryName = 'assets/' + (Get-RelPath $assetRoot $asset.FullName)
                 if ($archive.GetEntry($entryName)) { throw "重复模型资产：$entryName" }
                 # OCR 模型允许 AssetManager.openFd / mmap 读取，必须以 STORED 条目打包。
                 [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $asset.FullName, $entryName, [IO.Compression.CompressionLevel]::NoCompression) | Out-Null
@@ -115,7 +123,7 @@ try {
         }
         foreach ($nativeRoot in $ocr.Native) {
             foreach ($library in Get-ChildItem -LiteralPath $nativeRoot -Filter '*.so' -File -Recurse) {
-                $entryName = 'lib/' + [IO.Path]::GetRelativePath($nativeRoot, $library.FullName).Replace('\', '/')
+                $entryName = 'lib/' + (Get-RelPath $nativeRoot $library.FullName)
                 if ($archive.GetEntry($entryName)) { throw "重复原生库：$entryName" }
                 [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $library.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
             }
@@ -140,7 +148,7 @@ try {
         $propagation = [Security.AccessControl.PropagationFlags]::None
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', $inherit, $propagation, 'Allow'))
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-18'), 'FullControl', $inherit, $propagation, 'Allow'))
-        [IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($signingRoot), $acl)
+        Set-Acl -LiteralPath $signingRoot -AclObject $acl
         $passwordFile = Join-Path $signingRoot $signing.passwordFile
         if (!(Test-Path -LiteralPath $passwordFile)) {
             if (Test-Path -LiteralPath $keyStore) { throw '签名密码文件缺失，请恢复原签名资料；不会覆盖已有私钥。' }

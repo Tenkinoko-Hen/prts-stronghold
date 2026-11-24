@@ -74,16 +74,16 @@ npm run build
 
 - **重建 Python 战报 Worker**（仅在首次换机出包，或修改了 `electron/battle-report*.py` / `electron/worker-requirements.txt` 时需要；需 64 位 Python 3.12+）：
   ```powershell
-  pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-worker.ps1 -Product stronghold
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-worker.ps1 -Product stronghold
   ```
 - **打包 Windows 便携 EXE**（如仅改前端/Electron 且 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe` 已存在，可加 `-SkipWebBuild` 复用刚建好的 `dist/`）：
   ```powershell
   $env:PRTS_WINDOWS_OUTPUT = 'release'
-  pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Product stronghold -Version 1.4.21
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Product stronghold -Version 1.4.21
   ```
 - **打包 Android APK**（签名密钥保存在各机本地且不入 Git；若新电脑无本地密钥，可仅编 debug 包或自行拷贝本机 `.jks` 与密码文件）：
   ```powershell
-  pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1 -Product stronghold
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1 -Product stronghold -Version 1.4.12 -VersionCode 11
   ```
 
 ### 3.4 换机收工前（离开当前电脑前执行）
@@ -96,17 +96,20 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-24
-- **同步基线提交**：`5d8ed98` 之后（详见 `git log -n 5 --oneline`）
+- **最后更新**：2026-11-24（双端打包完成）
+- **同步基线提交**：`0cd606c` 之后（详见 `git log -n 5 --oneline`）
 - **最近一次本地实测出包版本**：
-  - Windows 便携包：`PRTS-Stronghold-1.4.20-Windows-x64.exe`（注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`）
-  - Android 攻略随行包：`PRTS-Stronghold-1.4.11-Android.apk`
+  - Windows 便携包：`PRTS-Stronghold-1.4.21-Windows-x64.exe`（239 MB，SHA-256: `274061cd…55cf7d`）
+  - Android 攻略随行包：`PRTS-Stronghold-1.4.12-Android.apk`（147 MB，SHA-256: `d70ca824…bb1a6f`）
+  - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`
 - **近期已完成里程碑**：
-  - 修复实局 4 项体验问题（`5d8ed98`）：新增开局 `1/3 确认本局信息` 画面 Windows 原生 OCR 禁选自动轮询与 `Ctrl+Shift+F8` 手动兜底；回合列表无论兜住与否均展示怪种、`≈0` 统一显示「无漏」、已获昵称全量展示去席位前缀；去除全局累计 `*` 星号；首领面板改为单行头像+六维属性条，点击弹窗查看详情与路线。
-  - 落地 S1–S3 自研洁净室算力遥测（DPS）与单/多人全态战报体系：
-    - **S1（协议深挖 + 算力核心 + 全态 UI）**：深挖卫戍 `300/302/306/341` 四席编队、策略家、本数与首领攻击干员映射；自研 `combat_meter.py` 定点数逻辑时钟三口径速率（`激战秒伤 1.5s` / `5s 脉冲` / `在场均伤`）、四维伤害+治疗、召唤物归主与场地装置隔离；`02 实时战报` 新增终末地风「算力遥测」矩阵、单人关卡/单人规程自适应视图及战报导出算力表。
-    - **S2（PC 零注入只读采样 + 穿透微缩条）**：实现 `pc_inspector.py` 纯 `ReadProcessMemory` 双重逻辑帧/实例守卫只读采样器（零注入、不触发环境异常、自动校验客户端构建指纹并优雅降级）；新增桌面端 Electron 置顶鼠标穿透微缩条（`Ctrl+Shift+F10`）。
-    - **S3（免 Root 安卓三态穿透条 + PC↔安卓无线副屏）**：`OverlayService.java` 升级三态并支持 `FLAG_NOT_TOUCHABLE` 100% 触控穿透微缩战术条；新增局域网 4 位配对码直连同步（PC `lan-sync.cjs` ↔ Android `LanSyncBridge.java`，同步 Ban、回合、实时 DPS 与 15 回合战报直存手机相册），补齐移动端结算快捷解析与实效秒伤/护甲抛光推演器。
+  - 双端打包 v1.4.21 / v1.4.12，同步安卓战报图形化条形图与相册长图导出；修复 PowerShell 5.1 兼容问题（`-Encoding UTF8`、`Get-RelPath` 替代 `GetRelativePath`、`Set-Acl` 替代 `FileSystemAclExtensions`）。
+  - 重构回合详情与累计面板为图形化兜底条形图（`0cd606c`）：「↗ 我给谁兜」「↙ 谁给我兜」高对比度比例能量条 + 四席双微轨卡片（漏红/兜青），怪种折叠沉底。
+  - 修复实局 4 项体验问题（`5d8ed98`）：开局画面 Windows 原生 OCR 禁选自动轮询与手动兜底；回合列表无论兜住与否展示怪种、`≈0` 显示「无漏」、全量昵称去席位前缀；去除全局累计 `*` 星号；首领面板改为单行头像+属性条。
+  - 落地 S1–S3 自研洁净室算力遥测（DPS）与单/多人全态战报体系（`6b11d64`）：
+    - **S1**：三口径速率、四维伤害+治疗、召唤物归主与场地装置隔离、算力遥测矩阵与战报导出。
+    - **S2**：`pc_inspector.py` 零注入 `ReadProcessMemory` 只读采样 + 桌面穿透微缩条。
+    - **S3**：免 Root 安卓三态穿透条 + PC↔安卓局域网配对副屏 + 移动端结算/推演器。
 - **下一步待验收 / 可继续事项**：
-  - [ ] 打包最新 Windows 便携版与双产品 Android APK 进行实机联调，核验开局 OCR 兜底、卫戍单/多人战报、穿透微缩条与手机无线副屏体验。
+  - [ ] 实机联调双端包：核验开局 OCR 兜底、卫戍单/多人战报、穿透微缩条与手机无线副屏体验。
   - [ ] 如需进一步开启 Windows 官服客户端特定构建版本的只读内存偏移表，可在 `pc_inspector.py` 的 `layout_registry` 按构建指纹注册对应 `FieldLayout`。

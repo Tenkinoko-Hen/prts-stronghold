@@ -12,7 +12,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $previousProduct = $env:PRTS_PRODUCT
 Push-Location $root
 try {
-    $productConfig = Get-Content -LiteralPath "products/$Product/product.json" -Raw | ConvertFrom-Json
+    $productConfig = Get-Content -LiteralPath "products/$Product/product.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $SkipWebBuild) {
         $env:PRTS_PRODUCT = $Product
         & npm.cmd run lint
@@ -37,7 +37,7 @@ try {
         if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "缺少打包输入：$file" }
     }
 
-    $builtProduct = Get-Content -LiteralPath 'dist/product.json' -Raw | ConvertFrom-Json
+    $builtProduct = Get-Content -LiteralPath 'dist/product.json' -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($builtProduct.id -ne $Product) {
         throw "dist/ 构建产物属于 $($builtProduct.id)，与目标产品 $Product 不一致；请勿跳过前端构建或重新设置 PRTS_PRODUCT=$Product。"
     }

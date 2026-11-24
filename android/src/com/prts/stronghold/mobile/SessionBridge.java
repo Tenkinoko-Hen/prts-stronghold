@@ -135,6 +135,10 @@ final class SessionBridge {
                     .put("started", now)
                     .put("current", Math.max(1, Math.min(15, incoming.optInt("current", 1))))
                     .put("rounds", sanitizedRounds);
+                JSONArray iHelped = incoming.optJSONArray("iHelped");
+                if (iHelped != null && iHelped.length() <= 8) fresh.put("iHelped", iHelped);
+                JSONArray helpedMe = incoming.optJSONArray("helpedMe");
+                if (helpedMe != null && helpedMe.length() <= 8) fresh.put("helpedMe", helpedMe);
                 if (incoming.optBoolean("ended", false)) {
                     fresh.put("ended", now);
                 }

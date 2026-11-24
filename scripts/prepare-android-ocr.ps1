@@ -5,13 +5,13 @@ function Prepare-OcrDependencies(
     [string]$BuildTools,
     [string]$ManifestSource = 'android\AndroidManifest.xml'
 ) {
-    $lock = Get-Content -LiteralPath 'android\ocr-dependencies.json' -Raw | ConvertFrom-Json
+    $lock = Get-Content -LiteralPath 'android\ocr-dependencies.json' -Raw -Encoding UTF8 | ConvertFrom-Json
     $jars = [Collections.Generic.List[string]]::new()
     $resources = [Collections.Generic.List[string]]::new()
     $packages = [Collections.Generic.List[string]]::new()
     $assetRoots = [Collections.Generic.List[string]]::new()
     $nativeRoots = [Collections.Generic.List[string]]::new()
-    [xml]$manifest = Get-Content -LiteralPath $ManifestSource -Raw
+    [xml]$manifest = Get-Content -LiteralPath $ManifestSource -Raw -Encoding UTF8
     $androidNs = 'http://schemas.android.com/apk/res/android'
     $toolsNs = 'http://schemas.android.com/tools'
     $application = $manifest.manifest.application
@@ -31,7 +31,7 @@ function Prepare-OcrDependencies(
         if (Test-Path -LiteralPath "$unpacked\libs") {
             foreach ($jar in Get-ChildItem -LiteralPath "$unpacked\libs" -Filter '*.jar') { $jars.Add($jar.FullName) }
         }
-        [xml]$library = Get-Content -LiteralPath "$unpacked\AndroidManifest.xml" -Raw
+        [xml]$library = Get-Content -LiteralPath "$unpacked\AndroidManifest.xml" -Raw -Encoding UTF8
         if ($library.manifest.package) { $packages.Add($library.manifest.package) }
         if (Test-Path -LiteralPath "$unpacked\res") {
             $resource = "$unpacked\compiled.zip"

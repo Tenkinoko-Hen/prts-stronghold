@@ -30,6 +30,15 @@ export function sumMetrics(values: LaneMetric[]): LaneMetric {
       : known.some(metric => metric.quality) || known.length < values.length ? 'partial' : undefined };
 }
 
+export function isSkippedAssistInferred(row: BattleRound, report: BattleReport) {
+  return report.current === null && (row.selfLeaks ?? 0) > 0
+    && (!row.assistsStatus || row.assistsStatus === 'unknown')
+    && (!row.uncoveredStatus || row.uncoveredStatus === 'unknown')
+    && row.assistPairs.length === 0 && row.unattributedAssists === 0
+    && report.rounds.some(other => other.number > row.number)
+    && report.rounds.some(other => other.assistsStatus === 'reported');
+}
+
 export function roundOutcome(row: BattleRound, report: BattleReport, seat: number | null, live: boolean): Outcome {
   const complete = row.leaksStatus === 'reported' && REPORT_SEATS.every(id => row.leaks[id] !== undefined)
     && !(row.selfLeaks !== null && (report.self === null ? row.selfLeaks > Math.max(...Object.values(row.leaks))
@@ -64,6 +73,10 @@ export function roundOutcome(row: BattleRound, report: BattleReport, seat: numbe
   if (hasLeaks && exactRemaining && !remaining)
     return { tone: 'covered', label: '全队已兜住', note: '全队漏怪已全额兜住' };
   if (remaining) return { tone: 'unknown', label: `未兜住 ${count(remaining)}`, note: '已记录队伍漏怪，兜底情况未确认' };
+  if (isSkippedAssistInferred(row, report)) {
+    return { tone: 'breached', label: '未进协防 · 本路净漏',
+      note: '本路漏怪且本回合未触发协防结算（全队均漏时会跳过协防；安装 Npcap 获取下行场景后可确认全队扣血）' };
+  }
   return { tone: 'unknown', label: row.assistsStatus === 'skipped' ? '未进入协防'
     : row.phase === 'assist' ? '结算未确认' : hasLeaks ? '兜底未确认' : '战况未确认',
   note: covered ? `已记录 ${covered} 只协防击杀，完整结果未确认` : '暂无完整队伍结算' };

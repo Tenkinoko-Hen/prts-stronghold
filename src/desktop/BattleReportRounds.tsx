@@ -84,6 +84,7 @@ export function WaveDetails({ report, round, seat = report.self, live = false }:
   const covered = rows.flatMap(row => row.assistPairs.filter(pair => pair.owner === seat && pair.killer !== seat)).reduce((n, pair) => n + pair.count, 0);
   const hpCost = seat === null ? undefined : active?.hpCosts[seat];
   const preview = active ? visibleSpawnRows(report, 'plan', String(active.number), '') : [];
+  const hasCombatDetail = Boolean(leaks?.value || covered > 0 || rows.some(row => row.assistPairs.length > 0 || row.unattributedAssists > 0));
   return <section className="d-wave-detail" aria-label={active ? `R${active.number} 回合详情` : '全部回合累计'}>
     <header className="d-report-heading"><h2>{active ? <><b>R{active.number}</b> 回合详情</> : '全部回合累计'}</h2>
       <details className="d-metric-key"><summary><Info size={13} />口径说明</summary>
@@ -93,28 +94,36 @@ export function WaveDetails({ report, round, seat = report.self, live = false }:
           {seat === null && <><br />席位未确认，仅显示采到的本机漏怪。</>}</div>
       </details>
     </header>
-    <div className="d-detail-summary">
-      {outcome && <><OutcomeLabel {...outcome} /><span>{outcome.note}</span></>}
-      {active ? <small>{reportPhase(active)}</small> : <span>{rows.length} 个回合 · 已知数据合计</span>}
+    <div className="d-detail-focus" data-tone={outcome?.tone ?? 'unknown'}>
+      <div className="d-detail-summary">
+        {outcome && <><OutcomeLabel {...outcome} /><span>{outcome.note}</span></>}
+        {active ? <small>{reportPhase(active)}</small> : <span>{rows.length} 个回合 · 已知数据合计</span>}
+      </div>
+      <div className="d-detail-numbers">
+        <span>本路漏怪 <strong>{leaks ? `${metricText(leaks)} 只` : '—'}</strong></span>
+        {covered > 0 && <span>本路被兜住 <strong data-tone="covered">{covered} 只</strong></span>}
+        {!!hpCost && <span>扣血 <strong data-tone="breached">{hpCost} 点</strong></span>}
+      </div>
     </div>
-    <div className="d-detail-numbers"><span>本路漏怪 <strong>{leaks ? `${metricText(leaks)} 只` : '—'}</strong></span>
-      {covered > 0 && <span>本路被兜住 <strong>{covered} 只</strong></span>}{!!hpCost && <span>扣血 {hpCost} 点</span>}</div>
-    <div className="d-report-seat-cards">{REPORT_SEATS.map(id => {
-      const lane = rows.map(row => roundMetrics(row, id, report.self));
-      const help = total(lane.map(metrics => metrics[1]));
-      return <div key={id} data-self={id === seat}>{seatName(id, report, seat)}
-        <div className="d-seat-stats"><span>漏怪<LeakValue metric={total(lane.map(metrics => metrics[0]))} /></span>
-          <span>协防<b data-tone={help?.value ? 'covered' : 'unknown'}>{help?.value ? '+' : ''}{metricText(help)}</b></span></div>
-      </div>;
-    })}</div>
     <AssistLinks rows={rows} report={report} seat={seat} />
     {!!leaks?.value && <div className="d-detail-enemies"><h3>本路漏怪</h3><EnemyResult metric={leaks}
       enemies={groupEnemyOutcomes(rows.flatMap(row => laneKinds(row, report, seat)))} pending={outcome?.tone === 'assisting'} /></div>}
     {covered > 0 && <div className="d-detail-enemies"><h3>本路被兜住</h3><EnemyResult metric={{ value: covered }}
       enemies={groupEnemyOutcomes(rows.flatMap(row => row.assistEnemies.filter(enemy => enemy.owner === seat && enemy.killer !== seat)))} /></div>}
+    <div className="d-report-seat-cards">{REPORT_SEATS.map(id => {
+      const lane = rows.map(row => roundMetrics(row, id, report.self));
+      const seatLeak = total(lane.map(metrics => metrics[0]));
+      const help = total(lane.map(metrics => metrics[1]));
+      const empty = !seatLeak && !help;
+      return <div key={id} data-self={id === seat} data-empty={empty}>{seatName(id, report, seat)}
+        <div className="d-seat-stats"><span>漏怪<LeakValue metric={seatLeak} /></span>
+          <span>协防<b data-tone={help?.value ? 'covered' : 'unknown'}>{help?.value ? '+' : ''}{metricText(help)}</b></span></div>
+      </div>;
+    })}</div>
     {active && <><WaveTable row={active} report={report} seat={seat} />
-      <details className="d-round-fold"><summary>本回合出怪预告 <small>R{active.number}</small></summary>
-        {preview.length ? <SpawnRounds rows={preview} current={live ? confirmedCurrent(report) : null} /> : <p className="d-muted">未收到本回合预告。</p>}
+      <details className="d-round-fold" open={!hasCombatDetail && preview.length > 0}>
+        <summary>本回合出怪预告 <small>R{active.number}</small></summary>
+        {preview.length ? <SpawnRounds rows={preview} current={live ? confirmedCurrent(report) : null} byBatch /> : <p className="d-muted">未收到本回合预告。</p>}
       </details></>}
   </section>;
 }
@@ -151,24 +160,50 @@ export function RoundMatrix({ report, seat = report?.self ?? null, live = false,
   } else {
     const detail = selection != null && <div id={detailId} className={compact ? 'd-detail-inline' : 'd-detail-side'}>
       <WaveDetails key={selection} report={report} round={selection} seat={seat} live={live} /></div>;
+    const laneAllLeaks = rows.map(row => laneLeaks(row, report, seat));
+    const totalLeaks = sumMetrics(laneAllLeaks);
+    const totalHelps = seat !== null ? sumMetrics(rows.map(row => roundMetrics(row, seat, report.self)[1])) : undefined;
+    const confirmedLane = laneAllLeaks.filter(m => m && !m.quality);
+    const cleanLane = confirmedLane.filter(m => m!.value === 0).length;
+    const reversed = [...rows].reverse();
+    const missingRounds: number[] = [];
+    const present = new Set(rows.map(row => row.number));
+    const highest = rows.at(-1)?.number ?? 0;
+    for (let n = 1; n < highest; n++) if (!present.has(n)) missingRounds.push(n);
+
     content = <div className="d-report-workbench" data-compact={compact}>
       <section className="d-round-master" aria-label="回合记录">
         <header className="d-report-heading"><h2>回合记录 <small>{rows.length}</small></h2>
           <button className="d-button d-small" type="button" onClick={() => choose('all')} aria-pressed={selection === 'all'}>全局累计</button></header>
+        <div className="d-match-strip" aria-label="当前视角汇总">
+          <div><span>{seat !== null ? `${seat}号累计漏怪` : '本机累计漏怪'}</span><b data-tone={totalLeaks?.value ? 'breached' : 'clean'}>{totalLeaks ? `${totalLeaks.value} 只` : '—'}</b></div>
+          <div><span>{seat !== null ? `${seat}号累计协防` : '累计协防'}</span><b data-tone={totalHelps?.value ? 'covered' : 'unknown'}>{totalHelps ? `${totalHelps.value} 只` : '—'}</b></div>
+          <div><span>本席零漏</span><b data-tone={cleanLane ? 'clean' : 'unknown'}>{confirmedLane.length ? `${cleanLane}/${confirmedLane.length}` : '—'}</b></div>
+          {missingRounds.length > 0 && <div><span>缺失回合</span><b data-tone="unknown">{missingRounds.map(n => `R${n}`).join(' ')}</b></div>}
+        </div>
         {compact && selection === 'all' && detail}
         <div className="d-round-grid d-round-cols" aria-hidden="true"><span>回合</span><span>本路漏怪</span><span>协防结果</span><span>怪种</span><span /></div>
-        {[...rows].reverse().map(row => {
+        {reversed.map((row, idx) => {
           const outcome = roundOutcome(row, report, seat, live);
           const leaks = laneLeaks(row, report, seat);
           const kinds = laneKinds(row, report, seat);
           const description = kinds.map(enemy => `${enemy.name} ×${enemy.count}`).join('、');
+          const nextOlder = reversed[idx + 1]?.number;
+          const gaps: number[] = [];
+          if (nextOlder !== undefined && row.number - nextOlder > 1) {
+            for (let missing = row.number - 1; missing > nextOlder; missing--) gaps.push(missing);
+          }
           return <Fragment key={row.number}><button type="button" className="d-round-grid d-round-row" data-current={row.number === current}
             aria-expanded={selection === row.number} aria-controls={selection === row.number ? detailId : undefined}
             aria-label={`查看 R${row.number} 回合详情，${outcome.label}，本路漏怪 ${metricText(leaks)}${description ? `，${description}` : ''}`} onClick={() => choose(row.number)}>
             <b className="d-round-number">R{row.number}</b><LeakValue metric={leaks} /><OutcomeLabel {...outcome} />
             <EnemyResult enemies={kinds} metric={leaks} pending={outcome.tone === 'assisting'} />
             {compact && selection === row.number ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>{compact && selection === row.number && detail}</Fragment>;
+          </button>{compact && selection === row.number && detail}
+            {gaps.map(missing => <div key={`gap-${missing}`} className="d-round-gap" title="本回合未收到自路或协防结算包">
+              <b className="d-round-number">R{missing}</b><span>未采到本回合结算（可能全队无漏或瞬时丢包）</span>
+            </div>)}
+          </Fragment>;
         })}
       </section>
       {!compact && detail}

@@ -372,7 +372,7 @@ test('HP damage is explicit and fills missing enemy names from the own lane', ()
     wave_power: { confirmed_players: [3], rows: [{ player: 3, planned: 10, leaked: 10, power: 3000,
       enemies: [{ id: typedEnemy.id, name: typedEnemy.name, planned: 10, leaked: 10, unit_power: 300 }] }] } } }, 3);
   const html = detailView(data, 10);
-  assert.match(html, /扣血 10 点/);
+  assert.match(html, /扣血.*10 点/);
   assert.doesNotMatch(html, /无人兜底/);
   assert.match(html, /本路漏怪.*合成漏怪.*×10/);
   assert.doesNotMatch(html, /尚未记录协防/);
@@ -386,7 +386,7 @@ test('HP damage is explicit and fills missing enemy names from the own lane', ()
   const partial = report(3, 10, { 10: { self_leaks: 2, hp_costs: { 3: 2 }, assist_pairs: [{ killer: 2, owner: 3, count: 1 }] } }, 3);
   const partialHtml = detailView(partial, 10);
   assert.match(partialHtml, /本路被兜住.*1 只/);
-  assert.match(partialHtml, /扣血 2 点/);
+  assert.match(partialHtml, /扣血.*2 点/);
   assert.doesNotMatch(partialHtml, /无人兜底/);
 });
 
@@ -524,4 +524,40 @@ test('opening renders only received R1 to R3 forecasts and the actual count of a
   assert.match(html, /R1 波次.*R2 波次.*R3 波次/);
   assert.doesNotMatch(html, /R4 波次|回合详情/);
   assert.match(html, /查看全部 15 回合预告/);
+});
+
+test('spawn preview defaults to merged summary for multi-round views and shows per-batch for single rounds', () => {
+  const data = readBattleReport({
+    players: {}, rounds: {},
+    spawn_plan: [
+      { round: 5, action: 0, enemy_id: 'enemy_a', name: '宿主士兵', count: 5 },
+      { round: 5, action: 1, enemy_id: 'enemy_a', name: '宿主士兵', count: 5 },
+      { round: 6, action: 0, enemy_id: 'enemy_b', name: '寻险水手', count: 4 },
+    ],
+  });
+  const merged = renderToStaticMarkup(createElement(SpawnPreview, { report: data, filter: 'all', onSelect: () => {} }));
+  assert.match(merged, /按怪汇总/);
+  assert.match(merged, /2 批/);
+  assert.match(merged, /宿主士兵.*×10/);
+  assert.doesNotMatch(merged, /第 1 批/);
+  const single = renderToStaticMarkup(createElement(SpawnPreview, { report: data, filter: 5, onSelect: () => {} }));
+  assert.match(single, /第 1 批.*宿主士兵.*×5.*第 2 批.*宿主士兵.*×5/);
+});
+
+test('round matrix shows match strip, missing round gaps, inferred skipped-assist outcome and Npcap Boss hint', () => {
+  const data = report(1, 0, {
+    3: { self_leaks: 0, assists_status: 'reported', uncovered_status: 'reported' },
+    5: { self_leaks: 1, assists_status: 'reported', assist_pairs: [{ killer: 2, owner: 4, count: 1 }], uncovered_status: 'reported' },
+    8: { self_leaks: 1, assists_status: 'unknown', uncovered_status: 'unknown' },
+    9: { self_leaks: 2, assists_status: 'reported', assist_pairs: [{ killer: 2, owner: 4, count: 2 }], uncovered_status: 'reported' },
+  }, 4);
+  const html = renderToStaticMarkup(createElement(RoundMatrix, { report: data, live: true, onPreview: () => {} }));
+  assert.match(html, /d-match-strip/);
+  assert.match(html, /未记录.*R4/);
+  assert.match(html, /d-round-gap.*R4.*未采到本回合结算/);
+  assert.match(html, /未进协防 · 本路净漏/);
+  const bossHtml = renderToStaticMarkup(createElement(BossDamage, {
+    report: data, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.match(bossHtml, /Npcap/);
 });

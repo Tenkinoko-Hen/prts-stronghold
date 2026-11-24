@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Crown, ScanFace } from 'lucide-react';
+import { Crown, Layers, List, ScanFace } from 'lucide-react';
 import { confirmedCurrent, resolvePreviewRound, visibleSpawnRows, type BattleReport, type PreviewRoundFilter } from './battleReportData';
 import { ReportRoundTimeline } from './ReportRoundTimeline';
 import portraits from './enemyPortraits.json';
@@ -20,7 +20,20 @@ export function EnemyLabel({ id, name, count }: { id?: string; name?: string; co
 }
 
 type Spawn = BattleReport['preview'][number];
-export function SpawnRounds({ rows, current }: { rows: Spawn[]; current?: number | null }) {
+function summarizeRoundEnemies(batches: Map<string, Spawn[]>) {
+  const merged = new Map<string, { id: string; name: string; count: number | null; boss?: true }>();
+  for (const enemies of batches.values()) {
+    for (const enemy of enemies) {
+      const key = `${enemy.boss ? '1' : '0'}:${enemy.id}:${enemy.name}`;
+      const existing = merged.get(key);
+      if (!existing) merged.set(key, { id: enemy.id, name: enemy.name, count: enemy.count, boss: enemy.boss });
+      else if (enemy.count !== null) existing.count = (existing.count ?? 0) + enemy.count;
+    }
+  }
+  return [...merged.values()].sort((a, b) => Number(Boolean(b.boss)) - Number(Boolean(a.boss)));
+}
+
+export function SpawnRounds({ rows, current, byBatch = false }: { rows: Spawn[]; current?: number | null; byBatch?: boolean }) {
   const groups = new Map<number, Map<string, Spawn[]>>();
   for (const enemy of rows) {
     const batches = groups.get(enemy.round) ?? new Map<string, Spawn[]>();
@@ -30,15 +43,23 @@ export function SpawnRounds({ rows, current }: { rows: Spawn[]; current?: number
     batches.set(batch, enemies);
     groups.set(enemy.round, batches);
   }
-  return <div className="d-spawn-rounds">{[...groups].map(([number, batches]) => {
+  return <div className="d-spawn-rounds" data-mode={byBatch ? 'batch' : 'summary'}>{[...groups].map(([number, batches]) => {
     const keyWave = [9, 12, 15].includes(number) || batches.has('领袖');
+    const summary = byBatch ? null : summarizeRoundEnemies(batches);
     return <section key={number} className="d-spawn-round" aria-label={`R${number} 波次`} data-key-wave={keyWave}>
-      <header><b>R{number}</b>{number === current && <small>当前</small>}
-        {keyWave && <span className="d-key-wave"><Crown size={12} />首领波次</span>}</header>
-      <div className="d-spawn-batches">{[...batches].map(([batch, enemies]) => <div className="d-spawn-batch" key={batch}>
+      <header>
+        <div className="d-spawn-round-id"><b>R{number}</b>{number === current && <small>当前</small>}</div>
+        <div className="d-spawn-round-tags">
+          {keyWave && <span className="d-key-wave"><Crown size={11} />首领波次</span>}
+          <span className="d-spawn-meta">{batches.size} 批</span>
+        </div>
+      </header>
+      {summary ? <div className="d-spawn-summary">{summary.map(enemy =>
+        <EnemyLabel key={`${enemy.id}-${enemy.name}`} id={enemy.id} name={enemy.name} count={enemy.count} />
+      )}</div> : <div className="d-spawn-batches">{[...batches].map(([batch, enemies]) => <div className="d-spawn-batch" key={batch}>
         <small>{batch}</small>{enemies.map((enemy, i) => <EnemyLabel key={`${enemy.id}-${i}`}
           id={enemy.id} name={enemy.name} count={enemy.count} />)}
-      </div>)}</div>
+      </div>)}</div>}
     </section>;
   })}</div>;
 }
@@ -47,6 +68,7 @@ export function SpawnPreview({ report, filter, onSelect, live = false }: {
   report?: BattleReport; filter: PreviewRoundFilter; onSelect(round: PreviewRoundFilter): void; live?: boolean;
 }) {
   const [kind, setKind] = useState<'plan' | 'battle'>('plan');
+  const [layout, setLayout] = useState<'summary' | 'batch'>('summary');
   const plans = report?.preview.some(row => row.kind === 'plan');
   const hasBattle = report?.preview.some(row => row.kind === 'battle');
   const battle = hasBattle && (!plans || kind === 'battle');
@@ -56,9 +78,16 @@ export function SpawnPreview({ report, filter, onSelect, live = false }: {
   const rows = all.filter(row => typeof filter === 'number' ? row.round === filter
     : filter === 'all' || first === 'all' || row.round >= first);
   const rounds = [...new Set(all.map(row => row.round))];
+  const byBatch = typeof filter === 'number' || layout === 'batch';
   return <div className="d-spawn-view">
     <header className="d-report-heading"><h2>出怪预告</h2>
       <div className="d-spawn-controls">
+        {typeof filter !== 'number' && <div className="d-spawn-mode" role="group" aria-label="显示方式">
+          <button type="button" className="d-button d-small" aria-pressed={!byBatch} onClick={() => setLayout('summary')}>
+            <Layers size={13} />按怪汇总</button>
+          <button type="button" className="d-button d-small" aria-pressed={byBatch} onClick={() => setLayout('batch')}>
+            <List size={13} />按批次</button>
+        </div>}
         {plans && hasBattle && <select aria-label="编排来源" value={battle ? 'battle' : 'plan'}
           onChange={e => { const next = e.target.value as 'plan' | 'battle'; setKind(next);
             if (typeof filter === 'number' && !report?.preview.some(row => row.kind === next && row.round === filter)) onSelect('all');
@@ -68,7 +97,7 @@ export function SpawnPreview({ report, filter, onSelect, live = false }: {
     </header>
     {filter === 'follow' && report && !current && <p className="d-muted">{first === 'all'
       ? '当前回合未确认，先显示全部预告' : `当前回合未确认，暂从 R${first} 显示`}</p>}
-    {rows.length ? <SpawnRounds rows={rows} current={live ? current : null} /> : <p className="d-muted d-report-note">
+    {rows.length ? <SpawnRounds rows={rows} current={live ? current : null} byBatch={byBatch} /> : <p className="d-muted d-report-note">
       {typeof filter === 'number' ? `R${filter} ` : ''}暂无{battle ? '实战编排' : '出怪预告'}。</p>}
   </div>;
 }

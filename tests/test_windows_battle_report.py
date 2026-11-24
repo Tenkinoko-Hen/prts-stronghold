@@ -84,6 +84,10 @@ def boss_ratio_frame(seat=1, tier=7):
     return frame(366, struct.pack('!BhHH', seat, tier, 0, 0))
 
 
+def uplink_boss_hit_frame(damage, seat=4, attacker=42, source=1, seq=1):
+    return frame(341, struct.pack('!iBHB', seq, seat, 1, 3) + wire_ints((damage, attacker, source, seat)))
+
+
 def escaped(owner, instance, token=False, enemy_id='synthetic_enemy'):
     return struct.pack('!B', owner) + wire_text(enemy_id) + struct.pack('!iBB', instance, token, 0)
 
@@ -241,6 +245,15 @@ class AnalyzerTests(unittest.TestCase):
         report = self.analyzer.snapshot()
         self.assertEqual(report['capture']['match'], first)
         self.assertEqual(set(report['rounds']), {3})
+
+    def test_forward_rejoin_settlement_keeps_missing_mid_match_round(self):
+        self.event(OLD, settle(3, 0), 311)
+        self.event(OLD, settle(4, 2, rejoin=True), 311)
+        self.event(OLD, settle(2, 5, rejoin=True), 311)
+        self.event(OLD, settle(5, 3), 311)
+        report = self.analyzer.snapshot()
+        self.assertEqual(set(report['rounds']), {3, 4, 5})
+        self.assertEqual([report['rounds'][n]['self_leaks'] for n in (3, 4, 5)], [0, 2, 3])
 
     def test_preparation_confirms_round_but_does_not_fabricate_phase(self):
         self.event(OLD, phase(1, seed=20), 300)
@@ -575,6 +588,20 @@ class BossCaptureTests(unittest.TestCase):
         self.assertEqual(report['rounds'][14]['boss_damage'], {1: 2000})
         self.assertEqual(report['rounds'][14]['boss_percent'], {})
         self.assertEqual(self.analyzer.boss_events['unassigned'], 1)
+
+    def test_uplink_boss_hits_after_r13_infer_r14_without_downlink(self):
+        early = settle_frame(12, 1) + uplink_boss_hit_frame(1000, seat=4, seq=1)
+        self.analyzer.accept(segment(OLD, 2, early), 'up')
+        self.assertNotIn(14, self.analyzer.snapshot()['rounds'])
+        late = settle_frame(13, 3) + uplink_boss_hit_frame(1200, seat=4, seq=2) + uplink_boss_hit_frame(1300, seat=4, seq=3)
+        self.analyzer.accept(segment(OLD, 2 + len(early), late), 'up')
+        report = self.analyzer.snapshot()
+        self.assertEqual(report['capture']['self'], 4)
+        row = report['rounds'][14]
+        self.assertEqual(row['boss_round_basis'], 'inferred')
+        self.assertEqual(row['boss_uplink'], {4: 2500})
+        self.assertEqual(row['boss_uplink_rows'], [{'player': 4, 'attacker': 42, 'source': 1, 'damage': 2500}])
+        self.assertEqual(self.analyzer.boss_events['inferred'], 2)
 
 
 class LiveCaptureTests(unittest.TestCase):

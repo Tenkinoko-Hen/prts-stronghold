@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileDown, Hourglass, ImageDown } from 'lucide-react';
 import { DesktopDialog } from './DesktopDialog';
 import { renderBattleReportHtml } from './battleReportDocument';
 import { renderBattleReportPng } from './battleReportImage';
+import { buildReportPortraitStrip, type ExportPortraitStrip } from './battleReportPortraits';
 import type { ReportSummary } from './battleReportExport';
 import documentCss from './battleReportDocument.css?raw';
 
@@ -16,7 +17,15 @@ function download(blob: Blob, filename: string) {
 }
 
 export function BattleReportExportDialog({ report, onClose }: { report: ReportSummary; onClose(): void }) {
-  const html = useMemo(() => renderBattleReportHtml(report, documentCss), [report]);
+  const [portraits, setPortraits] = useState<ExportPortraitStrip | undefined>();
+  useEffect(() => {
+    let active = true;
+    void buildReportPortraitStrip(report)
+      .then(strip => { if (active) setPortraits(strip); })
+      .catch(() => { if (active) setPortraits(undefined); });
+    return () => { active = false; };
+  }, [report]);
+  const html = useMemo(() => renderBattleReportHtml(report, documentCss, undefined, portraits), [report, portraits]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const saveImage = async () => {

@@ -268,9 +268,14 @@ def segments(
                         packet = receiver.recv(65535)
                     except BlockingIOError:
                         break
+                    deferred_before = len(deferred)
                     result = read_segment(packet, connections, defer_game)
                     if result is None:
-                        break  # 新连接先交回外层刷表，不用后续包挤掉待确认的首包。
+                        if len(deferred) > deferred_before:
+                            break  # 命中疑似新游戏连接的首包时交回外层刷表；无关系统包继续排空。
+                        if stopped.is_set() or not select([receiver], [], [], 0)[0]:
+                            break
+                        continue
                     yield result
                     if stopped.is_set() or not select([receiver], [], [], 0)[0]:
                         break

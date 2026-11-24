@@ -353,6 +353,26 @@ class Analyzer:
             return number, True
         return None, False
 
+    @classmethod
+    def _boss_uplink_context(cls, conn: Connection, steps) -> tuple[int | None, bool]:
+        confirmed = cls._boss_context(conn)
+        if confirmed is not None:
+            return confirmed, False
+        if conn.last_phase is not None:
+            return None, False
+        has_hit = any(
+            op == 3 and len(params) == 4 and 0 < params[0] < 300000 and 1 <= params[3] <= 4
+            for _, actions in steps
+            for op, params in actions
+        )
+        if not has_hit:
+            return None, False
+        latest_round = max(conn.model.rounds, default=0)
+        if latest_round in (13, 14):
+            conn.model.observe_round(14)
+            return 14, True
+        return None, False
+
     def _apply(self, conn, event):
         kind = event['kind']
         if kind == 'spawn_plan':
@@ -499,7 +519,8 @@ class Analyzer:
                     uplink = event.get('uplink', False)
                     if uplink and event.get('uid') in range(1, 5):
                             conn.player = event['uid']
-                    boss_round, inferred = self._boss_data_context(conn) if not uplink else (self._boss_context(conn), False)
+                    boss_round, inferred = (self._boss_uplink_context(conn, event['steps'])
+                                            if uplink else self._boss_data_context(conn))
                     # Official Boss results can be tied to the nearest confirmed Boss round.
                     rank = not uplink and any(op == 20 and params and len(params) % 3 == 0
                                               for _, actions in event['steps'] for op, params in actions)
@@ -510,6 +531,8 @@ class Analyzer:
                         elif inferred:
                             self.boss_events['inferred'] += 1
                     if boss_round is not None:
+                        if uplink and inferred:
+                            self.boss_events['inferred'] += 1
                         for seq, actions in event['steps']:
                             model.add_step(boss_round, seq, actions, uplink=uplink, uid=event.get('uid'), inferred=inferred)
                 if kind == 'help_kill':
@@ -517,8 +540,11 @@ class Analyzer:
                 if kind == 'help_finish':
                     model.set_help_finish(event['round'], event['kills'], from_rejoin=event['from_rejoin'],
                                           escaped_enemies=event.get('escaped_enemies', ()))
-                if kind == 'self_finish' and not event['from_rejoin'] and 1 <= event['round'] <= 15:
-                        number = event['round']
+                if kind == 'self_finish' and 1 <= event['round'] <= 15:
+                    number = event['round']
+                    forward_rejoin = (event['from_rejoin'] and bool(model.rounds)
+                                      and number > max(model.rounds) and number not in conn.local_finishes)
+                    if not event['from_rejoin'] or forward_rejoin:
                         model.observe_round(number)
                         conn.local_finishes[number] = event
                 if conn.player is None and conn.local_finishes and kind in ('phase', 'self_finish'):

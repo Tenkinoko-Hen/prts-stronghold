@@ -173,8 +173,12 @@ function installBattleReports({ app, mainWindow, ipcMain, product }) {
     }
     if (backend) detail += `\n采集通道：${{ winsock: 'Windows 内置', npcap: 'Npcap', mixed: 'Npcap / Windows 内置' }[backend]}`;
     if (traffic) detail += `\n游戏连接字节：下行 ${traffic[0]} / 上行 ${traffic[1]}`;
-    if (details && !details[0] && !details[1] && (details[3] || details[4]))
-      detail += '\n目前只取得结算，尚未收到可用的服务端场景。';
+    if (details && !details[0] && !details[1] && (details[3] || details[4])) {
+      detail += '\n目前只取得客户端上行结算，尚未收到服务端下行场景。';
+      if (backend === 'winsock') {
+        detail += '\n提示：当前使用 Windows 内置通道，系统防火墙可能拦截入站游戏包导致缺失场景、队友昵称与 Boss 结算；安装 Npcap 后以管理员重启本应用将自动切换驱动通道。';
+      }
+    }
     if (details && !details[0] && !details[1] && diagnostics?.[0] > 0 && traffic?.[0] === diagnostics[0])
       detail += `\n本次采集命中的 ${diagnostics[0]} 个下行数据段各只有 1 字节。已记录的本路结算仍可查阅或导出。`;
     if (bossDetails) {

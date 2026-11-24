@@ -72,6 +72,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     {!recorded && <div className="d-report-empty"><span>{data?.bossEnded ? `R${number} Boss 战斗阶段已结束，但未采到伤害。`
       : data?.phase === 'boss' ? `已采到 R${number} Boss 开战阶段，尚未采到伤害。`
         : `未采到 R${number} 的 Boss 战阶段或伤害。`}</span>
+      {report && !report.current && <span className="d-report-npcap-hint">当前仅收到客户端上行结算、未取得服务端下行场景（Windows 内置通道可能受防火墙拦截）。建议安装 Npcap 后以管理员身份重启应用，将自动切换驱动通道获取完整 Boss 伤害与队友昵称。</span>}
       <span>请按 Ctrl+Shift+F9 查看采集诊断，核对 Boss 结算是否入表。</span>
       <RoundPreviewLink report={report} number={number} open={onPreview} />
     </div>}

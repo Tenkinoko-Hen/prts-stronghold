@@ -41,7 +41,8 @@ test('only forecasts and preparation cannot be exported; explicit zero and attri
   assert.deepEqual(r.rounds.map(item => item.number), [2, 3]);
   assert.equal(r.clean, 0);
   assert.equal(exportCount(r.net), '—');
-  assert.equal(exportCount(r.players[1].leaks), '2*');
+  assert.equal(exportCount(r.players[1].leaks), '2');
+  assert.equal(r.hasPartial, true);
   assert.equal(r.rounds[1].enemies[0].kinds[0].name, '重装防御者');
 });
 
@@ -79,7 +80,8 @@ test('explicitly skipped assistance keeps the known net leaks without claiming t
     self_leaks: 2, leaks: { 3: 2 }, leaks_status: 'observed', assists_status: 'skipped',
     skipped_hp_costs: { 3: 2 }, uncovered_leaks: {}, uncovered_status: 'unknown',
   } } });
-  assert.deepEqual(values(r), ['2*', '0', '≥2']);
+  assert.deepEqual(values(r), ['2', '0', '≥2']);
+  assert.equal(r.hasPartial, true);
   assert.equal(r.rounds[0].label, '未进入协防');
 });
 
@@ -104,9 +106,10 @@ test('Boss shares use team damage, not boss HP, and never double count independe
   assert.equal(exportCount(r.bosses[0].total), '10,000');
   assert.deepEqual(r.bosses[0].seats.map(s => s.shareText), ['45%', '25%', '20%', '10%']);
   assert.equal(r.bosses[0].inferred, true);
-  assert.equal(exportCount(r.bosses[1].total), '500*');
+  assert.equal(exportCount(r.bosses[1].total), '500');
   assert.equal(r.bosses[1].seats[1].share, null);
-  assert.equal(exportCount(r.players[1].boss), '3,000*');
+  assert.equal(exportCount(r.players[1].boss), '3,000');
+  assert.equal(r.hasPartial, true);
   assert.equal(exportCount(r.bosses[1].seats[3].damage), '—');
 });
 
@@ -141,7 +144,7 @@ test('enemy tags merge identical known IDs and counts without erasing unequal or
   }), '');
   const same = render(3, 3, 'a', 'a');
   assert.equal(same.match(/class="kinds"/g)?.length, 1);
-  assert.match(same, />同名敌人<b>×3/);
+  assert.match(same, /><span>同名敌人<\/span><b>×3/);
   const unequal = render(11, 3, 'a', 'a');
   assert.match(unequal, /部分兜住/);
   assert.match(unequal, /<small>漏怪<\/small>.*?×11/);
@@ -159,7 +162,7 @@ test('Boss provenance is grouped without converting estimates or HP percentages 
   assert.match(mixed, /服务器结算：1、2号 · 榜单明细：3号 · 本端上报：4号/);
   assert.match(mixed, /占 Boss 血量：1号 9%/);
   assert.match(mixed, /回合归属待校正/);
-  for (const n of ['5,100*', '4,500', '0', '500*', '100*']) assert.ok(mixed.includes(`<strong>${n}</strong>`));
+  for (const n of ['5,100', '4,500', '0', '500', '100']) assert.ok(mixed.includes(`<strong>${n}</strong>`));
   assert.equal(mixed.match(/class="share">—/g)?.length, 4);
 });
 
@@ -173,9 +176,9 @@ test('the document keeps text literal, all links, enemy ranks and deterministic 
   assert.match(html, /<footer>PRTS Stronghold · 卫戍协议战术终端<\/footer>/);
   assert.match(html, /&lt;b title=&quot;昵称&quot;&gt;A\|B&lt;\/b&gt;&amp;/);
   assert.doesNotMatch(html, /<b title="昵称">|另有队友间兜底/);
-  assert.match(html, /class="enemy boss">鼠王<b>×1/);
-  assert.match(html, /class="enemy elite">重装防御者<b>×3/);
-  assert.match(html, /content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"/);
+  assert.match(html, /class="enemy boss"><span>鼠王<\/span><b>×1/);
+  assert.match(html, /class="enemy elite"><span>重装防御者<\/span><b>×3/);
+  assert.match(html, /content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"/);
   assert.match(html, /@media print/);
   assert.doesNotMatch(html, /<script\b|<link\b|\bsrc=|https?:\/\//i);
   for (const link of r.rounds[8].links) assert.ok(html.includes(link));
@@ -187,4 +190,54 @@ test('the document keeps text literal, all links, enemy ranks and deterministic 
   assert.match(telemetryHtml, /<footer>卫戍战报仪 · Stronghold Telemetry<\/footer>/);
   assert.doesNotMatch(telemetryHtml, /PRTS Stronghold/);
   assert.equal(STRONGHOLD_REPORT_BRAND.exportPrefix, 'PRTS战报');
+});
+
+test('embedded portraits render inline sprite icons, omit empty Boss column and collapse teammate assist kinds', () => {
+  const r = summary({
+    capture: { self: 4 }, players: {},
+    rounds: {
+      2: {
+        leaks: { 1: 2, 2: 0, 3: 0, 4: 0 }, leaks_status: 'reported', self_leaks: 0,
+        assists_status: 'reported', assists_others: { 3: 2 },
+        assist_pairs: [{ killer: 3, owner: 1, count: 2 }],
+        assist_enemies: [{ id: 'enemy_a', name: '深池逐火战士', count: 2, killer: 3, owner: 1 }],
+        uncovered_status: 'reported', uncovered_leaks: {},
+      },
+    },
+  });
+  const html = renderBattleReportHtml(r, css, STRONGHOLD_REPORT_BRAND, {
+    dataUrl: 'data:image/png;base64,AA==', ids: ['enemy_a', 'enemy_b'],
+  });
+  assert.match(html, /class="players no-boss"/);
+  assert.doesNotMatch(html, />Boss 输出</);
+  assert.match(html, /\.enemy-ico\{[^}]*data:image\/png;base64,AA==/);
+  assert.match(html, /<i class="enemy-ico" style="background-position:0% 0" aria-hidden="true"><\/i><span>深池逐火战士<\/span><b>×2<\/b>/);
+  assert.equal(html.match(/class="kinds"/g)?.length, 1);
+  assert.doesNotMatch(html, /未记录怪种/);
+});
+
+test('uplink-only round where everyone leaked infers skipped assist and counts net leaks', () => {
+  const r = summary({
+    capture: { match: 1, round: 0, self: 4 }, players: {},
+    rounds: {
+      7: {
+        self_leaks: 1, leaks: { 4: 1 }, leaks_status: 'reported',
+        assists_status: 'reported', assists_others: { 3: 1 },
+        assist_pairs: [{ killer: 3, owner: 4, count: 1 }],
+        uncovered_status: 'reported', uncovered_leaks: {},
+      },
+      8: { self_leaks: 1, assists_status: 'unknown', uncovered_status: 'unknown' },
+      9: {
+        self_leaks: 2, leaks: { 4: 2 }, leaks_status: 'reported',
+        assists_status: 'reported', assists_others: { 2: 2 },
+        assist_pairs: [{ killer: 2, owner: 4, count: 2 }],
+        uncovered_status: 'reported', uncovered_leaks: {},
+      },
+    },
+  });
+  assert.equal(r.rounds[1].number, 8);
+  assert.equal(r.rounds[1].tone, 'breached');
+  assert.equal(r.rounds[1].label, '未进协防 · 本路净漏');
+  assert.equal(exportCount(r.rounds[1].net), '≥1');
+  assert.equal(exportCount(r.net), '≥1');
 });

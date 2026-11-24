@@ -1,6 +1,6 @@
 import { groupEnemyOutcomes, hasBossDamage, REPORT_SEATS, reportLeader, roundMetrics,
   type BattleReport, type BattleRound, type EnemyOutcome } from './battleReportData';
-import { laneKinds, roundOutcome, sumMetrics, type LaneMetric } from './battleRoundOutcome';
+import { isSkippedAssistInferred, laneKinds, roundOutcome, sumMetrics, type LaneMetric } from './battleRoundOutcome';
 import { REPORT_BRAND, type ReportBrand } from '../brand/productBrand';
 import type { ReportRecord } from './battleReports';
 
@@ -24,7 +24,7 @@ export function isCombatRound(row: BattleRound) {
 export function exportCount(metric: LaneMetric) {
   if (!metric) return '—';
   const n = digits.format(metric.value);
-  return metric.quality === 'minimum' ? `≥${n}` : metric.quality === 'estimated' ? `≈${n}` : metric.quality ? `${n}*` : n;
+  return metric.quality === 'minimum' ? `≥${n}` : metric.quality === 'estimated' ? `≈${n}` : n;
 }
 
 function enemyList(kinds: EnemyOutcome[], total: number | undefined) {
@@ -62,7 +62,9 @@ function describeRound(row: BattleRound, report: BattleReport, live: boolean) {
     const completeWave = own && confirmed && !conflict && !metric?.quality && wave.count === metric?.value
       && sum(wave.kinds.map(e => e.count)) === wave.count
       && own.every(e => wave.kinds.some(w => w.id === e.id && w.count >= e.count));
-    const kinds = own && !completeWave ? own : conflict ? [] : wave.kinds;
+    const assisted = groupEnemyOutcomes(row.assistEnemies.filter(e => e.owner === seat));
+    const baseKinds = own && !completeWave ? own : conflict ? [] : wave.kinds;
+    const kinds = baseKinds.length ? baseKinds : (!conflict && assisted.length ? assisted : []);
     const pairs = sum(row.assistPairs.filter(p => p.killer === seat && p.owner !== seat).map(p => p.count));
     return { seat, leaks: metric, kinds: enemyList(kinds, metric?.quality === 'estimated' ? undefined : metric?.value), waveCount: wave.count,
       helps: helps ?? (pairs ? { value: pairs, quality: 'minimum' as const }
@@ -75,7 +77,8 @@ function describeRound(row: BattleRound, report: BattleReport, live: boolean) {
   }
   if (report.self === null && row.selfLeaks !== null && (!gross || row.selfLeaks > gross.value))
     gross = { value: row.selfLeaks, quality: 'minimum' };
-  if (outcome.tone === 'breached' && (!gross || gross.quality)) {
+  const skippedInferred = isSkippedAssistInferred(row, report);
+  if (outcome.tone === 'breached' && !skippedInferred && (!gross || gross.quality)) {
     const minimum = sum(lanes.map(lane => Math.max(1, row.leakMinimums[lane.seat] ?? 0,
       lane.leaks && lane.leaks.quality !== 'estimated' ? lane.leaks.value : 0)));
     gross = { value: Math.max(minimum, gross?.quality === 'minimum' ? gross.value : 0), quality: 'minimum' };
@@ -84,6 +87,7 @@ function describeRound(row: BattleRound, report: BattleReport, live: boolean) {
   const tone = disputedClean ? 'unknown' : outcome.tone;
   const remaining = sum(Object.values(row.uncoveredLeaks));
   const net: LaneMetric = row.uncoveredStatus === 'reported' ? exact(remaining) : tone === 'clean' ? exact(0)
+    : skippedInferred ? { value: row.selfLeaks!, quality: 'minimum' }
     : row.assistsStatus === 'skipped' || tone === 'breached' ? gross?.quality === 'partial' ? { ...gross, quality: 'minimum' } : gross
     : remaining > 0 ? { value: remaining, quality: 'minimum' } : undefined;
   const links = row.assistPairs.map(pair => {
@@ -106,7 +110,9 @@ function describeRound(row: BattleRound, report: BattleReport, live: boolean) {
   if (unassigned.count) enemies.push({ label: '波次漏怪（席位未确认）', kinds: enemyList(unassigned.kinds, unassigned.count) });
   if (report.self === null && row.selfLeaks)
     enemies.push({ label: '本机漏怪（席位未确认）', kinds: enemyList(laneKinds(row, report, null), row.selfLeaks) });
-  return { number: row.number, tone, label: disputedClean ? '队伍战况待确认' : outcome.tone === 'unknown' ? outcome.label : outcomeLabels[outcome.tone],
+  return { number: row.number, tone,
+    label: disputedClean ? '队伍战况待确认' : skippedInferred ? '未进协防 · 本路净漏'
+      : outcome.tone === 'unknown' ? outcome.label : outcomeLabels[outcome.tone],
     lanes, gross, net, helps: sumMetrics(lanes.map(lane => lane.helps)), links, enemies: enemies.filter(group => group.kinds.length) };
 }
 
@@ -162,11 +168,15 @@ export function summarizeBattleReport(
   const allHelpsKnown = players.every(p => p.helps && !p.helps.quality);
   const safeName = entry.label.replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, '_').trim().slice(0, 80).replace(/[. ]+$/, '') || '本地对局';
   const [year, month, day, hour, minute] = parts(at);
+  const gross = sumMetrics(rounds.map(r => r.gross));
+  const helps = sumMetrics(rounds.map(r => r.helps));
+  const net = sumMetrics(rounds.map(r => r.net));
+  const hasPartial = [gross, helps, net, ...players.flatMap(p => [p.leaks, p.helps, p.boss]),
+    ...bosses.flatMap(b => [b.total, ...b.seats.map(s => s.damage)])].some(m => Boolean(m?.quality));
   return { title: '卫戍协议 · 局内详情战报', name: entry.label, start: localTime(new Date(entry.seenAt)), exported: localTime(at),
-    filename: `${brand.exportPrefix}_${safeName}_${year}${month}${day}-${hour}${minute}`, rounds, bosses,
+    filename: `${brand.exportPrefix}_${safeName}_${year}${month}${day}-${hour}${minute}`, rounds, bosses, hasPartial,
     players: players.map(p => ({ ...p, top: most > 0 && p.helps?.value === most ? (allHelpsKnown ? '协防最多' : '已记录协防最多') : '' })),
-    clean: rounds.filter(row => row.tone === 'clean').length, gross: sumMetrics(rounds.map(r => r.gross)),
-    helps: sumMetrics(rounds.map(r => r.helps)), net: sumMetrics(rounds.map(r => r.net)) };
+    clean: rounds.filter(row => row.tone === 'clean').length, gross, helps, net };
 }
 
 export type ReportSummary = ReturnType<typeof summarizeBattleReport>;

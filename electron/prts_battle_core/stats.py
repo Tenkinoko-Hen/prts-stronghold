@@ -378,7 +378,7 @@ class MatchStats:
         self.rounds[round_number].boss_ended = True
     def add_step(self, round_number: int, seq: int, actions: Iterable[StepAction], *, uplink: bool=False, uid: int | None=None, inferred: bool=False) -> None:
         data = self.rounds.get(round_number)
-        if round_number not in BOSS_ROUNDS or data is None or (uplink and data.phase != 'boss'):
+        if round_number not in BOSS_ROUNDS or data is None or (uplink and not inferred and data.phase != 'boss'):
             return None
         else:
             if uplink:
@@ -386,10 +386,14 @@ class MatchStats:
                 key = (seq, uid, hits)
                 if hits and key not in data.boss_uplink_seen:
                     data.boss_uplink_seen.add(key)
+                    recorded = False
                     for _, (damage, attacker, source, player) in hits:
-                        if 0 < damage < 300000:
-                                data.boss_uplink[player, attacker, source] += damage
-                                self.set_players({player: ''})
+                        if 0 < damage < 300000 and 1 <= player <= 4:
+                            data.boss_uplink[player, attacker, source] += damage
+                            self.set_players({player: ''})
+                            recorded = True
+                    if recorded:
+                        data.boss_round_basis = "inferred" if inferred and data.boss_round_basis != "confirmed" else "confirmed"
                 return None
             else:
                 for index, (op, params) in enumerate(actions):

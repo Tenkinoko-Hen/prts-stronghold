@@ -16,5 +16,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('battle-reports-state', listener);
       },
     },
+    covenantOcr: {
+      getState: () => ipcRenderer.invoke('covenant-ocr-get'),
+      scanWindow: () => ipcRenderer.invoke('covenant-ocr-window'),
+      scanClipboard: () => ipcRenderer.invoke('covenant-ocr-clipboard'),
+      setAutoPoll: (enabled) => ipcRenderer.invoke('covenant-ocr-auto', Boolean(enabled)),
+      reset: () => ipcRenderer.invoke('covenant-ocr-reset'),
+      onState: (callback) => {
+        const listener = (_event, state) => callback(state);
+        ipcRenderer.on('covenant-ocr-state', listener);
+        return () => ipcRenderer.removeListener('covenant-ocr-state', listener);
+      },
+    },
   } : {}),
 });

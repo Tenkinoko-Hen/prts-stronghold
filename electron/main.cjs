@@ -1,8 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, ipcMain, net, protocol, Tray, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, net, protocol, Tray, Menu } = require('electron');
 const { installBattleReports } = require('./battle-reports.cjs');
+const { installCovenantOcr } = require('./covenant-ocr.cjs');
 const { loadRuntimeProduct, brandingAssetPath } = require('./product-runtime.cjs');
 
 protocol.registerSchemesAsPrivileged([
@@ -72,6 +73,9 @@ app.whenReady().then(() => {
   const battleReports = process.platform === 'win32'
     ? installBattleReports({ app, mainWindow, ipcMain, product })
     : null;
+  const covenantOcr = process.platform === 'win32' && product.mode === 'full'
+    ? installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut })
+    : null;
 
   if (process.platform === 'win32' && desktop.useTray) {
     const showWindow = () => {
@@ -91,6 +95,7 @@ app.whenReady().then(() => {
 
   mainWindow.on('closed', () => {
     tray?.destroy();
+    covenantOcr?.dispose();
     battleReports?.dispose();
   });
   mainWindow.once('ready-to-show', () => {

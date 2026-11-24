@@ -51,6 +51,7 @@ interface Enemy {
 }
 export interface EnemyOutcome { id: string; name: string; count: number; unitPower: number | null }
 interface AssistEnemy extends EnemyOutcome { killer: number; owner: number }
+interface UncoveredEnemy extends EnemyOutcome { owner: number }
 interface WaveRow {
   seat: number | null;
   action: number | null;
@@ -84,6 +85,7 @@ export interface BattleRound {
   assistsPartial: boolean;
   assistPairs: { killer: number; owner: number; count: number }[];
   assistEnemies: AssistEnemy[];
+  uncoveredEnemies: UncoveredEnemy[];
   unattributedAssists: number;
   hpCosts: Record<number, number>;
   allPlayersLeaked: boolean;
@@ -256,6 +258,12 @@ export function readBattleReport(input: unknown): BattleReport {
         if (!enemy || killer === null || owner === null || !pairs.has(`${killer}:${owner}`)) return [];
         return [{ ...enemy, killer, owner }];
       }),
+      uncoveredEnemies: array(row.uncovered_enemies).flatMap(value => {
+        const enemy = readEnemyOutcome(value), data = object(value);
+        const owner = seat(data?.owner);
+        if (!enemy || owner === null) return [];
+        return [{ ...enemy, owner }];
+      }),
       unattributedAssists: unmatched,
       hpCosts: Object.keys(hpCosts).length ? hpCosts : skippedCosts, allPlayersLeaked: row.all_players_leaked === true,
       bossDamage: numberTable(row.boss_damage), bossPercent: numberTable(row.boss_percent), bossUplink: numberTable(row.boss_uplink),
@@ -418,7 +426,7 @@ export function roundMetrics(data: BattleRound | undefined, id: number, self?: n
   return [
     leaks !== undefined ? { value: leaks, quality: own !== null || data.leaksStatus === 'reported' ? undefined
       : data.leakMinimums[id] !== undefined ? 'minimum' : 'partial' }
-      : skipped !== undefined ? { value: Math.min(skipped, 10), quality: skipped >= 10 ? 'minimum' : 'estimated' } : undefined,
+      : skipped !== undefined ? (skipped === 0 ? { value: 0 } : { value: Math.min(skipped, 10), quality: skipped >= 10 ? 'minimum' : 'estimated' }) : undefined,
     assists === undefined ? undefined : { value: assists, quality: data.assistsPartial ? 'partial' : undefined },
     hp === undefined ? undefined : { value: hp },
     (own !== null ? directLeakPower(data) : undefined) ?? (data.bossGroups || conflicting || power === null || (power === 0 && unpriced) ? undefined

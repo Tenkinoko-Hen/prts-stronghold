@@ -445,9 +445,13 @@ class MatchStats:
                 if count > 0 and player not in data.local_leaks
             }
             uncovered_leaks = Counter()
+            uncovered_enemies = Counter()
             for enemy in data.help_escaped:
                 if help_owners.get((enemy.instance, enemy.is_token)) == enemy.owner and enemy.owner in range(1, 5):
                     uncovered_leaks[enemy.owner] += 1
+                    enemy_id = data.enemy_id(enemy.owner, enemy.instance, enemy.is_token) or enemy.enemy_id
+                    if enemy_id:
+                        uncovered_enemies[enemy.owner, enemy_id] += 1
             kills = data.help_finish if data.help_finish is not None else data.help_kills.values()
             assist = Counter((row[2] for row in kills))
             assisted_others = Counter()
@@ -496,6 +500,8 @@ class MatchStats:
                 "assist_pairs": [{"killer": killer, "owner": owner, "count": count} for (killer, owner), count in sorted(assist_pairs.items())],
                 "assist_enemies": [{"killer": killer, "owner": owner, **_enemy_outcome(enemy_id, count)}
                                    for (killer, owner, enemy_id), count in sorted(assist_enemies.items())],
+                "uncovered_enemies": [{"owner": owner, **_enemy_outcome(enemy_id, count)}
+                                      for (owner, enemy_id), count in sorted(uncovered_enemies.items())],
                 "hp_costs": hp_costs,
                 "boss_totals": dict(data.boss_totals),
                 "boss_status": "unknown",
@@ -523,13 +529,17 @@ class MatchStats:
                     for effect, enemy_id, count in enemies
                     if count
                 ]
-            if data.spawn_groups or data.spawn_preview or data.boss_spawns or data.escaped_details is not None or data.local_escaped:
+            if (data.spawn_groups or data.spawn_preview or data.boss_spawns
+                    or data.escaped_details is not None or data.local_escaped or data.help_escaped):
                 if data.escaped_details is not None:
                     escaped = data.escaped_details
                     confirmed = set(players)
-                else:
+                elif data.local_escaped:
                     escaped = tuple((enemy for entries in data.local_escaped.values() for enemy in entries))
                     confirmed = set(data.local_escaped)
+                else:
+                    escaped = data.help_escaped
+                    confirmed = set()
                 result["wave_power"] = wave_report(
                     data.spawn_groups or data.boss_spawns,
                     data.spawn_preview,

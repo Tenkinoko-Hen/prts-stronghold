@@ -8,15 +8,23 @@ const slots = new Map(portraits.ids.map((id, index) => [id, index]));
 const atlasRows = Math.ceil(portraits.ids.length / portraits.columns);
 export const batchName = (value: number | null) => value === null ? '未定位' : value < 0 ? '额外出怪' : `第 ${value + 1} 批`;
 
+export function EnemyAvatar({ id, size = 22 }: { id?: string; size?: number }) {
+  const index = id ? slots.get(id) : undefined;
+  if (index === undefined) {
+    return <span className="d-report-no-portrait" aria-hidden="true" style={{ width: size, height: size, flexBasis: size }}><ScanFace size={Math.round(size * 0.68)} /></span>;
+  }
+  return <span className="d-report-portrait" aria-hidden="true" style={{
+    width: size,
+    height: size,
+    flexBasis: size,
+    backgroundSize: `${portraits.columns * 100}% ${atlasRows * 100}%`,
+    backgroundPosition: `${(index % portraits.columns) * 100 / (portraits.columns - 1)}% ${Math.floor(index / portraits.columns) * 100 / (atlasRows - 1)}%`,
+  }} />;
+}
+
 export function EnemyLabel({ id, name, count }: { id?: string; name?: string; count?: number | null }) {
   if (!name) return <>—</>;
-  const index = id ? slots.get(id) : undefined;
-  return <span className="d-report-enemy" title={name}>{index === undefined
-    ? <span className="d-report-no-portrait" aria-hidden="true"><ScanFace size={15} /></span>
-    : <span className="d-report-portrait" aria-hidden="true" style={{
-      backgroundSize: `${portraits.columns * 100}% ${atlasRows * 100}%`,
-      backgroundPosition: `${(index % portraits.columns) * 100 / (portraits.columns - 1)}% ${Math.floor(index / portraits.columns) * 100 / (atlasRows - 1)}%`,
-    }} />}<span className="d-enemy-name">{name}</span>{count !== undefined && <strong>×{count ?? '—'}</strong>}</span>;
+  return <span className="d-report-enemy" title={name}><EnemyAvatar id={id} /><span className="d-enemy-name">{name}</span>{count !== undefined && <strong>×{count ?? '—'}</strong>}</span>;
 }
 
 type Spawn = BattleReport['preview'][number];

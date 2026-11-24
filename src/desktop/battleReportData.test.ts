@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { BossDamage } from './BattleReportPanels';
+import { BossDamage, LeaderInlineBar } from './BattleReportPanels';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
 import { RoundMatrix, WaveDetails } from './BattleReportRounds';
 import { SpawnPreview } from './BattleReportSpawns';
@@ -302,8 +302,8 @@ test('manual local seat confirmation labels my seat and assist pairs, survives s
   assert.match(roster, /2号.*队友乙.*我/);
   assert.equal((roster.match(/class="d-seat-button"/g) ?? []).length, 4);
   const matrix = detailView(named, 1);
-  assert.match(matrix, /2号.*手动确认/);
-  assert.match(matrix, /与我相关.*4号.*2号.*我.*兜底.*2 只/);
+  assert.match(matrix, /本机席位：队友乙 · 手动确认/);
+  assert.match(matrix, /与我相关.*4号.*队友乙.*我.*兜底.*2 只/);
 
   state = updateLiveReport(state, readBattleReport({ capture: { match: 9, round: 3 }, players: {}, rounds: {},
     battle_config: { mode_id: 'mode_multi_normal' } }), 1, 101);
@@ -428,7 +428,8 @@ test('round detail separates totals and round data without showing leak power', 
     4: { ...covered, self_leaks: 2, self_leak_enemies: [{ ...typedEnemy, count: 2 }] }, 5: {} }, 3);
   const view = (round: number | 'all') => detailView(data, round);
   const all = view('all');
-  assert.match(all, /全部回合累计.*本路漏怪 <strong>3\* 只/);
+  assert.match(all, /全部回合累计.*本路漏怪 <strong>3 只/);
+  assert.doesNotMatch(all, /\*/);
   assert.match(all, /合成漏怪.*×3/);
   assert.doesNotMatch(all, /战力/);
   const single = view(4);
@@ -615,4 +616,57 @@ test('all 26 V3_1 bond IDs map cleanly to covenant names and defeated Boss round
   }));
   assert.match(doneHtml, /Npcap 驱动通道已就绪/);
   assert.doesNotMatch(doneHtml, /一键安装 Npcap/);
+});
+
+test('full player IDs omit seat number prefix unless missing, zero estimate becomes clean, no asterisks in totals, and covered/uncovered enemy kinds always show', () => {
+  const data = readBattleReport({
+    capture: { match: 1, round: 4, self: 3 },
+    players: { 1: 'Shika', 2: '冰茶', 3: '乌尔比福的安水', 4: '' },
+    battle_config: { mode_id: 'mode_multi_hard', boss_id: 'enemy_9032_aclionk' },
+    rounds: {
+      1: {
+        phase: 'settle',
+        leaks: { 1: 0, 2: 7, 3: 0, 4: 0 },
+        leaks_status: 'reported',
+        self_leaks: 0,
+        assists_status: 'reported',
+        assists_others: { 1: 0, 2: 0, 3: 0, 4: 7 },
+        assist_pairs: [{ killer: 4, owner: 2, count: 7 }],
+        assist_enemies: [{ id: typedEnemy.id, name: '青瓷茶器', count: 7, killer: 4, owner: 2 }],
+        uncovered_status: 'reported',
+        uncovered_leaks: {},
+      },
+      2: {
+        phase: 'settle',
+        self_leaks: 0,
+        assists_status: 'skipped',
+        skipped_hp_costs: { 1: 0, 2: 8, 3: 0, 4: 0 },
+        uncovered_enemies: [{ id: typedEnemy.id, name: '未兜住怪', count: 2, owner: 2 }],
+      },
+      4: { phase: 'self' },
+    },
+  });
+
+  const matrixHtml = renderToStaticMarkup(createElement(RoundMatrix, { report: data, live: true, onPreview: () => {} }));
+  // R1 本路无漏但队友漏 7 只已被兜住，怪种列依然显示“青瓷茶器 ×7”
+  assert.match(matrixHtml, /青瓷茶器.*×7/);
+  // R2 未兜住的怪种同样显示
+  assert.match(matrixHtml, /未兜住怪.*×2/);
+  // 有玩家名字时直接全量显示 ID（不拼接“3号 · 乌尔比福的安水”），无名字才回退“4号”
+  assert.match(matrixHtml, /乌尔比福的安水累计漏怪/);
+  assert.doesNotMatch(matrixHtml, /3号累计漏怪|<bdi>3号<\/bdi>|· 乌尔比福的安水/);
+
+  const allHtml = detailView(data, 'all');
+  // 跳过协防且 0 扣血应判为“无漏”而非“≈0 只”，且全局累计不出现星号“*”
+  assert.doesNotMatch(allHtml, /≈0|\*/);
+  assert.match(allHtml, /4号.*冰茶.*兜底.*<b>7 只<\/b>.*青瓷茶器/);
+
+  const leader = { id: 'enemy_9032_aclionk', name: '阿利斯泰尔，帝国余晖', rounds: {
+    14: { stats: [3700000, 1889.72116, 1030, 20, 8.2, 0] as const, attendants: [] },
+  } };
+  const leaderHtml = renderToStaticMarkup(createElement(LeaderInlineBar, {
+    encounter: leader, round: 14, onOpen: () => {},
+  }));
+  assert.match(leaderHtml, /d-report-portrait/);
+  assert.match(leaderHtml, /阿利斯泰尔，帝国余晖.*3,700,000.*1,890.*1,030.*20.*8\.2s.*0.*详情与路线/);
 });

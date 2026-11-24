@@ -172,11 +172,13 @@ class Analyzer:
                 event = decode_message(msg)
             except WireError as exc:
                 if (direction == 'down' and msg.message_id == 300 and exc.roster
-                        and exc.roster.get('banned_units') and exc.scene_round in (0, 1)):
+                        and (exc.roster.get('banned_bonds') or exc.roster.get('banned_units'))
+                        and exc.scene_round in (None, 0, 1)):
+                    scene_round = exc.scene_round or 0
                     partial_event = {
                         'kind': 'phase',
-                        'round': exc.scene_round,
-                        'phase': 'loading' if exc.scene_round == 0 else 'other',
+                        'round': scene_round,
+                        'phase': 'loading' if scene_round == 0 else 'other',
                         'runtime': {},
                         'player_status': {},
                         'last_hp_cost': {},
@@ -257,7 +259,7 @@ class Analyzer:
         if event['kind'] == 'phase' and not self._identify_match(conn, event):
             return
         self._apply(conn, event)
-        if conn.serial is None and (conn.model.rounds or conn.model.spawn_plan or conn.model.battle_config):
+        if conn.serial is None and (conn.model.rounds or conn.model.spawn_plan or conn.model.battle_config or conn.model.banned_bonds):
             self.match_serial += 1
             conn.serial = self.match_serial
         if event['kind'] == 'phase' and conn.match_key is not None:

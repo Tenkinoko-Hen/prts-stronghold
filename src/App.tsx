@@ -56,12 +56,19 @@ export default function App() {
   const [banState, setBanState] = useState<BanPickState>({ bannedCovenants: [], bannedOperators: [] });
   const [matchSyncId, setMatchSyncId] = useState('');
 
-  const { sync: banSync, resync: resyncBans, reset: resetBanSync } = useBattleBanSync(value => {
-    setBanState({ bannedCovenants: value.bannedCovenants, bannedOperators: [] });
-    setSelectedCompId(META_COMPS[0].id);
-    setCurrentRound(1);
-    setAutoFollowRound(true);
-    setMatchSyncId(value.matchKey);
+  const { sync: banSync, resync: resyncBans, reset: resetBanSync, scanWindow, scanClipboard } = useBattleBanSync(value => {
+    setBanState(previous => {
+      const unchanged = previous.bannedCovenants.length === value.bannedCovenants.length
+        && value.bannedCovenants.every(name => previous.bannedCovenants.includes(name));
+      if (unchanged && previous.bannedOperators.length === 0 && matchSyncId) {
+        return previous;
+      }
+      setSelectedCompId(META_COMPS[0].id);
+      setCurrentRound(1);
+      setAutoFollowRound(true);
+      setMatchSyncId(value.matchKey);
+      return { bannedCovenants: value.bannedCovenants, bannedOperators: [] };
+    });
   });
 
   useEffect(() => {
@@ -259,6 +266,8 @@ export default function App() {
         onChangeBanState={setBanState}
         banSync={banSync}
         onResyncBans={resyncBans}
+        onScanWindow={scanWindow}
+        onScanClipboard={scanClipboard}
         onClearBans={clearBans}
         selectedCompId={selectedCompId}
         onSelectCompId={setSelectedCompId}

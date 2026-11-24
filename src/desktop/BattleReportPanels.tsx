@@ -1,11 +1,15 @@
 import type { ReactNode } from 'react';
+import { ChevronRight } from 'lucide-react';
+import type { BossEncounter } from '../data/bossEncounterData';
 import { REPORT_SEATS, hasBossDamage, type BattleReport, type BattleRound } from './battleReportData';
+import { EnemyAvatar } from './BattleReportSpawns';
 
 const PHASES: Record<string, string> = {
   loading: '载入', special_prep: '特殊准备', prep: '准备', self: '防守', assist: '协防', boss: 'Boss 战',
   settle: '结算', end: '结束', pause: '暂停', battle_wait: '等待战斗', boss_wait: '等待 Boss 战',
 };
 const numbers = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
+const leaderDigits = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
 export const formatReportNumber = (value: number | null | undefined) => value == null ? '—' : numbers.format(value);
 
 export function reportPhase(data?: BattleRound) {
@@ -17,13 +21,52 @@ export function reportPhase(data?: BattleRound) {
   return '—';
 }
 
+export function seatDisplayText(seat: number, report?: BattleReport) {
+  const id = report?.names[seat]?.trim();
+  return id || `${seat}号`;
+}
+
 export function seatName(seat: number, report?: BattleReport, perspective = report?.self) {
-  const id = report?.names[seat];
+  const id = report?.names[seat]?.trim();
   const isSelf = perspective === seat;
-  const label = `${seat}号${isSelf ? ' · 我' : ''}`;
-  return <span className={`d-report-seat d-report-seat-${seat}`} title={id ? `${id} · ${label}` : label}>
-    <bdi>{seat}号</bdi>{id && <span className="d-report-seat-name">· {id}</span>}{isSelf && <small>我</small>}
+  const fallback = `${seat}号`;
+  const title = id ? `${id}（${fallback}${isSelf ? ' · 我' : ''}）` : `${fallback}${isSelf ? ' · 我' : ''}`;
+  return <span className={`d-report-seat d-report-seat-${seat}`} title={title}>
+    {id ? <span className="d-report-seat-name">{id}</span> : <bdi>{fallback}</bdi>}{isSelf && <small>我</small>}
   </span>;
+}
+
+export function LeaderInlineBar({ encounter, round, liveHp, onOpen }: {
+  encounter: BossEncounter;
+  round: 14 | 15;
+  liveHp?: number | null;
+  onOpen(): void;
+}) {
+  const wave = encounter.rounds[round] ?? encounter.rounds[14];
+  const [hp, atk, def, res, interval, speed] = wave.stats;
+  const portraitId = round === 15 && encounter.rounds[15] ? `${encounter.id}_2` : encounter.id;
+  const displayHp = liveHp && liveHp > 0 ? liveHp : hp;
+  return (
+    <button
+      type="button"
+      className="d-report-leader"
+      onClick={onOpen}
+      aria-label={`查看 ${encounter.name} 详细属性、随从与实战路线`}
+      title="点击查看领袖详细面板、随行敌人与路线站位"
+    >
+      <EnemyAvatar id={portraitId} size={30} />
+      <strong className="d-leader-name">{encounter.name}</strong>
+      <span className="d-leader-stats">
+        <span><small>{liveHp && liveHp > 0 ? '实局血量' : '生命'}</small><b>{leaderDigits.format(displayHp)}</b></span>
+        <span><small>攻击</small><b>{leaderDigits.format(Math.round(atk))}</b></span>
+        <span><small>防御</small><b>{leaderDigits.format(def)}</b></span>
+        <span><small>法抗</small><b>{leaderDigits.format(res)}</b></span>
+        <span><small>间隔</small><b>{leaderDigits.format(interval)}s</b></span>
+        <span><small>移速</small><b>{leaderDigits.format(speed)}</b></span>
+      </span>
+      <span className="d-leader-more">详情与路线<ChevronRight size={14} /></span>
+    </button>
+  );
 }
 
 function RoundPreviewLink({ report, number, open }: { report?: BattleReport; number: number; open(round: number): void }) {

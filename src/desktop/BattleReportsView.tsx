@@ -4,7 +4,7 @@ import { BossRoutes } from '../components/BossRoutes';
 import { ImageLightboxModal } from '../components/ImageLightboxModal';
 import { DesktopDialog } from './DesktopDialog';
 import { defaultBossRound, readBattleReport, reportLeader, reportProgress, type PreviewRoundFilter } from './battleReportData';
-import { BossDamage } from './BattleReportPanels';
+import { BossDamage, LeaderInlineBar } from './BattleReportPanels';
 import { RoundMatrix } from './BattleReportRounds';
 import { SpawnPreview } from './BattleReportSpawns';
 import { BattleReportRoster } from './BattleReportRoster';
@@ -141,8 +141,9 @@ export default function BattleReportsView({ api, visible, sourceLabel }: { api: 
         {tab === 'boss' && lastLocal && <button type="button" className="d-button d-small"
           onClick={() => openRecord(lastLocal.key, 'boss')}>查看最近本地对局</button>}
         {tab === 'boss' && <BossDamage report={report} seat={seat} number={bossNumber} onRound={selectBossRound} reference={leader &&
-          <div className="d-report-leader"><strong>{leader.name}</strong><button className="d-button d-small" type="button"
-            onClick={() => { setLeaderKey(key); setLeaderImage(null); }}>领袖属性与站位</button></div>} onPreview={showPreview} />}
+          <LeaderInlineBar encounter={leader} round={bossNumber}
+            liveHp={report?.rounds.find(r => r.number === bossNumber)?.bossHp}
+            onOpen={() => { setLeaderKey(key); setLeaderImage(null); }} />} onPreview={showPreview} />}
         {tab === 'preview' && <SpawnPreview key={key} report={report} live={liveView} filter={previewRound}
           onSelect={round => setPreviewFilter({ key, round })} />}
       </div>

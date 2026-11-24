@@ -22,11 +22,32 @@ export interface BattleReportsBridge {
   onState(callback: (state: ReportFeed) => void): () => void;
 }
 
+export interface CovenantOcrState {
+  id: string;
+  status: 'idle' | 'scanning' | 'ready' | 'incomplete' | 'error';
+  source: 'none' | 'auto' | 'manual' | 'clipboard';
+  message: string;
+  complete: boolean;
+  bannedCovenants: string[];
+  seenCovenants: string[];
+  missingCovenants: string[];
+  shortcutAvailable?: boolean;
+}
+export interface CovenantOcrBridge {
+  getState(): Promise<CovenantOcrState>;
+  scanWindow(): Promise<CovenantOcrState>;
+  scanClipboard(): Promise<CovenantOcrState>;
+  setAutoPoll(enabled: boolean): Promise<CovenantOcrState>;
+  reset(): Promise<CovenantOcrState>;
+  onState(callback: (state: CovenantOcrState) => void): () => void;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
       setAlwaysOnTop(flag: boolean): Promise<boolean>;
       battleReports?: BattleReportsBridge;
+      covenantOcr?: CovenantOcrBridge;
     };
   }
 }
@@ -109,7 +130,7 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
         row = { ...row, leaks: old.leaks, leaksStatus: old.leaksStatus, leakMinimums: old.leakMinimums };
       if (missingAssist && !Object.keys(row.uncoveredLeaks).length && !['reported', 'observed'].includes(row.uncoveredStatus)
           && (Object.keys(old.uncoveredLeaks).length || ['reported', 'observed'].includes(old.uncoveredStatus)))
-        row = { ...row, uncoveredLeaks: old.uncoveredLeaks, uncoveredStatus: old.uncoveredStatus };
+        row = { ...row, uncoveredLeaks: old.uncoveredLeaks, uncoveredStatus: old.uncoveredStatus, uncoveredEnemies: old.uncoveredEnemies };
       if (missingAssist && !Object.keys(row.hpCosts).length && Object.keys(old.hpCosts).length)
         row = { ...row, hpCosts: old.hpCosts, skippedCosts: old.skippedCosts };
       if (missingAssist && missingLeaks && old.allPlayersLeaked) row = { ...row, allPlayersLeaked: true };

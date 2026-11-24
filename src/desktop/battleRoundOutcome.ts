@@ -1,4 +1,5 @@
-import { confirmedCurrent, ownLeakKinds, REPORT_SEATS, roundMetrics, type BattleReport, type BattleRound } from './battleReportData';
+import { confirmedCurrent, groupEnemyOutcomes, ownLeakKinds, REPORT_SEATS, roundMetrics,
+  type BattleReport, type BattleRound, type EnemyOutcome } from './battleReportData';
 
 export type LaneMetric = ReturnType<typeof roundMetrics>[number];
 export type OutcomeTone = 'clean' | 'assisting' | 'covered' | 'partial' | 'breached' | 'unknown';
@@ -10,15 +11,59 @@ export function laneLeaks(row: BattleRound, report: BattleReport, seat: number |
 }
 
 export function laneKinds(row: BattleRound, report: BattleReport, seat: number | null) {
-  if (seat === report.self) return ownLeakKinds(row, report);
-  // 换视角不改变采集身份；其他席位只能使用本席明确归属的战斗编排。
-  return ownLeakKinds({ ...row, selfLeaks: null, selfLeakEnemies: null }, { ...report, self: seat });
+  const base = seat === report.self
+    ? ownLeakKinds(row, report)
+    : ownLeakKinds({ ...row, selfLeaks: null, selfLeakEnemies: null }, { ...report, self: seat });
+  if (base.length > 0 || seat === null) return base;
+  const conflict = seat === report.self && row.selfLeaks !== null && row.leaks[seat] !== undefined && row.selfLeaks !== row.leaks[seat];
+  if (conflict) return [];
+  // 无论该席位漏怪被队友兜住（assistEnemies）还是未兜住（uncoveredEnemies），均回填已识别怪种。
+  const fromOutcome = groupEnemyOutcomes([
+    ...row.assistEnemies.filter(e => e.owner === seat),
+    ...row.uncoveredEnemies.filter(e => e.owner === seat),
+  ]);
+  if (!fromOutcome.length) return [];
+  const metric = laneLeaks(row, report, seat);
+  const count = fromOutcome.reduce((sum, e) => sum + e.count, 0);
+  return metric === undefined || metric.quality === 'estimated' || count <= metric.value ? fromOutcome : [];
+}
+
+export function roundTeamKinds(row: BattleRound, report: BattleReport, excludeSeat: number | null = null): EnemyOutcome[] {
+  const seatKinds = REPORT_SEATS.filter(id => id !== excludeSeat).flatMap(id => laneKinds(row, report, id));
+  const unassignedWave = row.rows
+    .filter(w => row.bossGroups || w.seat === null)
+    .flatMap(w => w.enemies.flatMap(e => e.id && e.leaked ? [{ id: e.id, name: e.name, count: e.leaked, unitPower: e.power }] : []));
+  return groupEnemyOutcomes([...seatKinds, ...unassignedWave]);
+}
+
+export function roundDisplayEnemies(row: BattleRound, report: BattleReport, seat: number | null): {
+  enemies: EnemyOutcome[];
+  metric: LaneMetric;
+} {
+  const ownMetric = laneLeaks(row, report, seat);
+  if (ownMetric?.value) {
+    return { enemies: laneKinds(row, report, seat), metric: ownMetric };
+  }
+  const teamKinds = roundTeamKinds(row, report, null);
+  const seatMetrics = REPORT_SEATS.map(id => roundMetrics(row, id, report.self)[0]);
+  const teamLeaks = sumMetrics(seatMetrics);
+  const assistTotal = row.assistPairs.reduce((s, p) => s + p.count, row.unattributedAssists);
+  const uncoveredTotal = Object.values(row.uncoveredLeaks).reduce((a, b) => a + b, 0);
+  const knownCount = teamKinds.reduce((s, e) => s + e.count, 0);
+  const fallbackCount = Math.max(teamLeaks?.value ?? 0, assistTotal + uncoveredTotal, knownCount);
+  if (fallbackCount > 0) {
+    const metric: LaneMetric = teamLeaks && teamLeaks.value >= knownCount
+      ? teamLeaks
+      : { value: fallbackCount, quality: row.leaksStatus === 'reported' ? undefined : 'minimum' };
+    return { enemies: teamKinds, metric };
+  }
+  return { enemies: [], metric: ownMetric };
 }
 
 export function metricText(metric: LaneMetric) {
   if (!metric) return '—';
   return metric.quality === 'minimum' ? `≥${metric.value}` : metric.quality === 'estimated' ? `≈${metric.value}`
-    : `${metric.value}${metric.quality ? '*' : ''}`;
+    : String(metric.value);
 }
 
 export function sumMetrics(values: LaneMetric[]): LaneMetric {

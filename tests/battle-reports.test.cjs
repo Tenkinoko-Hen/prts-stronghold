@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const { diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails } = require('../electron/battle-reports.cjs');
 const { pickLatestNpcapInstaller } = require('../electron/npcap-installer.cjs');
+const { classifyBadgeBgra, evaluateOcrLines, extractCovenantBoxesFromLine, looksLikeCovenantScreen } = require('../electron/covenant-ocr.cjs');
 
 const loadProduct = (id) =>
   JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'products', id, 'product.json'), 'utf8'));
@@ -64,4 +65,56 @@ test('npcap installer picker selects highest numeric version from official direc
     url: 'https://npcap.com/dist/npcap-1.100.exe',
   });
   assert.equal(pickLatestNpcapInstaller('no installers here'), null);
+});
+
+test('covenant OCR line extractor and BGRA badge classifier distinguish available and banned covenants', () => {
+  const width = 500;
+  const height = 300;
+  const bgra = Buffer.alloc(width * height * 4, 0);
+  // Fill dark slate background
+  for (let i = 0; i < width * height; i++) {
+    bgra[i * 4] = 24;
+    bgra[i * 4 + 1] = 22;
+    bgra[i * 4 + 2] = 18;
+    bgra[i * 4 + 3] = 255;
+  }
+  const paintCircle = (cx, cy, r, b, g, red) => {
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(height - 1, Math.ceil(cy + r)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(width - 1, Math.ceil(cx + r)); x++) {
+        if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) {
+          const off = (y * width + x) * 4;
+          bgra[off] = b;
+          bgra[off + 1] = g;
+          bgra[off + 2] = red;
+        }
+      }
+    }
+  };
+  // “炎” at (60, 120, 14x14) -> badge center at (67, 80.8), glowing emerald
+  paintCircle(67, 81, 28, 175, 225, 20);
+  paintCircle(280, 180, 28, 175, 225, 20);
+  // “维多利亚” at (160..216, 120, h=14) -> badge center at (188, 80.8), grey banned with white strokes
+  paintCircle(188, 81, 26, 78, 80, 76);
+  paintCircle(188, 81, 8, 160, 160, 160);
+
+  const line = [
+    { t: '炎', x: 60, y: 120, w: 14, h: 14 },
+    { t: '维', x: 160, y: 120, w: 14, h: 14 },
+    { t: '多', x: 174, y: 120, w: 14, h: 14 },
+    { t: '利', x: 188, y: 120, w: 14, h: 14 },
+    { t: '亚', x: 202, y: 120, w: 14, h: 14 },
+  ];
+  const boxes = extractCovenantBoxesFromLine(line);
+  assert.deepEqual(boxes.map(b => b.name), ['炎', '维多利亚']);
+  assert.equal(classifyBadgeBgra(bgra, width, height, boxes[0].box), 1);
+  assert.equal(classifyBadgeBgra(bgra, width, height, boxes[1].box), -1);
+
+  const evaluated = evaluateOcrLines([
+    [{ t: '1/3确认本局信息', x: 100, y: 16, w: 120, h: 16 }],
+    line,
+  ], bgra, width, height);
+  assert.equal(evaluated.headerConfirmed, true);
+  assert.deepEqual(evaluated.seenCovenants, ['炎', '维多利亚']);
+  assert.deepEqual(evaluated.bannedCovenants, ['维多利亚']);
+  assert.equal(looksLikeCovenantScreen(bgra, width, height).match, true);
 });

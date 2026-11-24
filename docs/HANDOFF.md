@@ -96,11 +96,12 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25（已打包双端新版本 `v1.4.23` EXE 与 `v1.4.14` APK：含手机横屏无线副屏 + 136 枚 PRTS 装备图标 + 牌库心仪持久化 + 承压图精简 + 悬浮窗双页模式 + Boss 多图组合看板 + 干员头像离线导出战报）
+- **最后更新**：2026-11-25（正式发布 **PRTS Stronghold 2.0.0** 双端包到 GitHub Releases `v2.0.0`，并产出 B站 16:9 横屏与抖音 9:16 竖屏全功能宣传视频）
 - **同步基线提交**：见 `git log -n 5 --oneline`
-- **最近一次本地实测出包版本**：
-  - Windows 便携包：`PRTS-Stronghold-1.4.23-Windows-x64.exe`（229.3 MiB / 240,481,114 字节，SHA-256: `7cd99685…d97f7a5`，已重建并内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
-  - Android 攻略随行包：`PRTS-Stronghold-1.4.14-Android.apk`（142.1 MiB / 149,025,407 字节，VersionCode `13`，SHA-256: `af37f250…bfec5d05`，v2/v3 签名校验通过）
+- **最近一次正式发布版本（`v2.0.0`）**：
+  - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.3 MiB / 240,483,805 字节，SHA-256: `3afecf46…b532542`，已内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
+  - Android 攻略随行包：`PRTS-Stronghold-2.0.0-Android.apk`（142.1 MiB / 149,025,407 字节，VersionCode `20`，SHA-256: `6884e312…3b5d8fd`，v2/v3 签名校验通过）
+  - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`。
 - **近期已完成里程碑**：
   - **Boss 伤害多图组合看板 + 导出战报文档重构与干员头像内嵌 + 悬浮窗双页模式 + 双端出包 v1.4.23 / v1.4.14**（`e0e78fd`，166/166 测试全绿，双产品构建通过）：

@@ -20,6 +20,9 @@ interface MetaCompsViewProps {
   selectedCompId: string;
   onSelectCompId(id: string): void;
   currentRound: number;
+  liveRound?: number | null;
+  autoFollowRound?: boolean;
+  onToggleAutoFollow?(): void;
   onChangeRound(round: number): void;
   onOpenImage(url: string, title: string): void;
   onJumpTo2DMap(): void;
@@ -66,8 +69,10 @@ export function MetaCompsView(props: MetaCompsViewProps) {
           <div className="d-section-head"><h2>核对与校正</h2><span className="d-muted">{banState.bannedCovenants.length} 项受限</span></div>
           <h3>核心盟约 <small>10</small></h3>{chips(ALL_CORE_COVENANT_NAMES, 'core')}
           <h3>附加盟约 <small>16</small></h3>{chips(ALL_SUB_COVENANT_NAMES, 'sub')}
-          <div className="d-operator-ban-heading"><h3>手动禁用干员 <small>{banState.bannedOperators.length}</small></h3></div>
-          <div className="d-banned-operators">{banState.bannedOperators.map(name => <button key={name} onClick={() => toggle('bannedOperators', name)} title="点击移除禁用">{name} ×</button>)}<button className="d-ban-placeholder" onClick={() => setDialog('operators')}>＋ 标记本局被禁核心干员</button></div>
+          <details className="d-op-ban-fold" open={banState.bannedOperators.length > 0}>
+            <summary>手动禁用核心干员 <small>{banState.bannedOperators.length}</small></summary>
+            <div className="d-banned-operators">{banState.bannedOperators.map(name => <button key={name} onClick={() => toggle('bannedOperators', name)} title="点击移除禁用">{name} ×</button>)}<button className="d-ban-placeholder" onClick={() => setDialog('operators')}>＋ 标记本局被禁核心干员</button></div>
+          </details>
           <p className="d-muted d-correction-note">点标签切换受限。附加盟约受限不代表其全部干员被禁。</p>
         </section>
       </aside>
@@ -94,8 +99,10 @@ export function MetaCompsView(props: MetaCompsViewProps) {
           <button className="d-icon" aria-label="下一页阵容" disabled={currentPage + 1 === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={17} /></button>
         </div></footer>
       </section>
-    </div> : <DesktopCompGuide comp={activeComp} evaluations={evaluations} bans={banState} round={props.currentRound} onRound={props.onChangeRound}
-      onSelectComp={onSelectCompId} onBack={() => setStage('picker')} onOpenImage={props.onOpenImage} onTransfers={props.onJumpToTransfers} onCovenants={props.onJumpToPriorityCovenants} />}
+    </div> : <DesktopCompGuide comp={activeComp} evaluations={evaluations} bans={banState} round={props.currentRound}
+      liveRound={props.liveRound} autoFollowRound={props.autoFollowRound} onToggleAutoFollow={props.onToggleAutoFollow}
+      onRound={props.onChangeRound} onSelectComp={onSelectCompId} onBack={() => setStage('picker')}
+      onOpenImage={props.onOpenImage} onTransfers={props.onJumpToTransfers} onCovenants={props.onJumpToPriorityCovenants} />}
     {dialog === 'operators' && <DesktopDialog title="本局禁用核心干员" onClose={() => setDialog(null)}><div className="d-ban-operator-grid">{BAN_SENSITIVE_OPERATORS.map(op => <button key={op.name} data-testid={`ban-op-${op.name}`} aria-pressed={banState.bannedOperators.includes(op.name)} onClick={() => toggle('bannedOperators', op.name)}><OperatorAvatar name={op.name} size="sm" /><span>{banState.bannedOperators.includes(op.name) ? '已禁用' : '未禁用'}</span></button>)}</div></DesktopDialog>}
     {dialog === 'help' && <DesktopDialog title="禁选与筛选帮助" onClose={() => setDialog(null)}><p>Windows 版通过本地实时采集自动从开局场景同步本局 Ban 盟约（需安装 Npcap 并以管理员身份启动），也可随时直接点击下方标签手动勾选或修改。</p><p>所有抓包数据仅在本机内存中处理，不保存原始包、不上传网络。附加盟约受限不代表其全部干员被禁，实际被禁的核心干员可在「手动禁用干员」中补充标记。</p><p>适配分衡量构筑风险，不是胜率。攻略标注「推导」的回合由多份资料补全，请根据经济、来牌与承压调整。</p></DesktopDialog>}
     {dialog === 'reset' && <DesktopDialog title="开始新局" onClose={() => setDialog(null)}><p>清空本局盟约与干员禁用条件，并回到 R1？</p><div className="d-inline"><button className="d-button" onClick={() => setDialog(null)}>保留本局</button><button className="d-button d-primary" onClick={() => void reset()}>确认开始新局</button></div>{resetError && <p role="alert">{resetError}</p>}</DesktopDialog>}

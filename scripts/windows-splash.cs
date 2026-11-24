@@ -10,9 +10,10 @@ using System.Windows.Forms;
 
 internal sealed class StartupSplash : Form
 {
-    private static readonly Rectangle Track = new Rectangle(162, 224, 156, 3);
-    private static readonly Rectangle Caption = new Rectangle(0, 235, 480, 24);
+    private static readonly Rectangle Track = new Rectangle(136, 224, 208, 3);
+    private static readonly Rectangle Caption = new Rectangle(100, 236, 280, 24);
     private readonly Color fillColor;
+    private readonly Color captionBg;
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly Font captionFont = new Font("Microsoft YaHei UI", 9F);
     private readonly Bitmap artwork;
@@ -26,6 +27,7 @@ internal sealed class StartupSplash : Form
     {
         this.artwork = artwork;
         this.fillColor = accent;
+        this.captionBg = artwork.GetPixel(4, Math.Max(0, artwork.Height - 5));
         int animationsEnabled;
         const uint spiGetClientAreaAnimation = 0x1042;
         animate = !SystemParametersInfo(spiGetClientAreaAnimation, 0, out animationsEnabled, 0) || animationsEnabled != 0;
@@ -74,6 +76,10 @@ internal sealed class StartupSplash : Form
             int left = Math.Max(0, start);
             int width = Math.Min(Track.Width, start + segment) - left;
             if (width > 0) e.Graphics.FillRectangle(fillBrush, Track.X + left, Track.Y, width, Track.Height);
+        }
+        using (var bgBrush = new SolidBrush(captionBg))
+        {
+            e.Graphics.FillRectangle(bgBrush, Caption);
         }
         TextRenderer.DrawText(e.Graphics, unpacked ? "正在打开主窗口…" : "正在解包应用…", captionFont, Caption,
             Color.FromArgb(195, 205, 215), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);

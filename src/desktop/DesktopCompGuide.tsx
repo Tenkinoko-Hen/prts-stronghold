@@ -23,11 +23,12 @@ const guideTabs = ['打法与出装', '本局适配', '全回合轴'] as const;
 
 interface Props {
   comp: MetaCompGuide; evaluations: CompBanEvaluation[]; bans: BanPickState; round: number;
+  liveRound?: number | null; autoFollowRound?: boolean; onToggleAutoFollow?(): void;
   onRound(round: number): void; onSelectComp(id: string): void; onBack(): void;
   onOpenImage(url: string, title: string): void; onTransfers?(): void; onCovenants(): void;
 }
 
-export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSelectComp, onBack, onOpenImage, onTransfers, onCovenants }: Props) {
+export function DesktopCompGuide({ comp, evaluations, bans, round, liveRound, autoFollowRound, onToggleAutoFollow, onRound, onSelectComp, onBack, onOpenImage, onTransfers, onCovenants }: Props) {
   const [phaseOverride, setPhaseOverride] = useState<number | null>(null);
   const [dialog, setDialog] = useState<'overview' | 'strategy' | 'equipment' | null>(null);
   const [operator, setOperator] = useState<GuideOperator | null>(null);
@@ -79,7 +80,24 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSe
         </section>
       <aside className="d-guide-right">
         <section className="d-panel d-round-panel" aria-label="本回合指令">
-          <div className="d-round-head"><div className="chamfer-box"><small>回合 / ROUND</small><strong>{String(round).padStart(2, '0')} <span>/ 15</span></strong></div><span className="d-tier">推荐 {pace.recommendedTier} 本</span></div>
+          <div className="d-round-head">
+            <div className="chamfer-box"><small>回合 / ROUND</small><strong>{String(round).padStart(2, '0')} <span>/ 15</span></strong></div>
+            <div className="d-round-badges">
+              <span className="d-tier">推荐 {pace.recommendedTier} 本</span>
+              {liveRound != null && onToggleAutoFollow && (
+                <button
+                  type="button"
+                  className={`d-follow-pill${autoFollowRound ? ' is-live' : ''}`}
+                  aria-pressed={Boolean(autoFollowRound)}
+                  onClick={onToggleAutoFollow}
+                  title={autoFollowRound ? '已开启跟随实时抓包回合，点击切换手动' : `点击恢复自动跟随实时抓包回合（R${liveRound}）`}
+                >
+                  <span className="d-dot" aria-hidden="true" />
+                  {autoFollowRound ? `自动跟随 R${liveRound}` : `同步至 R${liveRound}`}
+                </button>
+              )}
+            </div>
+          </div>
           <div className="hazard-stripe" aria-hidden="true" />
           <div className="d-round-action prts-reticle" data-testid="round-action"><strong>R{round} · 本回合指令</strong><p className="round-signal" key={round}><DerivedText text={action} /></p></div>
           <div className="d-inline d-round-controls">

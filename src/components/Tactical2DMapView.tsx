@@ -38,46 +38,46 @@ const TILE_STYLES: Record<
   { bg: string; border: string; label: string; labelColor: string }
 > = {
   ground: {
-    bg: 'bg-[#141C2B]',
-    border: 'border-slate-800/90',
+    bg: 'bg-[#12151B]',
+    border: 'border-[#ffffff14]',
     label: '',
-    labelColor: 'text-slate-600',
+    labelColor: 'text-zinc-600',
   },
   high: {
-    bg: 'bg-[#22304A]',
-    border: 'border-slate-600/80',
+    bg: 'bg-[#1E232D]',
+    border: 'border-[#ffffff2b]',
     label: '高台',
-    labelColor: 'text-slate-400/70',
+    labelColor: 'text-zinc-400/80',
   },
   hole: {
-    bg: 'bg-[#07090E]',
-    border: 'border-slate-900',
+    bg: 'bg-[#07080A]',
+    border: 'border-[#ffffff0c]',
     label: '落穴',
-    labelColor: 'text-slate-600',
+    labelColor: 'text-zinc-600',
   },
   box: {
-    bg: 'bg-[#2D241E]',
-    border: 'border-amber-900/60',
+    bg: 'bg-[#261E16]',
+    border: 'border-[#ff950055]',
     label: '障碍',
-    labelColor: 'text-amber-500/70',
+    labelColor: 'text-[#ff9500]/80',
   },
   special: {
-    bg: 'bg-[#2A1B3D]',
-    border: 'border-purple-500/50',
+    bg: 'bg-[#21192B]',
+    border: 'border-[#c084fc66]',
     label: '装置',
-    labelColor: 'text-purple-300/80',
+    labelColor: 'text-[#c084fc]',
   },
   blueGate: {
-    bg: 'bg-sky-950/90',
-    border: 'border-sky-400',
+    bg: 'bg-[#0B232D]',
+    border: 'border-[#00e5ff]',
     label: '蓝门',
-    labelColor: 'text-sky-300 font-bold',
+    labelColor: 'text-[#00e5ff] font-bold',
   },
   redGate: {
-    bg: 'bg-red-950/90',
-    border: 'border-red-500',
+    bg: 'bg-[#2E1214]',
+    border: 'border-[#ff3b30]',
     label: '红门',
-    labelColor: 'text-red-300 font-bold',
+    labelColor: 'text-[#ff6961] font-bold',
   },
 };
 
@@ -86,19 +86,19 @@ const ROLE_SLOT_STYLES: Record<
   { pillBg: string; ring: string; tagText: string }
 > = {
   输出: {
-    pillBg: 'bg-red-600 text-white border-red-300',
-    ring: 'ring-2 ring-red-500 border-red-400 bg-red-950/80',
-    tagText: 'text-red-300',
+    pillBg: 'bg-[#ff3b30] text-white border-[#ff7c75]',
+    ring: 'ring-1 ring-[#ff3b30] border-[#ff5f56] bg-[#2c1417]',
+    tagText: 'text-[#ff8f89]',
   },
   重装: {
-    pillBg: 'bg-emerald-600 text-white border-emerald-300',
-    ring: 'ring-2 ring-emerald-500 border-emerald-400 bg-emerald-950/80',
-    tagText: 'text-emerald-300',
+    pillBg: 'bg-[#34d399] text-[#091812] border-[#6ee7b7]',
+    ring: 'ring-1 ring-[#34d399] border-[#34d399] bg-[#10261f]',
+    tagText: 'text-[#6ee7b7]',
   },
   奶: {
-    pillBg: 'bg-sky-600 text-white border-sky-300',
-    ring: 'ring-2 ring-sky-400 border-sky-300 bg-sky-950/80',
-    tagText: 'text-sky-300',
+    pillBg: 'bg-[#00e5ff] text-[#06181c] border-[#7cf3ff]',
+    ring: 'ring-1 ring-[#00e5ff] border-[#00e5ff] bg-[#0c242b]',
+    tagText: 'text-[#7cf3ff]',
   },
 };
 
@@ -121,7 +121,7 @@ export const Tactical2DMapView: React.FC<Tactical2DMapViewProps> = ({
     usedOps.add(name); displayOps.set(placement.id, name);
   });
   useEffect(() => { setInspectorOpen(false); setNotesOpen(false); }, [selectedMapId, stageMode]);
-  return <main className="desktop-page d-map-page">
+  return <main className="d-map-page is-embedded">
     <nav className="d-map-list" aria-label="选择战术地图">{TACTICAL_MAPS.map(map => <button key={map.id} aria-pressed={map.id === activeMap.id} onClick={() => onSelectMapId(map.id)} title={map.name}>
       <img src={map.imageUrl} alt="" /><span><small>{map.region}</small><strong>{map.shortName}</strong></span>
     </button>)}</nav>
@@ -140,7 +140,7 @@ export const Tactical2DMapView: React.FC<Tactical2DMapViewProps> = ({
         <button className="d-map-note" onClick={() => setNotesOpen(true)}><span>{currentLayout.description}</span><span className="d-gold">全部站位要点 ›</span></button>
       </section>
       {displayMode === 'split' && <section className="d-panel d-board-panel"><div className="d-section-head"><h2>2D 战术棋盘 · {stageMode}</h2><div className="d-board-legend"><span>■ 高台</span><span>□ 地面</span>{currentLayout.bossDangerZone && <span className="d-warning">┄ Boss 范围</span>}</div></div>
-        <div data-testid="tactical-2d-grid" className="d-board-grid">{currentLayout.tiles.map((row, z) => row.map((kind, x) => {
+        <div data-testid="tactical-2d-grid" className="d-board-grid prts-reticle">{currentLayout.tiles.map((row, z) => row.map((kind, x) => {
           const placement = placements.get(`${x},${z}`);
           const tile = TILE_STYLES[kind];
           const danger = showDangerZone && isInsideBossDangerZone(x, z, currentLayout.bossDangerZone);

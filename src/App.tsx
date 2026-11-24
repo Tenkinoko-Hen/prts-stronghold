@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
+import { BookOpen, Calculator, Grid, Images, Pin, Repeat2 } from 'lucide-react';
 import {
   META_COMPS,
   OperatorPlacement,
@@ -16,11 +17,19 @@ import { useBattleBanSync } from './desktop/battleBanSync';
 import { BanPickState } from './utils/tacticalLogic';
 import './desktop/desktop.css';
 
-type ActiveView = 'tactical' | 'comps' | 'transfers' | 'covenants' | 'calculator' | 'reports';
+type PrimaryDomain = 'guide' | 'reports' | 'reference';
+type ReferenceTab = 'tactical' | 'transfers' | 'covenants' | 'calculator';
 
 const FAV_STORAGE_KEY = 'stronghold_fav_covenants_v1';
 const desktopAPI = window.electronAPI;
 const BattleReportsView = lazy(() => import('./desktop/BattleReportsView'));
+
+const REFERENCE_TABS: { id: ReferenceTab; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
+  { id: 'tactical', label: '2D 战术站位', Icon: Grid },
+  { id: 'transfers', label: '转职合成表', Icon: Repeat2 },
+  { id: 'covenants', label: '全盟约图鉴', Icon: BookOpen },
+  { id: 'calculator', label: '叠层模拟器', Icon: Calculator },
+];
 
 export default function App() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -31,33 +40,65 @@ export default function App() {
     setPinPending(true);
     setPinError('');
     try { setAlwaysOnTop(await desktopAPI.setAlwaysOnTop(!alwaysOnTop)); }
-    catch { setPinError('置顶失败，请重试'); }
+    catch { setPinError('置顶失败'); }
     finally { setPinPending(false); }
   };
-  const [activeView, setActiveView] = useState<ActiveView>('comps');
+
+  const [activeDomain, setActiveDomain] = useState<PrimaryDomain>('guide');
+  const [referenceTab, setReferenceTab] = useState<ReferenceTab>('tactical');
   const [selectedMapId, setSelectedMapId] = useState<string>(TACTICAL_MAPS[0].id);
   const [stageMode, setStageMode] = useState<'道中' | 'Boss战'>('Boss战');
 
   // Shared game companion state across views
   const [selectedCompId, setSelectedCompId] = useState<string>(META_COMPS[0].id);
   const [currentRound, setCurrentRound] = useState<number>(1);
+  const [autoFollowRound, setAutoFollowRound] = useState<boolean>(true);
   const [banState, setBanState] = useState<BanPickState>({ bannedCovenants: [], bannedOperators: [] });
   const [matchSyncId, setMatchSyncId] = useState('');
+
   const { sync: banSync, resync: resyncBans, reset: resetBanSync } = useBattleBanSync(value => {
     setBanState({ bannedCovenants: value.bannedCovenants, bannedOperators: [] });
     setSelectedCompId(META_COMPS[0].id);
     setCurrentRound(1);
+    setAutoFollowRound(true);
     setMatchSyncId(value.matchKey);
   });
+
+  useEffect(() => {
+    if (autoFollowRound && banSync.liveRound !== null) {
+      setCurrentRound(banSync.liveRound);
+    }
+  }, [autoFollowRound, banSync.liveRound]);
+
+  const handleManualRound = (nextRound: number) => {
+    setCurrentRound(nextRound);
+    if (banSync.liveRound !== null && nextRound !== banSync.liveRound) {
+      setAutoFollowRound(false);
+    }
+  };
+
+  const toggleAutoFollow = () => {
+    setAutoFollowRound(prev => {
+      const next = !prev;
+      if (next && banSync.liveRound !== null) setCurrentRound(banSync.liveRound);
+      return next;
+    });
+  };
+
   const clearBans = async () => {
     resetBanSync();
     setBanState({ bannedCovenants: [], bannedOperators: [] });
     setSelectedCompId(META_COMPS[0].id);
+    setAutoFollowRound(true);
+  };
+
+  const openReference = (tab: ReferenceTab) => {
+    setReferenceTab(tab);
+    setActiveDomain('reference');
   };
 
   // Covenant filter & favorite state
-  const [onlyCurrentCompPriority, setOnlyCurrentCompPriority] =
-    useState<boolean>(false);
+  const [onlyCurrentCompPriority, setOnlyCurrentCompPriority] = useState<boolean>(false);
   const [favoriteCovenantIds, setFavoriteCovenantIds] = useState<string[]>(() => {
     try {
       const saved = window.localStorage.getItem(FAV_STORAGE_KEY);
@@ -85,7 +126,7 @@ export default function App() {
     });
   };
 
-  // Selected operator slot on the 2D tactical board
+  const activeComp = META_COMPS.find((c) => c.id === selectedCompId) || META_COMPS[0];
   const activeMap: TacticalMapData =
     TACTICAL_MAPS.find((m) => m.id === selectedMapId) || TACTICAL_MAPS[0];
   const currentLayout =
@@ -94,136 +135,105 @@ export default function App() {
   const [selectedPlacement, setSelectedPlacement] =
     useState<OperatorPlacement | null>(currentLayout.placements[0] || null);
 
-  // Sync default selected placement when map or stage mode changes
   useEffect(() => {
-    const layout =
-      stageMode === '道中' ? activeMap.midStage : activeMap.bossStage;
+    const layout = stageMode === '道中' ? activeMap.midStage : activeMap.bossStage;
     setSelectedPlacement(layout.placements[0] || null);
   }, [selectedMapId, stageMode, activeMap]);
 
-  // Lightbox Modal State
   const [lightboxImage, setLightboxImage] = useState<{
     url: string;
     title: string;
   } | null>(null);
 
+  const telemetryTone = banSync.npcapInstalled === false ? 'warn'
+    : banSync.status === 'listening' ? 'live'
+      : ['permission', 'unavailable', 'incompatible', 'failed'].includes(banSync.status) ? 'error'
+        : 'idle';
+  const telemetryLabel = banSync.npcapInstalled === false ? '未装 Npcap'
+    : banSync.status === 'listening'
+      ? (banSync.liveRound !== null ? `LIVE · R${String(banSync.liveRound).padStart(2, '0')}` : 'LIVE · 待开局')
+      : banSync.status === 'connecting' ? '待进对局'
+        : banSync.status === 'waiting' ? '待游戏启动'
+          : banSync.status === 'permission' ? '需管理员'
+            : banSync.status === 'paused' ? '已暂停' : '采集待命';
+
   return (
-    <div className="desktop-app relative w-screen h-screen overflow-hidden bg-[#0B0E14] text-[#F1F5F9] select-none">
-      {/* 1. Top Navigation Bar (Strict 3-Zone Top Bar Contract) */}
+    <div className="desktop-app relative w-screen h-screen overflow-hidden select-none">
+      {/* 1. Unified PRTS × Endfield 3-Domain Top Header */}
       <header className="d-global-header">
-        {/* Zone 1: Single text element wordmark */}
         <a
-          href="#comps"
+          href="#guide"
           onClick={(e) => {
             e.preventDefault();
-            setActiveView('comps');
+            setActiveDomain('guide');
           }}
           className="d-wordmark font-display"
         >
-          卫戍协议战术终端 · PRTS
+          <span className="d-brand-chip">PRTS</span>
+          <span>卫戍协议战术终端</span>
         </a>
 
-        {/* Zone 2: Concise single-line text navigation links */}
-        <nav
-          aria-label="主导航"
-          className="d-global-nav"
-        >
+        <nav aria-label="主导航" className="d-global-nav">
           <a
-            href="#comps"
+            href="#guide"
+            aria-current={activeDomain === 'guide' ? 'page' : undefined}
             onClick={(e) => {
               e.preventDefault();
-              setActiveView('comps');
+              setActiveDomain('guide');
             }}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeView === 'comps'
-                ? 'text-amber-400 border-amber-400 font-black'
-                : 'border-transparent hover:text-slate-50'
-            }`}
           >
-            阵容一图流
-          </a>
-          <a
-            href="#transfers"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveView('transfers');
-            }}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeView === 'transfers'
-                ? 'text-amber-400 border-amber-400 font-black'
-                : 'border-transparent hover:text-slate-50'
-            }`}
-          >
-            转职合成表
-          </a>
-          <a
-            href="#tactical"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveView('tactical');
-            }}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeView === 'tactical'
-                ? 'text-amber-400 border-amber-400 font-black'
-                : 'border-transparent hover:text-slate-50'
-            }`}
-          >
-            2D 战术站位
-          </a>
-          <a
-            href="#covenants"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveView('covenants');
-            }}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeView === 'covenants'
-                ? 'text-amber-400 border-amber-400 font-black'
-                : 'border-transparent hover:text-slate-50'
-            }`}
-          >
-            十大盟约图鉴
-          </a>
-          <a
-            href="#calculator"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveView('calculator');
-            }}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeView === 'calculator'
-                ? 'text-amber-400 border-amber-400 font-black'
-                : 'border-transparent hover:text-slate-50'
-            }`}
-          >
-            叠层计算器
+            <span className="d-nav-code">01</span>战术跟打
           </a>
           {desktopAPI?.battleReports && (
             <a
               href="#reports"
-              aria-current={activeView === 'reports' ? 'page' : undefined}
+              aria-current={activeDomain === 'reports' ? 'page' : undefined}
               onClick={(e) => {
                 e.preventDefault();
-                setActiveView('reports');
+                setActiveDomain('reports');
               }}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-                activeView === 'reports'
-                  ? 'text-amber-400 border-amber-400 font-black'
-                  : 'border-transparent hover:text-slate-50'
-              }`}
             >
-              战报
+              <span className="d-nav-code">02</span>实时战报
             </a>
           )}
+          <a
+            href="#reference"
+            aria-current={activeDomain === 'reference' ? 'page' : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveDomain('reference');
+            }}
+          >
+            <span className="d-nav-code">{desktopAPI?.battleReports ? '03' : '02'}</span>战术资料
+          </a>
         </nav>
 
-        {/* Original image library */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          {desktopAPI && <button type="button" onClick={toggleAlwaysOnTop} disabled={pinPending}
-            aria-pressed={alwaysOnTop} title={pinError || '切换系统窗口置顶'}
-            className="px-3 py-2 text-xs font-bold rounded-lg border border-slate-600 text-amber-300 disabled:opacity-50">
-            {pinError || (alwaysOnTop ? '已置顶' : '窗口置顶')}
-          </button>}
+        <div className="d-header-tools">
+          {desktopAPI?.battleReports && (
+            <button
+              type="button"
+              className="d-live-pill"
+              data-tone={telemetryTone}
+              onClick={() => setActiveDomain('reports')}
+              title="点击前往实时战报与采集状态"
+            >
+              <span className="d-dot" aria-hidden="true" />
+              <span>{telemetryLabel}</span>
+            </button>
+          )}
+          {desktopAPI && (
+            <button
+              type="button"
+              onClick={toggleAlwaysOnTop}
+              disabled={pinPending}
+              aria-pressed={alwaysOnTop}
+              title={pinError || '切换系统窗口置顶'}
+              className={`d-button d-small d-pin-btn${alwaysOnTop ? ' is-pinned' : ''}`}
+            >
+              <Pin size={13} />
+              <span>{pinError || (alwaysOnTop ? '已置顶' : '置顶')}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() =>
@@ -232,29 +242,19 @@ export default function App() {
                 title: `${activeMap.name}（原图一图流）`,
               })
             }
-            className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-black text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="d-button d-small"
+            title={`查看全部 ${UPLOADED_GALLERY_ITEMS.length} 张原图资料`}
           >
-            原图资料库 ({UPLOADED_GALLERY_ITEMS.length})
+            <Images size={13} />
+            <span>原图库 ({UPLOADED_GALLERY_ITEMS.length})</span>
           </button>
         </div>
       </header>
 
-      {/* 2. Active Views */}
-      {activeView === 'tactical' && (
-        <Tactical2DMapView
-          selectedMapId={selectedMapId}
-          onSelectMapId={setSelectedMapId}
-          stageMode={stageMode}
-          onChangeStageMode={setStageMode}
-          selectedPlacement={selectedPlacement}
-          onSelectPlacement={setSelectedPlacement}
-          onOpenImage={(url, title) => setLightboxImage({ url, title })}
-        />
-      )}
-
+      {/* 2. Domain 01: Tactical Guide (Picker + Round-by-Round) */}
       <MetaCompsView
         key={matchSyncId}
-        visible={activeView === 'comps'}
+        visible={activeDomain === 'guide'}
         banState={banState}
         onChangeBanState={setBanState}
         banSync={banSync}
@@ -263,47 +263,102 @@ export default function App() {
         selectedCompId={selectedCompId}
         onSelectCompId={setSelectedCompId}
         currentRound={currentRound}
-        onChangeRound={setCurrentRound}
+        liveRound={banSync.liveRound}
+        autoFollowRound={autoFollowRound}
+        onToggleAutoFollow={toggleAutoFollow}
+        onChangeRound={handleManualRound}
         onOpenImage={(url, title) => setLightboxImage({ url, title })}
-        onJumpTo2DMap={() => setActiveView('tactical')}
+        onJumpTo2DMap={() => openReference('tactical')}
         onJumpToPriorityCovenants={() => {
           setOnlyCurrentCompPriority(true);
-          setActiveView('covenants');
+          openReference('covenants');
         }}
-        onJumpToTransfers={() => setActiveView('transfers')}
+        onJumpToTransfers={() => openReference('transfers')}
       />
 
-      {activeView === 'transfers' && (
-        <TransferItemsView
-          selectedCompId={selectedCompId}
-          onSelectCompId={setSelectedCompId}
-        />
-      )}
-
-      {activeView === 'covenants' && (
-        <CovenantEncyclopediaView
-          selectedCompId={selectedCompId}
-          onSelectCompId={setSelectedCompId}
-          favoriteCovenantIds={favoriteCovenantIds}
-          onToggleFavoriteCovenant={handleToggleFavoriteCovenant}
-          onlyCurrentCompPriority={onlyCurrentCompPriority}
-          onChangeOnlyCurrentCompPriority={setOnlyCurrentCompPriority}
-          onOpenImage={(url, title) => setLightboxImage({ url, title })}
-        />
-      )}
-
-      {activeView === 'calculator' && (
-        <StackingCalculatorView onOpenImage={(url, title) => setLightboxImage({ url, title })} />
-      )}
+      {/* 3. Domain 02: Live Battle Reports */}
       {desktopAPI?.battleReports && (
-        <div hidden={activeView !== 'reports'}>
-          <Suspense fallback={activeView === 'reports' && <main className="desktop-page d-muted">正在打开战报…</main>}>
-            <BattleReportsView api={desktopAPI.battleReports} visible={activeView === 'reports'} />
+        <div hidden={activeDomain !== 'reports'}>
+          <Suspense fallback={activeDomain === 'reports' && <main className="desktop-page d-muted">正在打开战报…</main>}>
+            <BattleReportsView api={desktopAPI.battleReports} visible={activeDomain === 'reports'} />
           </Suspense>
         </div>
       )}
 
-      {/* 3. High-Resolution Original Image Lightbox Modal */}
+      {/* 4. Domain 03: Tactical Reference Hub (2D Map / Transfers / Covenants / Calculator) */}
+      {activeDomain === 'reference' && (
+        <div className="d-ref-shell">
+          <div className="d-ref-subnav" role="tablist" aria-label="战术资料分类">
+            <div className="d-ref-tabs">
+              {REFERENCE_TABS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={referenceTab === id}
+                  onClick={() => setReferenceTab(id)}
+                >
+                  <Icon size={14} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="d-ref-context">
+              <span className="d-muted">当前关联阵容</span>
+              <select
+                aria-label="切换全局关联阵容"
+                value={selectedCompId}
+                onChange={(e) => setSelectedCompId(e.target.value)}
+                className="d-ind-select"
+              >
+                {META_COMPS.map((comp) => (
+                  <option key={comp.id} value={comp.id}>
+                    {comp.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="d-ref-body">
+            {referenceTab === 'tactical' && (
+              <Tactical2DMapView
+                selectedMapId={selectedMapId}
+                onSelectMapId={setSelectedMapId}
+                stageMode={stageMode}
+                onChangeStageMode={setStageMode}
+                selectedPlacement={selectedPlacement}
+                onSelectPlacement={setSelectedPlacement}
+                onOpenImage={(url, title) => setLightboxImage({ url, title })}
+              />
+            )}
+            {referenceTab === 'transfers' && (
+              <TransferItemsView
+                selectedCompId={selectedCompId}
+                onSelectCompId={setSelectedCompId}
+              />
+            )}
+            {referenceTab === 'covenants' && (
+              <CovenantEncyclopediaView
+                selectedCompId={selectedCompId}
+                onSelectCompId={setSelectedCompId}
+                favoriteCovenantIds={favoriteCovenantIds}
+                onToggleFavoriteCovenant={handleToggleFavoriteCovenant}
+                onlyCurrentCompPriority={onlyCurrentCompPriority}
+                onChangeOnlyCurrentCompPriority={setOnlyCurrentCompPriority}
+                onOpenImage={(url, title) => setLightboxImage({ url, title })}
+              />
+            )}
+            {referenceTab === 'calculator' && (
+              <StackingCalculatorView
+                onOpenImage={(url, title) => setLightboxImage({ url, title })}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. High-Resolution Original Image Lightbox Modal */}
       {lightboxImage && (
         <ImageLightboxModal
           initialUrl={lightboxImage.url}

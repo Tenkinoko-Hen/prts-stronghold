@@ -8,6 +8,8 @@ export interface BattleBanSyncState {
   matchKey: string;
   bannedCovenants: string[];
   hasDownlink: boolean;
+  liveRound: number | null;
+  liveRoundConfirmed: boolean;
   npcapInstalled?: boolean;
   npcapInstall?: NpcapInstallState;
 }
@@ -20,6 +22,8 @@ export function useBattleBanSync(onSync: (payload: { matchKey: string; bannedCov
     matchKey: '',
     bannedCovenants: [],
     hasDownlink: false,
+    liveRound: null,
+    liveRoundConfirmed: false,
   });
   const onSyncRef = useRef(onSync);
   const appliedRef = useRef('');
@@ -34,12 +38,21 @@ export function useBattleBanSync(onSync: (payload: { matchKey: string; bannedCov
       let matchKey = '';
       let bannedCovenants: string[] = [];
       let hasDownlink = false;
+      let liveRound: number | null = null;
+      let liveRoundConfirmed = false;
       if (feed.report) {
         try {
           const parsed = readBattleReport(feed.report);
           matchKey = `${feed.reportRun}:${parsed.match ?? 'live'}`;
           bannedCovenants = parsed.bannedCovenants;
           hasDownlink = parsed.current !== null || Boolean(parsed.mode) || bannedCovenants.length > 0;
+          if (parsed.current !== null && parsed.current >= 1 && parsed.current <= 15) {
+            liveRound = parsed.current;
+            liveRoundConfirmed = true;
+          } else {
+            const latest = parsed.rounds.at(-1)?.number ?? null;
+            if (latest !== null && latest >= 1 && latest <= 15) liveRound = latest;
+          }
         } catch {
           // Ignore unreadable snapshots; report page handles incompatible status.
         }
@@ -50,6 +63,8 @@ export function useBattleBanSync(onSync: (payload: { matchKey: string; bannedCov
         matchKey,
         bannedCovenants,
         hasDownlink,
+        liveRound,
+        liveRoundConfirmed,
         npcapInstalled: feed.npcapInstalled,
         npcapInstall: feed.npcapInstall,
       });

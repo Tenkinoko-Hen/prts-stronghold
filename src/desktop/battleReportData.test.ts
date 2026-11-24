@@ -239,8 +239,8 @@ test('a corrected seat does not mislabel an old assist as mine or make the pair 
   const first = updateLiveReport({ history: [] }, report(1, 4, { 4: covered }, 3), 1, 100);
   const state = updateLiveReport(first, report(1, 5, { 5: { phase: 'prep' } }, 2), 1, 101);
   const html = detailView(state.live!.report, 4);
-  assert.match(html, /队友间兜底.*1号.*3号.*兜底.*1 只/);
-  assert.doesNotMatch(html, /与我相关/);
+  assert.match(html, /队友互兜.*1号.*3号.*1/);
+  assert.doesNotMatch(html, /我给谁兜|谁给我兜/);
 });
 
 test('manual game nicknames label assists locally and stay with that match through refresh and reconnect', () => {
@@ -257,7 +257,7 @@ test('manual game nicknames label assists locally and stay with that match throu
   assert.match(view, /测试队友#1000.*手填/);
   assert.match(view, /补录昵称/);
   const html = detailView(named, 4);
-  assert.match(html, /与我相关.*测试队友#1000.*测试本人.*兜底.*1 只/);
+  assert.match(html, /谁给我兜.*测试队友#1000.*1/);
 
   state = updateLiveReport(state, null, 1, 101);
   assert.equal(reportWithPlayerNames(state.history[0]).names[3], '测试本人');
@@ -303,7 +303,7 @@ test('manual local seat confirmation labels my seat and assist pairs, survives s
   assert.equal((roster.match(/class="d-seat-button"/g) ?? []).length, 4);
   const matrix = detailView(named, 1);
   assert.match(matrix, /本机席位：队友乙 · 手动确认/);
-  assert.match(matrix, /与我相关.*4号.*队友乙.*我.*兜底.*2 只/);
+  assert.match(matrix, /谁给我兜.*4号.*2/);
 
   state = updateLiveReport(state, readBattleReport({ capture: { match: 9, round: 3 }, players: {}, rounds: {},
     battle_config: { mode_id: 'mode_multi_normal' } }), 1, 101);
@@ -324,7 +324,7 @@ test('overview shows the captured ID and who covered my leaks rather than four a
   assert.match(html, /2号/);
   assert.match(html, /结算关联/);
   assert.match(html, /SyntheticSelf#1001/);
-  assert.match(html, /与我相关.*SyntheticTeammate#1002.*SyntheticSelf#1001.*兜底.*2 只/);
+  assert.match(html, /谁给我兜.*SyntheticTeammate#1002.*2/);
   assert.doesNotMatch(html, /[1234]号协防/);
   assert.equal(data.rounds[0].unattributedAssists, 0);
 });
@@ -336,7 +336,7 @@ test('overview distinguishes an unrecorded assist, unknown ownership and an expl
   assert.match(html, /0 只/);
   assert.match(html, /战况未确认/);
   assert.match(html, /1 只协防击杀，未能确认漏怪者/);
-  assert.doesNotMatch(html, /全队无漏|与我相关/);
+  assert.doesNotMatch(html, /全队无漏|我给谁兜|谁给我兜/);
 });
 
 test('spawn preview hides source, owner and power; only battle rows aggregate different routes', () => {
@@ -428,12 +428,12 @@ test('round detail separates totals and round data without showing leak power', 
     4: { ...covered, self_leaks: 2, self_leak_enemies: [{ ...typedEnemy, count: 2 }] }, 5: {} }, 3);
   const view = (round: number | 'all') => detailView(data, round);
   const all = view('all');
-  assert.match(all, /全部回合累计.*本路漏怪 <strong>3 只/);
+  assert.match(all, /全部回合累计.*本路漏怪.*<strong>3 只/);
   assert.doesNotMatch(all, /\*/);
   assert.match(all, /合成漏怪.*×3/);
   assert.doesNotMatch(all, /战力/);
   const single = view(4);
-  assert.match(single, /R4.*本路漏怪 <strong>2 只/);
+  assert.match(single, /R4.*本路漏怪.*<strong>2 只/);
   assert.doesNotMatch(single, /全部回合累计|×3/);
   assert.match(view(6), /R6 暂无实战记录/);
 });
@@ -481,7 +481,7 @@ test('the same R9 distinguishes the five results and both scopes without borrowi
   assert.deepEqual(laneKinds(r9, data, 4), []);
   assert.equal(laneKinds(r9, data, 3).length, 3);
   const html = detailView(data, 9);
-  assert.match(html, /与我相关.*1号.*3号.*3 只.*队友间兜底.*1号.*2号.*1 只.*1号.*4号.*4 只/);
+  assert.match(html, /谁给我兜.*1号.*3.*队友互兜.*1号.*4号.*4.*1号.*2号.*1/);
   assert.doesNotMatch(html, /点回合可查看/);
   const pending = readBattleReport(demoReport('assisting'));
   assert.equal(roundOutcome(pending.rounds[8], pending, 3, true).tone, 'assisting');
@@ -653,13 +653,13 @@ test('full player IDs omit seat number prefix unless missing, zero estimate beco
   // R2 未兜住的怪种同样显示
   assert.match(matrixHtml, /未兜住怪.*×2/);
   // 有玩家名字时直接全量显示 ID（不拼接“3号 · 乌尔比福的安水”），无名字才回退“4号”
-  assert.match(matrixHtml, /乌尔比福的安水累计漏怪/);
+  assert.match(matrixHtml, /d-strip-who.*乌尔比福的安水/);
   assert.doesNotMatch(matrixHtml, /3号累计漏怪|<bdi>3号<\/bdi>|· 乌尔比福的安水/);
 
   const allHtml = detailView(data, 'all');
-  // 跳过协防且 0 扣血应判为“无漏”而非“≈0 只”，且全局累计不出现星号“*”
+  // 跳过协防且 0 扣血应判为“无漏”而非“≈0 只”，且全局累计不出现星号“*”，怪种明细排在底部
   assert.doesNotMatch(allHtml, /≈0|\*/);
-  assert.match(allHtml, /4号.*冰茶.*兜底.*<b>7 只<\/b>.*青瓷茶器/);
+  assert.match(allHtml, /队友互兜.*4号.*冰茶.*7.*d-bottom-enemies.*青瓷茶器/);
 
   const leader = { id: 'enemy_9032_aclionk', name: '阿利斯泰尔，帝国余晖', rounds: {
     14: { stats: [3700000, 1889.72116, 1030, 20, 8.2, 0] as const, attendants: [] },
@@ -669,4 +669,39 @@ test('full player IDs omit seat number prefix unless missing, zero estimate beco
   }));
   assert.match(leaderHtml, /d-report-portrait/);
   assert.match(leaderHtml, /阿利斯泰尔，帝国余晖.*3,700,000.*1,890.*1,030.*20.*8\.2s.*0.*详情与路线/);
+
+  // 验证图形化双栏条形图（我给谁兜 / 谁给我兜）排在上方，四席漏/兜微缩条形图居中，怪种折叠块沉底且无冗余句式
+  const visualMatch = readBattleReport({
+    capture: { match: 2, round: 13, self: 3 },
+    players: { 1: 'Shika', 2: '冰茶', 3: '乌尔比福的安水', 4: '雪月六' },
+    battle_config: { mode_id: 'mode_multi_hard' },
+    rounds: {
+      13: {
+        phase: 'settle',
+        leaks: { 1: 8, 2: 21, 3: 4, 4: 1 },
+        leaks_status: 'reported',
+        self_leaks: 4,
+        self_leak_enemies: [{ id: typedEnemy.id, name: '青瓷茶器', count: 4 }],
+        assists_status: 'reported',
+        assists_others: { 1: 4, 2: 0, 3: 29, 4: 0 },
+        assist_pairs: [
+          { killer: 3, owner: 2, count: 21 },
+          { killer: 3, owner: 1, count: 8 },
+          { killer: 1, owner: 3, count: 4 },
+          { killer: 4, owner: 2, count: 1 },
+        ],
+        uncovered_status: 'reported',
+        uncovered_leaks: {},
+      },
+    },
+  });
+  const visualHtml = detailView(visualMatch, 'all');
+  const outIdx = visualHtml.indexOf('我给谁兜');
+  const inIdx = visualHtml.indexOf('谁给我兜');
+  const seatCardsIdx = visualHtml.indexOf('d-report-seat-cards');
+  const bottomEnemyIdx = visualHtml.indexOf('d-bottom-enemies');
+  assert.ok(outIdx > 0 && inIdx > 0);
+  assert.ok(outIdx < seatCardsIdx && inIdx < seatCardsIdx);
+  assert.ok(seatCardsIdx < bottomEnemyIdx);
+  assert.doesNotMatch(visualHtml, /与我相关|已知数据合计|全队漏怪已全额兜住/);
 });

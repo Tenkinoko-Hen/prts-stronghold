@@ -53,8 +53,9 @@
 .d-report-workbench { display:grid; grid-template-columns:minmax(0,7fr) minmax(0,5fr); gap:16px; align-items:start; }
 .d-report-workbench[data-compact="true"] { display:block; }
 .d-round-master { min-width:0; }
-.d-match-strip { display:flex; flex-wrap:wrap; gap:8px 18px; padding:8px 11px; margin-bottom:8px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:4px; }
-.d-match-strip > div { display:flex; align-items:baseline; gap:6px; font-size:12px; color:var(--d-muted); }
+.d-match-strip { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:7px 11px; margin-bottom:8px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:3px; }
+.d-strip-who { color:var(--report-active); font-size:12.5px; padding-right:8px; border-right:1px solid var(--border-hairline); }
+.d-match-strip > div { display:flex; align-items:baseline; gap:5px; font-size:12px; color:var(--d-muted); }
 .d-match-strip b { font:700 14px var(--font-mono); }
 .d-round-grid { display:grid; grid-template-columns:3.1em 5.2em minmax(7.8em,.84fr) minmax(0,1.45fr) 14px; gap:8px; align-items:center; padding:7px 9px; font-size:12px; text-align:left; }
 .d-round-cols { min-height:27px; padding-block:4px; border-block:1px solid var(--border-hairline); color:var(--d-muted); background:var(--bg-panel); }
@@ -82,26 +83,79 @@
 .d-wave-detail h3 { margin:0; font-size:12px; font-weight:650; color:var(--d-muted); }
 .d-metric-key { position:relative; }.d-metric-key summary { display:flex; align-items:center; gap:4px; cursor:pointer; color:var(--d-muted); list-style:none; }
 .d-metric-key > div { position:absolute; right:0; top:calc(100% + 4px); z-index:2; width:244px; max-width:75vw; padding:9px; border:1px solid #414953; background:#171c23; line-height:1.7; }
-.d-detail-focus { display:grid; gap:7px; padding:10px 12px; border:1px solid var(--border-hairline); border-left:3px solid var(--d-muted); background:var(--bg-panel); border-radius:3px; }
-.d-detail-focus[data-tone="clean"] { border-left-color:var(--clean); }
-.d-detail-focus[data-tone="covered"] { border-left-color:var(--covered); }
-.d-detail-focus[data-tone="partial"] { border-left-color:var(--partial); }
-.d-detail-focus[data-tone="breached"] { border-left-color:var(--breached); }
-.d-detail-focus[data-tone="assisting"] { border-left-color:var(--assisting); }
-.d-detail-summary,.d-detail-numbers { display:flex; flex-wrap:wrap; align-items:center; gap:5px 12px; color:var(--d-muted); }
-.d-detail-summary small { margin-left:auto; }.d-detail-numbers strong { color:#e8ebef; font:700 15px var(--font-mono); }
+.d-kpi-strip { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:7px 10px; border:1px solid var(--border-hairline); border-left:3px solid var(--d-muted); background:var(--bg-panel); border-radius:2px; }
+.d-kpi-strip[data-tone="clean"] { border-left-color:var(--clean); }
+.d-kpi-strip[data-tone="covered"] { border-left-color:var(--covered); }
+.d-kpi-strip[data-tone="partial"] { border-left-color:var(--partial); }
+.d-kpi-strip[data-tone="breached"] { border-left-color:var(--breached); }
+.d-kpi-strip[data-tone="assisting"] { border-left-color:var(--assisting); }
+.d-kpi-status { display:inline-flex; align-items:baseline; gap:8px; }
+.d-kpi-status small { color:var(--d-muted); font-size:11.5px; }
+.d-kpi-pills { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; margin-left:auto; }
+.d-kpi-pill { display:inline-flex; align-items:baseline; gap:5px; padding:2px 8px; border:1px solid var(--border-hairline); background:#0c1016; border-radius:2px; font-size:12px; }
+.d-kpi-pill small { color:var(--d-muted); font-size:11px; }
+.d-kpi-pill b,.d-kpi-pill strong { font:700 13.5px var(--font-mono); color:#e8ebef; }
+.d-kpi-pill.is-out { border-color:rgba(56,189,248,.4); background:rgba(56,189,248,.08); }
+.d-kpi-pill.is-out b { color:var(--covered); }
+.d-kpi-pill.is-in { border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.08); }
+.d-kpi-pill.is-in b { color:var(--clean); }
+.d-kpi-pill[data-clean="true"] strong { color:var(--clean); }
+.d-kpi-pill[data-loss="true"] strong { color:var(--breached); }
+.d-kpi-pill.is-hp { border-color:rgba(248,113,113,.45); background:rgba(248,113,113,.1); }
+
+/* Graphical Assist Flow Bars (我给谁兜 / 谁给我兜 / 队友互兜) */
+.d-assist-visual { display:grid; gap:7px; }
+.d-assist-dual { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; }
+.d-assist-dual[data-both="true"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.d-assist-card { display:grid; gap:6px; padding:8px 10px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:2px; }
+.d-assist-card.is-out { border-top:2px solid var(--covered); }
+.d-assist-card.is-in { border-top:2px solid var(--clean); }
+.d-assist-card.is-peer { background:#0e1218; }
+.d-assist-card > header { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:12px; font-weight:700; }
+.d-assist-card > header > span { display:inline-flex; align-items:center; gap:4px; }
+.d-assist-card.is-out > header > span,.d-assist-card.is-out > header b { color:var(--covered); }
+.d-assist-card.is-in > header > span,.d-assist-card.is-in > header b { color:var(--clean); }
+.d-assist-card.is-peer > header > span { color:var(--d-muted); font-weight:650; }
+.d-assist-card > header b { font:700 14px var(--font-mono); }
+.d-assist-head-tags { display:inline-flex; align-items:center; gap:6px; }
+.d-self-clean { padding:0 5px; border:1px solid var(--border-hairline); background:#161c26; color:var(--d-muted); font:600 10.5px var(--font-mono); border-radius:2px; }
+.d-bar-list { display:grid; gap:5px; margin:0; padding:0; list-style:none; }
+.d-bar-list li { display:grid; grid-template-columns:minmax(4.2em,6.8em) minmax(36px,1fr) auto; align-items:center; gap:7px; min-height:20px; }
+.d-bar-list.is-peer-list li { grid-template-columns:minmax(7.5em,11em) minmax(36px,1fr) auto; }
+.d-bar-who { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
+.d-bar-pair { display:inline-flex; align-items:center; gap:4px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11.5px; }
+.d-bar-pair > svg { flex:none; color:var(--d-muted); }
+.d-bar-track { display:block; height:8px; background:#090c11; border:1px solid #1e2530; border-radius:1px; overflow:hidden; }
+.d-bar-track > i { display:block; height:100%; border-radius:1px; }
+.d-bar-track > i.is-out { background:linear-gradient(90deg,#0284c7,#38bdf8); }
+.d-bar-track > i.is-in { background:linear-gradient(90deg,#059669,#34d399); }
+.d-bar-track > i.is-peer { background:linear-gradient(90deg,#475569,#94a3b8); }
+.d-bar-track > i.seat-fill-1 { background:linear-gradient(90deg,#3b82f6,#91d8ff); }
+.d-bar-track > i.seat-fill-2 { background:linear-gradient(90deg,#e11d48,#ff98b0); }
+.d-bar-track > i.seat-fill-3 { background:linear-gradient(90deg,#10b981,#8de6bb); }
+.d-bar-track > i.seat-fill-4 { background:linear-gradient(90deg,#7c3aed,#c7b1ff); }
+.d-bar-val { font:700 13px var(--font-mono); color:#f1f5f9; text-align:right; min-width:2.2em; }
+.d-assist-unmatched { margin:0; font-size:11.5px; }
+
+/* Graphical 4-Seat Dual-Bar Cards */
 .d-report-seat-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
-.d-report-seat-cards > div { min-width:0; padding:6px 7px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:3px; }
-.d-report-seat-cards > div[data-self="true"] { border-top:2px solid var(--report-active); }
+.d-report-seat-cards > div { display:grid; gap:5px; min-width:0; padding:6px 8px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:2px; }
+.d-report-seat-cards > div[data-self="true"] { border-top:2px solid var(--report-active); background:#141922; }
 .d-report-seat-cards > div[data-empty="true"] { opacity:.55; }
-.d-seat-stats { display:flex; flex-wrap:wrap; gap:3px 10px; margin-top:4px; }
-.d-seat-stats > span { display:grid; color:var(--d-muted); font-size:11px; }.d-seat-stats b { font-size:14px; }
-.d-assist-group { border-top:1px solid var(--border-hairline); padding-top:7px; }
-.d-assist-group[data-mine="true"] h3 { color:var(--covered); }
-.d-assist-group ul { display:grid; gap:3px; margin:3px 0 0; padding:0; list-style:none; }
-.d-assist-group li { display:flex; flex-wrap:wrap; align-items:center; gap:5px 8px; min-height:24px; }
-.d-assist-group li > svg,.d-assist-group li > span { flex:none; color:var(--d-muted); }.d-assist-group li b { color:#e8ebef; }
-.d-detail-enemies { display:grid; grid-template-columns:5.2em 1fr; align-items:baseline; gap:6px; }
+.d-seat-bars { display:grid; gap:4px; }
+.d-seat-bar-row { display:grid; grid-template-columns:1.1em minmax(18px,1fr) auto; align-items:center; gap:5px; font-size:11.5px; }
+.d-seat-bar-row > small { color:var(--d-muted); font-size:10.5px; }
+.d-seat-bar-row b { font:700 12.5px var(--font-mono); text-align:right; white-space:nowrap; }
+.d-micro-track { display:block; height:5px; background:#090c11; border-radius:1px; overflow:hidden; }
+.d-micro-track > i { display:block; height:100%; }
+.d-micro-track > i.is-leak { background:var(--breached); }
+.d-micro-track > i.is-help { background:var(--covered); }
+
+/* Bottom Auxiliary Monster Species Section */
+.d-bottom-enemies summary { color:var(--d-muted); font-size:12px; }
+.d-bottom-enemies-body { display:grid; gap:5px; padding:2px 0 6px; }
+.d-detail-enemies { display:grid; grid-template-columns:4.8em 1fr; align-items:center; gap:6px; }
+.d-detail-enemies h3 { font-size:11px; color:var(--d-muted); }
 .d-round-fold { border-top:1px solid var(--border-hairline); }
 .d-round-fold summary { display:list-item; cursor:pointer; padding:6px 0; font-weight:600; }.d-round-fold summary small { color:var(--report-round); }
 .d-detail-inline { padding:10px 12px; border-bottom:1px solid var(--border-hairline); background:var(--bg-panel); }
@@ -262,6 +316,7 @@
   .d-report-roster { gap:0; }.d-seat-button { padding-inline:4px; }
   .d-report-tabs { gap:12px; }.d-round-grid { gap:4px; padding-inline:5px; grid-template-columns:2.4em 3.8em minmax(5.2em,.85fr) minmax(0,1.15fr) 12px; }
   .d-report-seat-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .d-assist-dual[data-both="true"] { grid-template-columns:minmax(0,1fr); }
   .d-spawn-controls { gap:5px 8px; }.d-detail-inline { padding:8px; }
 }
 @container report (max-width:410px) {

@@ -15,3 +15,8 @@
   - `products/stronghold/`（默认主线）：PRTS Stronghold 完整版，战报导出前缀 `PRTS战报`，Android 相册 `Pictures/PRTS`，沿用 `com.prts.stronghold` / `com.prts.stronghold.mobile`。
   - `products/telemetry/`（独立纯净版 · A 模式）：卫戍战报仪 · Stronghold Telemetry，仅保留战报与 Boss 路线参照，剥离攻略图与桌面盟约 OCR，使用 `com.stronghold.telemetry` 与独立签名。
 - 共享战报代码（前端、Electron、Android Java）必须通过 `src/brand/productBrand.ts`、`products/<id>/product.json` 或 Android 资源读取品牌与路径，**禁止在共享源码中硬编码单一产品名称**；切换构建产品（`-Product stronghold | telemetry`）不得弄脏工作区已跟踪文件。
+
+## 3. 跨设备接续同步
+
+- 跨电脑（如家里电脑 ↔ 常用电脑）接续开发时，优先执行 `git pull --ff-only origin main` 并阅读 [docs/HANDOFF.md](docs/HANDOFF.md) 与 `git log -n 10 --oneline` 以恢复最新上下文。
+- 完成重要里程碑或准备换机收工时，同步更新 `docs/HANDOFF.md` 中的「当前状态快照」并一并推送到 `origin/main`。

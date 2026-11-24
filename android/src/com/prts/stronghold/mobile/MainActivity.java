@@ -3,8 +3,7 @@ package com.prts.stronghold.mobile;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -77,29 +76,40 @@ public class MainActivity extends Activity {
         body.setPadding(dp(24), dp(24), dp(24), dp(24));
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
-        body.addView(text("PRTS 随行攻略", 28, 0xffedf4f5));
-        body.addView(text("识别盟约 Ban → 选方案 → 逐回合跟进", 17, 0xff9ce3bb));
-        body.addView(text("27 套阵容 · 离线资料库\n拖动悬浮球到顺手的位置，点球显示攻略；面板顶部可拖动，点「收起」返回游戏。", 15, 0xffb7cbd5));
+        if (getResources().getBoolean(R.bool.show_home_icon)) {
+            TextView brand = text(getString(R.string.product_title), 20, 0xffeceff4);
+            Drawable mark = getDrawable(getApplicationInfo().icon);
+            if (mark != null) {
+                mark.setBounds(0, 0, dp(36), dp(36));
+                brand.setCompoundDrawables(mark, null, null, null);
+                brand.setCompoundDrawablePadding(dp(8));
+            }
+            body.addView(brand);
+        } else {
+            body.addView(text(getString(R.string.product_title), 28, 0xffedf4f5));
+        }
+        body.addView(text(getString(R.string.home_subtitle), 17, 0xff9ce3bb));
+        body.addView(text(getString(R.string.home_body), 15, 0xffb7cbd5));
         permissionStatus = text("", 14, 0xffe4d3a5);
         body.addView(permissionStatus);
         button(body, "开启悬浮球 · 返回游戏", v -> startOverlay());
-        button(body, "在应用内查看攻略", v -> {
+        button(body, getString(R.string.home_open_button), v -> {
             OverlayService.stopActive();
             showGuide();
         });
         button(body, "悬浮窗权限设置", v -> openOverlaySettings());
         if (Build.VERSION.SDK_INT >= 33) button(body, "允许显示通知（可选）", v -> requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 20));
         button(body, "关闭悬浮助手", v -> { stopService(new Intent(this, OverlayService.class)); Toast.makeText(this, "悬浮助手已关闭，进度已保留", Toast.LENGTH_SHORT).show(); });
-        body.addView(text("使用提示\n• 首次开启需允许「显示在其他应用上层」。\n• 若 HyperOS 回到游戏后不显示，请检查后台弹出界面与后台运行权限。\n• 点击识别时需系统屏幕共享授权；在游戏本局盟约总览停留，露出全部三排盟约。完成或45秒后自动停止，可从通知随时停止。\n• 仅识别盟约亮暗状态，禁用干员仍需按游戏核对。截图在本机处理，不保存、不上传，无联网或无障碍权限。", 14, 0xffa6b8c4));
+        body.addView(text(getString(R.string.home_tips), 14, 0xffa6b8c4));
         updatePermission();
     }
 
     private void updatePermission() {
-        if (permissionStatus != null) permissionStatus.setText(Settings.canDrawOverlays(this) ? "悬浮窗权限已允许" : "尚未允许悬浮窗，仍可在应用内查看攻略");
+        if (permissionStatus != null) permissionStatus.setText(Settings.canDrawOverlays(this) ? "悬浮窗权限已允许" : getString(R.string.permission_hint));
     }
     private void openOverlaySettings() {
         try { startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))); }
-        catch (RuntimeException error) { Toast.makeText(this, "请在系统设置中为 PRTS 随行攻略开启悬浮窗权限", Toast.LENGTH_LONG).show(); }
+        catch (RuntimeException error) { Toast.makeText(this, "请在系统设置中为" + getString(R.string.app_name) + "开启悬浮窗权限", Toast.LENGTH_LONG).show(); }
     }
     private void startOverlay() {
         if (!Settings.canDrawOverlays(this)) { openOverlaySettings(); return; }

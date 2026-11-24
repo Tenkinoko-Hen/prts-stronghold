@@ -1,13 +1,29 @@
-const { app, BrowserWindow, ipcMain, net, protocol, desktopCapturer, clipboard, globalShortcut } = require('electron');
-const { installCovenantOcr } = require('./covenant-ocr.cjs');
-const { installBattleReports } = require('../modules/battle-report/electron/battle-reports.cjs');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { app, BrowserWindow, ipcMain, net, protocol, desktopCapturer, clipboard, globalShortcut, Tray, Menu } = require('electron');
+const { installCovenantOcr } = require('./covenant-ocr.cjs');
+const { installBattleReports } = require('./battle-reports.cjs');
+const { loadRuntimeProduct, brandingAssetPath } = require('./product-runtime.cjs');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'prts', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
+
+const product = loadRuntimeProduct(app);
+const desktop = product.desktop;
 let mainWindow;
+let tray;
+
+if (desktop.useIsolatedUserData) {
+  const profile = path.join(app.getPath('appData'), desktop.appId);
+  fs.mkdirSync(profile, { recursive: true });
+  app.setPath('userData', profile);
+  app.setPath('sessionData', profile);
+}
+if (process.platform === 'win32' && desktop.appId) {
+  app.setAppUserModelId(desktop.appId);
+}
 
 app.whenReady().then(() => {
   const root = path.join(app.getAppPath(), 'dist');
@@ -23,16 +39,26 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).href);
   });
   mainWindow = new BrowserWindow({
-    title: '卫戍协议战术终端 · PRTS Stronghold',
-    width: 1440, height: 900, minWidth: 1024, minHeight: 700,
-    center: true, fullscreen: false, show: false, autoHideMenuBar: true,
+    title: product.windowTitle,
+    width: desktop.width,
+    height: desktop.height,
+    minWidth: desktop.minWidth,
+    minHeight: desktop.minHeight,
+    center: true,
+    fullscreen: false,
+    show: false,
+    autoHideMenuBar: true,
     backgroundColor: '#0B0C0E',
-    icon: path.join(__dirname, 'branding', 'app.ico'),
+    icon: brandingAssetPath(app, product, 'app.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true, nodeIntegration: false, sandbox: true,
+      additionalArguments: [`--prts-mode=${product.mode}`],
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
+  if (desktop.defaultAlwaysOnTop) mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.setMenu(null);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -43,10 +69,40 @@ app.whenReady().then(() => {
     mainWindow.setAlwaysOnTop(flag, 'screen-saver');
     return mainWindow.isAlwaysOnTop();
   });
-  const scanner = installCovenantOcr({ app, mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut });
-  const reports = process.platform === 'win32' ? installBattleReports({ app, mainWindow, ipcMain }) : null;
-  mainWindow.on('closed', () => { scanner.dispose(); reports?.dispose(); });
-  mainWindow.once('ready-to-show', () => { mainWindow.show(); reports?.start(); });
+
+  const scanner = product.mode === 'full'
+    ? installCovenantOcr({ app, mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut, product })
+    : null;
+  const battleReports = process.platform === 'win32'
+    ? installBattleReports({ app, mainWindow, ipcMain, product })
+    : null;
+
+  if (process.platform === 'win32' && desktop.useTray) {
+    const showWindow = () => {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    };
+    const trayIcon = brandingAssetPath(app, product, 'tray.ico');
+    tray = new Tray(fs.existsSync(trayIcon) ? trayIcon : brandingAssetPath(app, product, 'app.ico'));
+    tray.setToolTip(product.windowTitle);
+    tray.on('click', showWindow);
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: `打开${product.name}`, click: showWindow },
+      { label: '退出', click: () => app.quit() },
+    ]));
+  }
+
+  mainWindow.on('closed', () => {
+    tray?.destroy();
+    scanner?.dispose();
+    battleReports?.dispose();
+  });
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    battleReports?.start();
+  });
   mainWindow.loadURL('prts://app/');
 });
+
 app.on('window-all-closed', () => app.quit());

@@ -1,10 +1,11 @@
-import React, { lazy, Suspense, useEffect, useReducer, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, ClipboardList, Crosshair, RotateCcw, ShieldBan, X } from 'lucide-react';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATORS, META_COMPS } from '../data/strongholdData';
 import { getRecommendedPaceForRound, rankCompsByBanState } from '../utils/tacticalLogic';
 import { MOBILE_SESSION_KEY, mobileReducer, restoreSession } from './mobileSession';
 import { MobileReference } from './MobileReference';
-import { CovenantScanner } from './CovenantScanner';
+import { CovenantScanner, useCovenantScanner } from './CovenantScanner';
+import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
 import type { RoundSyncProgress } from './RoundSync';
 import { StrategyBadge } from '../components/StrategyBadge';
@@ -12,7 +13,8 @@ import { OperatorAvatar } from '../components/OperatorAvatar';
 import { summarizeBlockedReasons } from '../components/guidePresentation';
 import './mobile.css';
 
-const MatchReport = lazy(() => import('../../modules/battle-report/src/mobile/MatchReport'));
+const MatchReport = lazy(() => import('./MatchReport'));
+
 export default function MobileApp() {
   const [reportOpen, setReportOpen] = useState(false);
   const [session, dispatch] = useReducer(mobileReducer, null, () => {
@@ -38,10 +40,24 @@ export default function MobileApp() {
   const banCount = session.bans.bannedCovenants.length + session.bans.bannedOperators.length;
   const manualRound = (value: number) => { window.PRTSRound?.pause(); dispatch({ type: 'round', round: value }); };
   const openImage = (url: string, title: string) => { setZoom(100); setImage({ url, title }); };
-  const startNewMatch = () => {
-    window.PRTSScan?.reset();
+  const resetRoundSync = useCallback(() => {
     window.PRTSRound?.stop();
     roundSyncProgress.current = { id: '', handled: '', synchronized: false, pending: null };
+  }, []);
+  const applyScan = useCallback((scan: CovenantScan) => {
+    if (scan.status === 'ready') {
+      resetRoundSync();
+      setResetPrompt(false);
+      setHelp(false);
+      setImage(null);
+    }
+    dispatch({ type: 'applyScan', scan });
+    setCorrecting(false);
+  }, [resetRoundSync]);
+  const scanner = useCovenantScanner(session.scanId, applyScan);
+  const startNewMatch = () => {
+    window.PRTSScan?.reset();
+    resetRoundSync();
     dispatch({ type: 'newMatch' });
     setResetPrompt(false);
   };
@@ -71,7 +87,7 @@ export default function MobileApp() {
     {storageError && <p role="alert" className="m-warning">本机未能保存进度，关闭前请记下当前回合。</p>}
     <main className={`m-scroll ${session.step === 'guide' ? 'is-guide' : session.step === 'ban' ? 'is-scan' : ''}`} ref={scrollRef}>
       {session.step === 'ban' && <div className="m-scan-layout"><section className="m-scan-controls" aria-label="识别与校正">
-        <CovenantScanner appliedId={session.scanId} onApply={scan => { dispatch({ type: 'applyScan', scan }); setCorrecting(false); }} />
+        <CovenantScanner appliedId={session.scanId} scanner={scanner} />
         <div className="m-ban-result"><div className="m-result-heading"><strong>{session.scanComplete ? '26 项已确认' : session.scanId ? `已确认 ${session.confirmedCovenants?.length || 0}/26` : '本局条件'} · {session.bans.bannedCovenants.length} 项受限</strong><button className="m-text-button" aria-expanded={correcting} onClick={() => setCorrecting(true)}>补录 / 校正</button></div>
           <div className="m-restricted-chips">{session.bans.bannedCovenants.map(name => <button key={name} onClick={() => dispatch({ type: 'ban', group: 'bannedCovenants', name })} aria-label={`将${name}改为可用`}>{name}<X size={12} /></button>)}</div>
         </div>
@@ -124,7 +140,7 @@ export default function MobileApp() {
     <nav className="m-bottom-nav" aria-label="手机导航">{([
       ['ban', '识别', ShieldBan], ['plans', '方案', Crosshair], ['guide', '跟进', Check], ['library', '资料', BookOpen],
     ] as const).map(([step, title, Icon]) => <button key={step} aria-current={session.step === step ? 'page' : undefined} onClick={() => dispatch({ type: 'step', step })}><Icon size={19} /><span>{title}</span></button>)}
-      {window.PRTSJournal && <button onClick={() => setReportOpen(true)}><ClipboardList size={19}/><span>战报</span></button>}</nav>
+      {window.PRTSJournal && <button onClick={() => setReportOpen(true)}><ClipboardList size={19} /><span>战报</span></button>}</nav>
     {help && <div className="m-modal-backdrop" onClick={() => setHelp(false)}><section className="m-confirm" role="dialog" aria-modal="true" aria-label="使用帮助" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭帮助" onClick={() => setHelp(false)}><X size={18} /></button><h2>识别 → 选方案 → 跟进</h2><p>在游戏打开「确认本局信息」，露出核心盟约与两排附加盟约。点击识别，允许系统屏幕共享，读全后这里会显示推荐。</p><p>点击受限标签可改为可用；「补录 / 校正」可修改全部盟约。未确认项不代表可用。灰暗表示阵容受限，不代表其中所有干员被禁，核心干员仍需按游戏核对。</p><p>点击当前回合编号可快速跳转。开启自动回合后框选游戏回合数字，收起助手时同步，手动切换会暂停自动跟进。</p><p>截图只在内存中本机处理，不保存、不上传。攻略按经济、来牌与承压调整，推导内容已标注。</p></section></div>}
     {resetPrompt && <div className="m-modal-backdrop"><section className="m-confirm" role="dialog" aria-modal="true" aria-label="开始新局"><h2>开始新的一局？</h2><p>将清空本局 Ban 和所有方案的回合进度。</p><div className="m-two-buttons"><button className="m-secondary" onClick={() => setResetPrompt(false)}>继续本局</button><button className="m-primary" onClick={startNewMatch}>开始新局</button></div></section></div>}
     {image && <section className="m-image-modal" role="dialog" aria-modal="true" aria-label={image.title}><header><button className="m-icon-button" aria-label="关闭原图" onClick={() => setImage(null)}><X /></button><strong>{image.title}</strong><button className="m-secondary" onClick={() => setZoom(zoom >= 250 ? 100 : zoom + 50)}>{zoom}%</button></header><div className="m-image-scroll"><img src={image.url} alt={image.title} style={{ width: `${zoom}%`, maxWidth: 'none' }} /></div><p>拖动查看长图 · 点击比例放大 · 支持双指缩放</p></section>}

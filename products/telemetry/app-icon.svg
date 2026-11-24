@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="88" fill="#0c0e11"/>
+  <path d="M56 56 H404 L456 108 V456 H108 L56 404 Z" fill="#13171d" stroke="#2c333f" stroke-width="10"/>
+  <path d="M56 132 V56 H132" fill="none" stroke="#e6c828" stroke-width="14"/>
+  <path d="M456 380 V456 H380" fill="none" stroke="#e6c828" stroke-width="14"/>
+  <rect x="364" y="102" width="38" height="38" fill="#d9534f"/>
+  <polyline points="104,292 174,292 214,196 266,344 314,236 352,292 408,292" fill="none" stroke="#e6c828" stroke-width="26" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="104" y="378" width="124" height="18" fill="#eceff4"/>
+  <rect x="246" y="378" width="62" height="18" fill="#58616e"/>
+</svg>

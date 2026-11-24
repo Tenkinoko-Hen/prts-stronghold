@@ -12,15 +12,17 @@ import { CovenantEncyclopediaView } from './components/CovenantEncyclopediaView'
 import { StackingCalculatorView } from './components/StackingCalculatorView';
 import { TransferItemsView } from './components/TransferItemsView';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
+import { DesktopScanStatus } from './components/DesktopCovenantScan';
 import { useDesktopCovenantScan } from './desktop/covenantOcr';
 import { BanPickState } from './utils/tacticalLogic';
 import './desktop/desktop.css';
 
 type ActiveView = 'tactical' | 'comps' | 'transfers' | 'covenants' | 'calculator' | 'reports';
-const BattleReportsView = lazy(() => import('../modules/battle-report/src/desktop/BattleReportsView'));
 
 const FAV_STORAGE_KEY = 'stronghold_fav_covenants_v1';
 const desktopAPI = window.electronAPI;
+const BattleReportsView = lazy(() => import('./desktop/BattleReportsView'));
+
 export default function App() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const [pinPending, setPinPending] = useState(false);
@@ -41,13 +43,19 @@ export default function App() {
   const [selectedCompId, setSelectedCompId] = useState<string>(META_COMPS[0].id);
   const [currentRound, setCurrentRound] = useState<number>(1);
   const [banState, setBanState] = useState<BanPickState>({ bannedCovenants: [], bannedOperators: [] });
+  const [matchScanId, setMatchScanId] = useState('');
   const { scan, reset: resetScan, cancel: cancelScan } = useDesktopCovenantScan(value => {
-    setBanState(previous => ({ ...previous, bannedCovenants: value.bannedCovenants }));
+    setBanState({ bannedCovenants: value.bannedCovenants, bannedOperators: [] });
+    setSelectedCompId(META_COMPS[0].id);
+    setCurrentRound(1);
+    setMatchScanId(value.id);
+    setLightboxImage(null);
     setActiveView('comps');
-  }, () => setActiveView('comps'));
+  });
   const clearBans = async () => {
     await resetScan();
     setBanState({ bannedCovenants: [], bannedOperators: [] });
+    setSelectedCompId(META_COMPS[0].id);
   };
 
   // Covenant filter & favorite state
@@ -193,8 +201,23 @@ export default function App() {
           >
             叠层计算器
           </a>
-          {desktopAPI?.battleReports && <a href="#reports" aria-current={activeView === 'reports' ? 'page' : undefined}
-            className="py-1 whitespace-nowrap shrink-0" onClick={event => { event.preventDefault(); setActiveView('reports'); }}>战报</a>}
+          {desktopAPI?.battleReports && (
+            <a
+              href="#reports"
+              aria-current={activeView === 'reports' ? 'page' : undefined}
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveView('reports');
+              }}
+              className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                activeView === 'reports'
+                  ? 'text-amber-400 border-amber-400 font-black'
+                  : 'border-transparent hover:text-slate-50'
+              }`}
+            >
+              战报
+            </a>
+          )}
         </nav>
 
         {/* Original image library */}
@@ -232,26 +255,26 @@ export default function App() {
         />
       )}
 
-      {activeView === 'comps' && (
-        <MetaCompsView
-          banState={banState}
-          onChangeBanState={setBanState}
-          desktopScan={scan}
-          onCancelScan={cancelScan}
-          onClearBans={clearBans}
-          selectedCompId={selectedCompId}
-          onSelectCompId={setSelectedCompId}
-          currentRound={currentRound}
-          onChangeRound={setCurrentRound}
-          onOpenImage={(url, title) => setLightboxImage({ url, title })}
-          onJumpTo2DMap={() => setActiveView('tactical')}
-          onJumpToPriorityCovenants={() => {
-            setOnlyCurrentCompPriority(true);
-            setActiveView('covenants');
-          }}
-          onJumpToTransfers={() => setActiveView('transfers')}
-        />
-      )}
+      <MetaCompsView
+        key={matchScanId}
+        visible={activeView === 'comps'}
+        banState={banState}
+        onChangeBanState={setBanState}
+        desktopScan={scan}
+        onCancelScan={cancelScan}
+        onClearBans={clearBans}
+        selectedCompId={selectedCompId}
+        onSelectCompId={setSelectedCompId}
+        currentRound={currentRound}
+        onChangeRound={setCurrentRound}
+        onOpenImage={(url, title) => setLightboxImage({ url, title })}
+        onJumpTo2DMap={() => setActiveView('tactical')}
+        onJumpToPriorityCovenants={() => {
+          setOnlyCurrentCompPriority(true);
+          setActiveView('covenants');
+        }}
+        onJumpToTransfers={() => setActiveView('transfers')}
+      />
 
       {activeView === 'transfers' && (
         <TransferItemsView
@@ -272,12 +295,17 @@ export default function App() {
         />
       )}
 
-      {activeView === 'calculator' && <StackingCalculatorView />}
-      {desktopAPI?.battleReports && <div hidden={activeView !== 'reports'}>
-        <Suspense fallback={<p>正在打开战报…</p>}>
-          <BattleReportsView api={desktopAPI.battleReports} visible={activeView === 'reports'} />
-        </Suspense>
-      </div>}
+      {activeView === 'calculator' && (
+        <StackingCalculatorView onOpenImage={(url, title) => setLightboxImage({ url, title })} />
+      )}
+      {desktopAPI?.battleReports && (
+        <div hidden={activeView !== 'reports'}>
+          <Suspense fallback={activeView === 'reports' && <main className="desktop-page d-muted">正在打开战报…</main>}>
+            <BattleReportsView api={desktopAPI.battleReports} visible={activeView === 'reports'} />
+          </Suspense>
+        </div>
+      )}
+      <DesktopScanStatus scan={scan} onCancel={cancelScan} floating />
 
       {/* 3. High-Resolution Original Image Lightbox Modal */}
       {lightboxImage && (
@@ -287,7 +315,6 @@ export default function App() {
           onClose={() => setLightboxImage(null)}
         />
       )}
-
     </div>
   );
 }

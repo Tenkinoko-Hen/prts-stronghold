@@ -1,4 +1,0 @@
-[submodule "modules/battle-report"]
-	path = modules/battle-report
-	url = https://github.com/Tenkinoko-Hen/prts-stronghold.git
-	branch = battle-report

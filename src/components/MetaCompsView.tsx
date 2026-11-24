@@ -11,6 +11,7 @@ import { OperatorAvatar } from './OperatorAvatar';
 import { summarizeBlockedReasons } from './guidePresentation';
 
 interface MetaCompsViewProps {
+  visible: boolean;
   banState: BanPickState;
   onChangeBanState: React.Dispatch<React.SetStateAction<BanPickState>>;
   desktopScan: DesktopCovenantScan | null;
@@ -39,9 +40,6 @@ export function MetaCompsView(props: MetaCompsViewProps) {
   const currentPage = Math.min(page, pageCount - 1);
   const activeComp = META_COMPS.find(comp => comp.id === selectedCompId) || META_COMPS[0];
   useEffect(() => { setPage(0); }, [difficulty, banState]);
-  useEffect(() => {
-    if (desktopScan?.status === 'ready' || desktopScan?.status === 'scanning') { setStage('picker'); setPage(0); }
-  }, [desktopScan?.id, desktopScan?.status]);
   const toggle = (key: keyof BanPickState, name: string) => onChangeBanState(previous => ({ ...previous,
     [key]: previous[key].includes(name) ? previous[key].filter(item => item !== name) : [...previous[key], name],
   }));
@@ -56,14 +54,14 @@ export function MetaCompsView(props: MetaCompsViewProps) {
       onClick={() => toggle('bannedCovenants', name)}>{banned && <Ban size={11} />}<span>{name}</span></button>;
   })}</div>;
 
-  return <main className="desktop-page">
+  return <main className="desktop-page" hidden={!props.visible}>
     {stage === 'picker' ? <div className="d-picker" data-testid="desktop-picker">
       <aside className="d-pick-side d-panel">
         <div className="d-section-head"><h1><span className="d-step">1</span>识别与校正</h1><div className="d-inline">
           <button className="d-icon" aria-label="识别与筛选帮助" onClick={() => setDialog('help')}><CircleHelp size={17} /></button>
           <button className="d-button d-small" data-testid="clear-bans" disabled={desktopScan?.status === 'scanning'} onClick={() => { setResetError(''); setDialog('reset'); }}><RotateCcw size={13} />新局</button>
         </div></div>
-        <DesktopScanPanel scan={desktopScan} onCancel={props.onCancelScan} onReset={onClearBans} />
+        <DesktopScanPanel scan={desktopScan} onCancel={props.onCancelScan} />
         <section className="d-corrections" aria-label="核对与校正">
           <div className="d-section-head"><h2>核对与校正</h2><span className="d-muted">{banState.bannedCovenants.length} 项受限</span></div>
           <h3>核心盟约 <small>10</small></h3>{chips(ALL_CORE_COVENANT_NAMES, 'core')}

@@ -99,15 +99,15 @@ export const CovenantEncyclopediaView: React.FC<
   const filteredUniversal = filterUniversalStackers(stackerQuery, benchOnly);
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-[#0B0E14] text-slate-100 pt-22 pb-28 px-4 sm:px-8">
-      <div className="max-w-[1420px] mx-auto space-y-6">
+    <div className="w-full h-full overflow-y-auto bg-[#0B0E14] text-slate-100 pt-16 pb-6 px-3 sm:px-4">
+      <div className="max-w-[1420px] mx-auto space-y-3">
         {/* 1. Header & Original Infographic Quick View */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-50 tracking-tight">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+          <h1 className="text-lg leading-6 font-extrabold text-slate-50">
             全盟约干员图鉴 & 叠层公式
           </h1>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
             <button
               type="button"
               onClick={() =>
@@ -116,9 +116,9 @@ export const CovenantEncyclopediaView: React.FC<
                   '九大盟约：叠层/过渡/输出终端全景长图'
                 )
               }
-              className="px-4 py-2 text-sm font-black text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-2"
+              className="px-2.5 py-1.5 text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5"
             >
-              <Eye className="w-4 h-4" />
+              <Eye size={14} />
               <span>九大盟约原图</span>
             </button>
             <button
@@ -129,9 +129,9 @@ export const CovenantEncyclopediaView: React.FC<
                   '卡西米尔盟约：叠层/过渡/输出终端一图流'
                 )
               }
-              className="px-4 py-2 text-sm font-black text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-2"
+              className="px-2.5 py-1.5 text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5"
             >
-              <Eye className="w-4 h-4" />
+              <Eye size={14} />
               <span>卡西米尔原图</span>
             </button>
             <button
@@ -142,9 +142,9 @@ export const CovenantEncyclopediaView: React.FC<
                   '附加盟约全图鉴 I'
                 )
               }
-              className="px-4 py-2 text-sm font-black text-teal-300 bg-slate-900 border border-teal-500/40 hover:bg-slate-800 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-2"
+              className="px-2.5 py-1.5 text-teal-300 bg-slate-900 border border-teal-500/40 hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5"
             >
-              <Eye className="w-4 h-4" />
+              <Eye size={14} />
               <span>附加盟约原图 I</span>
             </button>
             <button
@@ -155,19 +155,19 @@ export const CovenantEncyclopediaView: React.FC<
                   '附加盟约全图鉴 II'
                 )
               }
-              className="px-4 py-2 text-sm font-black text-teal-300 bg-slate-900 border border-teal-500/40 hover:bg-slate-800 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-2"
+              className="px-2.5 py-1.5 text-teal-300 bg-slate-900 border border-teal-500/40 hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5"
             >
-              <Eye className="w-4 h-4" />
+              <Eye size={14} />
               <span>附加盟约原图 II</span>
             </button>
           </div>
         </div>
 
         {/* 2. Priority Comp Filter, Scope Switcher & Favorites Filter Bar */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-[#0F1522] border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2.5">
+        <div className="px-3 py-2 rounded-lg bg-[#0F1522] border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 font-semibold">
             {/* Scope Switcher */}
-            <div className="flex items-center p-1 bg-slate-950 border border-slate-800 rounded-xl">
+            <div className="flex flex-wrap items-center p-0.5 bg-slate-950 border border-slate-800 rounded-md">
               <button
                 type="button"
                 data-testid="cov-scope-core"
@@ -175,7 +175,7 @@ export const CovenantEncyclopediaView: React.FC<
                   setCovenantScope('core');
                   setSelectedCovId(COVENANT_GUIDES[0].id);
                 }}
-                className={`px-4 py-2 text-sm font-black rounded-lg transition-colors whitespace-nowrap ${
+                className={`px-2 py-1.5 rounded transition-colors whitespace-nowrap ${
                   covenantScope === 'core'
                     ? 'bg-amber-400 text-slate-950'
                     : 'text-slate-300 hover:text-slate-50'
@@ -190,7 +190,7 @@ export const CovenantEncyclopediaView: React.FC<
                   setCovenantScope('sub');
                   setSelectedCovId(SUB_COVENANT_GUIDES[0].id);
                 }}
-                className={`px-4 py-2 text-sm font-black rounded-lg transition-colors whitespace-nowrap ${
+                className={`px-2 py-1.5 rounded transition-colors whitespace-nowrap ${
                   covenantScope === 'sub'
                     ? 'bg-teal-400 text-slate-950'
                     : 'text-slate-300 hover:text-slate-50'
@@ -202,7 +202,7 @@ export const CovenantEncyclopediaView: React.FC<
                 type="button"
                 data-testid="cov-scope-all"
                 onClick={() => setCovenantScope('all')}
-                className={`px-4 py-2 text-sm font-black rounded-lg transition-colors whitespace-nowrap ${
+                className={`px-2 py-1.5 rounded transition-colors whitespace-nowrap ${
                   covenantScope === 'all'
                     ? 'bg-sky-400 text-slate-950'
                     : 'text-slate-300 hover:text-slate-50'
@@ -219,13 +219,13 @@ export const CovenantEncyclopediaView: React.FC<
               onClick={() =>
                 onChangeOnlyCurrentCompPriority(!onlyCurrentCompPriority)
               }
-              className={`px-4 py-2 rounded-xl text-sm font-black border transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+              className={`px-2.5 py-1.5 rounded-md border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                 onlyCurrentCompPriority
                   ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md'
                   : 'bg-slate-900 text-slate-100 border-slate-700 hover:border-amber-400/60'
               }`}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles size={14} />
               <span>仅看当前阵容推荐盟约</span>
             </button>
 
@@ -234,14 +234,14 @@ export const CovenantEncyclopediaView: React.FC<
               type="button"
               data-testid="filter-favorites-only"
               onClick={() => setOnlyFavorites((f) => !f)}
-              className={`px-4 py-2 rounded-xl text-sm font-black border transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
+              className={`px-2.5 py-1.5 rounded-md border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                 onlyFavorites
                   ? 'bg-amber-500/25 text-amber-300 border-amber-400 shadow-md'
                   : 'bg-slate-900 text-slate-100 border-slate-700 hover:border-amber-400/60'
               }`}
             >
               <Star
-                className={`w-4 h-4 ${
+                className={`size-3.5 ${
                   onlyFavorites
                     ? 'fill-amber-400 text-amber-400'
                     : 'text-amber-400'
@@ -257,16 +257,16 @@ export const CovenantEncyclopediaView: React.FC<
                   onChangeOnlyCurrentCompPriority(false);
                   setOnlyFavorites(false);
                 }}
-                className="px-3.5 py-2 rounded-xl text-sm font-bold text-slate-300 hover:text-slate-50 bg-slate-900 border border-slate-800 flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 rounded-md text-slate-300 hover:text-slate-50 bg-slate-900 border border-slate-800 flex items-center gap-1.5 whitespace-nowrap"
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw size={14} />
                 <span>重置</span>
               </button>
             )}
           </div>
 
           {/* Linked Comp Selector Dropdown */}
-          <div className="flex items-center gap-2.5 text-sm">
+          <div className="flex min-w-0 max-w-full items-center gap-1.5">
             <span className="text-slate-300 font-bold whitespace-nowrap">
               关联阵容：
             </span>
@@ -274,7 +274,7 @@ export const CovenantEncyclopediaView: React.FC<
               aria-label="切换当前关联阵容一图流"
               value={selectedCompId}
               onChange={(e) => onSelectCompId(e.target.value)}
-              className="bg-slate-900 text-amber-300 font-black border border-slate-700 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-amber-400"
+              className="min-w-0 bg-slate-900 text-amber-300 font-semibold border border-slate-700 rounded-md px-2 py-1.5 focus:outline-none focus:border-amber-400"
             >
               {META_COMPS.map((comp) => (
                 <option key={comp.id} value={comp.id}>
@@ -287,8 +287,8 @@ export const CovenantEncyclopediaView: React.FC<
 
         {/* 3. Covenant Cards Grid */}
         {filteredCovenants.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-[#0F1522] border border-slate-800 text-center space-y-4">
-            <div className="text-xl font-black text-slate-100">
+          <div className="p-4 rounded-lg bg-[#0F1522] border border-slate-800 text-center space-y-2">
+            <div className="text-sm font-bold text-slate-100">
               当前筛选条件下暂无匹配的盟约
             </div>
             <button
@@ -297,13 +297,13 @@ export const CovenantEncyclopediaView: React.FC<
                 onChangeOnlyCurrentCompPriority(false);
                 setOnlyFavorites(false);
               }}
-              className="px-5 py-2.5 text-sm font-black bg-amber-400 text-slate-950 rounded-xl"
+              className="px-2.5 py-1.5 text-xs font-semibold bg-amber-400 text-slate-950 rounded-md"
             >
               重置筛选条件
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             {filteredCovenants.map((cov) => {
               const active = activeCov && cov.id === activeCov.id;
               const isFav = favoriteCovenantIds.includes(cov.id);
@@ -324,16 +324,16 @@ export const CovenantEncyclopediaView: React.FC<
                       setCategoryFilter('全部');
                     }
                   }}
-                  className={`relative p-4 rounded-2xl border-2 text-left transition-all cursor-pointer select-none flex flex-col justify-between ${
+                  className={`min-w-0 p-2.5 rounded-lg border text-left transition-colors cursor-pointer select-none flex flex-col justify-between ${
                     active
-                      ? 'bg-amber-400 text-slate-950 border-amber-300 font-black shadow-lg'
+                      ? 'bg-amber-400 text-slate-950 border-amber-300'
                       : 'bg-[#0F1522] text-slate-100 border-slate-800 hover:border-slate-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span
-                        className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border ${
+                        className={`size-7 rounded-full flex items-center justify-center shrink-0 border ${
                           active
                             ? 'bg-slate-950 text-[#00FFCC] border-slate-800'
                             : 'bg-[#00FFCC]/15 text-[#00FFCC] border-[#00FFCC]/40'
@@ -341,10 +341,10 @@ export const CovenantEncyclopediaView: React.FC<
                       >
                         <CovenantEmblemSvg
                           name={cov.name.split(' ')[0].replace('盟约', '')}
-                          size={22}
+                          size={18}
                         />
                       </span>
-                      <span className="text-lg font-black whitespace-nowrap truncate">
+                      <span className="text-sm leading-[1.35] font-extrabold">
                         {cov.name.split(' ')[0]}
                       </span>
                     </div>
@@ -358,14 +358,14 @@ export const CovenantEncyclopediaView: React.FC<
                         e.stopPropagation();
                         onToggleFavoriteCovenant(cov.id);
                       }}
-                      className={`p-1.5 rounded-lg transition-colors ${
+                      className={`size-7 shrink-0 inline-flex items-center justify-center rounded-md transition-colors ${
                         active
                           ? 'hover:bg-amber-500/40 text-slate-950'
                           : 'hover:bg-slate-800 text-amber-400'
                       }`}
                     >
                       <Star
-                        className={`w-5 h-5 ${
+                        className={`size-4 ${
                           isFav
                             ? active
                               ? 'fill-slate-950 text-slate-950'
@@ -376,9 +376,9 @@ export const CovenantEncyclopediaView: React.FC<
                     </button>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-2">
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[11px] leading-4 font-semibold">
                     <span
-                      className={`text-xs px-2.5 py-1 rounded-lg font-black whitespace-nowrap ${
+                      className={`px-1.5 py-0.5 rounded whitespace-nowrap ${
                         active
                           ? 'bg-slate-950/20 text-slate-950'
                           : 'bg-slate-900 text-slate-200'
@@ -388,7 +388,7 @@ export const CovenantEncyclopediaView: React.FC<
                     </span>
                     {isPriority && (
                       <span
-                        className={`text-xs px-2.5 py-1 rounded-lg font-black whitespace-nowrap ${
+                        className={`px-1.5 py-0.5 rounded whitespace-nowrap ${
                           active
                             ? 'bg-slate-950 text-amber-300'
                             : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -406,31 +406,31 @@ export const CovenantEncyclopediaView: React.FC<
 
         {/* 4. Active Covenant Visual Card */}
         {activeCov && (
-          <div className="p-6 rounded-2xl bg-[#0F1522] border border-slate-800 space-y-6">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="w-11 h-11 rounded-full bg-[#00FFCC]/15 border border-[#00FFCC]/50 text-[#00FFCC] flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(0,255,204,0.3)]">
+          <div className="p-3 rounded-lg bg-[#0F1522] border border-slate-800 space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="size-8 rounded-full bg-[#00FFCC]/15 border border-[#00FFCC]/50 text-[#00FFCC] flex items-center justify-center shrink-0">
                     <CovenantEmblemSvg
                       name={activeCov.name.split(' ')[0].replace('盟约', '')}
-                      size={28}
+                      size={20}
                     />
                   </span>
-                  <h2 className="text-2xl sm:text-3xl font-black text-slate-50">
+                  <h2 className="text-base leading-5 font-extrabold text-slate-50">
                     {activeCov.name}
                   </h2>
 
                   <button
                     type="button"
                     onClick={() => onToggleFavoriteCovenant(activeCov.id)}
-                    className={`px-3.5 py-1.5 rounded-xl text-sm font-black border flex items-center gap-2 transition-colors ${
+                    className={`px-2 py-1.5 rounded-md text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
                       favoriteCovenantIds.includes(activeCov.id)
                         ? 'bg-amber-400 text-slate-950 border-amber-300'
                         : 'bg-slate-900 text-slate-200 border-slate-700 hover:border-amber-400'
                     }`}
                   >
                     <Star
-                      className={`w-4 h-4 ${
+                      className={`size-3.5 ${
                         favoriteCovenantIds.includes(activeCov.id)
                           ? 'fill-slate-950'
                           : 'text-amber-400'
@@ -444,15 +444,14 @@ export const CovenantEncyclopediaView: React.FC<
                   </button>
                 </div>
 
-                {/* Big Scannable Formula Pill Row */}
-                <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                  <span className="px-4 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-sm sm:text-base font-black text-amber-300">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs leading-4">
+                  <span className="px-2 py-1 rounded-md bg-amber-500/20 border border-amber-500/40 font-bold text-amber-300">
                     叠层核心：{activeCov.stackCore}
                   </span>
                   {activeCov.synergySubPacts.map((sub) => (
                     <span
                       key={sub}
-                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-black text-slate-100"
+                      className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 font-semibold text-slate-100"
                     >
                       +{sub}
                     </span>
@@ -461,13 +460,13 @@ export const CovenantEncyclopediaView: React.FC<
               </div>
 
               {/* Role Filter Tabs */}
-              <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-900 border border-slate-800 rounded-xl self-start">
+              <div className="flex flex-wrap items-center gap-0.5 p-0.5 bg-slate-900 border border-slate-800 rounded-md self-start">
                 {categories.map((cat) => (
                   <button
                     key={cat}
                     type="button"
                     onClick={() => setCategoryFilter(cat)}
-                    className={`px-3.5 py-2 text-sm font-black rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                    className={`px-2 py-1.5 text-xs font-semibold rounded transition-colors whitespace-nowrap ${
                       categoryFilter === cat
                         ? 'bg-amber-400 text-slate-950'
                         : 'text-slate-300 hover:text-slate-50'
@@ -479,8 +478,7 @@ export const CovenantEncyclopediaView: React.FC<
               </div>
             </div>
 
-            {/* Visual Operator Avatar Cards Grid (Large Avatars & Large Badges) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
               {visibleOperators.map((op) => {
                 const badges = extractConciseEffectBadges(op.effect);
                 const catStyle =
@@ -490,32 +488,32 @@ export const CovenantEncyclopediaView: React.FC<
                 return (
                   <div
                     key={op.name}
-                    className="p-4 rounded-2xl bg-slate-900/95 border border-slate-800 hover:border-slate-700 transition-all flex items-center gap-4"
+                    className="min-w-0 p-2.5 rounded-lg bg-slate-900/95 border border-slate-800 hover:border-slate-700 transition-colors flex items-center gap-2.5"
                   >
                     <OperatorAvatar
                       name={op.name}
                       tier={op.tier}
-                      size="lg"
+                      size="sm"
                       showName={false}
                     />
 
-                    <div className="min-w-0 flex-1 space-y-2">
+                    <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-lg font-black text-slate-50 truncate">
+                        <span className="text-sm leading-5 font-bold text-slate-50">
                           {op.name}
                         </span>
                         <span
-                          className={`px-2.5 py-1 text-xs font-black rounded-lg border whitespace-nowrap shrink-0 ${catStyle}`}
+                          className={`px-1.5 py-0.5 text-[11px] leading-4 font-semibold rounded border whitespace-nowrap shrink-0 ${catStyle}`}
                         >
                           {op.category}
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-100 text-sm font-black">
+                      <div className="flex flex-wrap items-center gap-1 text-[11px] leading-4 font-semibold">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-100">
                           {badges.triggerBadge}
                         </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-amber-400/20 border border-amber-400/50 text-amber-300 text-sm font-black">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/50 text-amber-300">
                           {badges.valueBadge}
                         </span>
                       </div>
@@ -526,14 +524,14 @@ export const CovenantEncyclopediaView: React.FC<
             </div>
 
             {/* Concise Pro Tip Strip */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-slate-800/80">
-              <span className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 text-sm font-black">
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800/80 text-xs leading-4">
+              <span className="px-2 py-1 rounded bg-amber-400 text-slate-950 font-bold">
                 实战口诀
               </span>
               {activeCov.proTips.map((tip) => (
                 <span
                   key={tip}
-                  className="text-sm sm:text-base font-bold text-slate-100 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800"
+                  className="font-medium text-slate-100 bg-slate-900 px-2 py-1 rounded border border-slate-800"
                 >
                   {tip}
                 </span>
@@ -543,30 +541,30 @@ export const CovenantEncyclopediaView: React.FC<
         )}
 
         {/* 5. 13 Universal Stackers Section */}
-        <div className="p-6 rounded-2xl bg-[#0F1522] border border-slate-800 space-y-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <h2 className="text-xl sm:text-2xl font-black text-slate-50 flex items-center gap-2.5">
-              <Users className="w-6 h-6 text-sky-400" />
+        <div className="p-3 rounded-lg bg-[#0F1522] border border-slate-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <h2 className="text-[15px] leading-5 font-extrabold text-slate-50 flex items-center gap-1.5">
+              <Users size={16} className="text-sky-400" />
               <span>13位全阵营通用叠层神卡</span>
             </h2>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
               <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Search size={14} className="text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={stackerQuery}
                   onChange={(e) => setStackerQuery(e.target.value)}
                   placeholder="搜干员名 / 身前 / 整备区..."
                   aria-label="搜索通用叠层干员"
-                  className="pl-10 pr-4 py-2 text-sm font-bold bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
+                  className="pl-7 pr-2 py-1.5 font-medium bg-slate-900 border border-slate-700 rounded-md text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
                 />
               </div>
 
               <button
                 type="button"
                 onClick={() => setBenchOnly((b) => !b)}
-                className={`px-4 py-2 text-sm font-black rounded-xl border transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-2.5 py-1.5 rounded-md border transition-colors whitespace-nowrap ${
                   benchOnly
                     ? 'bg-sky-400 text-slate-950 border-sky-300'
                     : 'bg-slate-900 text-slate-200 border-slate-700 hover:border-slate-600'
@@ -583,42 +581,42 @@ export const CovenantEncyclopediaView: React.FC<
                     '卫戍协议盟约通用叠层干员一图流'
                   )
                 }
-                className="px-4 py-2 text-sm font-black text-amber-300 bg-slate-900 border border-amber-500/40 hover:bg-slate-800 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-2"
+                className="px-2.5 py-1.5 text-amber-300 bg-slate-900 border border-amber-500/40 hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5"
               >
-                <Eye className="w-4 h-4" />
+                <Eye size={14} />
                 <span>通用叠层原图</span>
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
             {filteredUniversal.map((st) => (
               <div
                 key={st.id}
-                className="p-4 rounded-2xl bg-slate-900/95 border border-slate-800 flex items-center gap-4"
+                className="min-w-0 p-2.5 rounded-lg bg-slate-900/95 border border-slate-800 flex items-center gap-2.5"
               >
                 <OperatorAvatar
                   name={st.name}
                   tier={st.tier}
-                  size="lg"
+                  size="sm"
                   showName={false}
                 />
 
-                <div className="min-w-0 flex-1 space-y-2">
+                <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-lg font-black text-slate-50 truncate">
+                    <span className="text-sm leading-5 font-bold text-slate-50">
                       {st.name}
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 text-xs font-black whitespace-nowrap shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[11px] leading-4 font-semibold whitespace-nowrap shrink-0">
                       {st.tag}
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/40 text-sm font-black">
+                  <div className="flex flex-wrap items-center gap-1 text-[11px] leading-4 font-semibold">
+                    <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40">
                       位置：{st.targetZone}
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 text-sm font-bold">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">
                       {st.timing}
                     </span>
                   </div>

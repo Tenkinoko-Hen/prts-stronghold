@@ -4,10 +4,11 @@ export const AEGIR_SOURCES = {
   damage: { id: '11199840817', title: '到底怎么玩阿戈尔' },
   strategy: { id: '11197994020', title: '孩子们歌蒂阿戈尔真的很强' },
   pitfall: { id: '11195543224', title: '孩子们阿戈尔小众变态错题本来了' },
+  nga079: { id: '079', title: '给新海嗣讲一下阿戈尔的基础技巧' },
 } as const;
 
 export type AegirStage = '道中' | 'Boss战';
-type AegirPurpose = AegirStage | '纠偏' | '资料';
+type AegirPurpose = AegirStage | '吞噬摆位' | '纠偏' | '资料';
 
 interface AegirReference {
   id: string;
@@ -27,7 +28,22 @@ const guidePicture = (id: string, title: string, location: string, note: string)
 const cactus = (id: string, round: number, title: string, note: string): AegirReference =>
   ({ id, round, title, note, purpose: '道中', mapId: 'desert-1', source: 'guide', location: '第 25 楼及同局补图' });
 
+const swallow = (id: string, title: string, location: string, note: string): AegirReference =>
+  ({ id: `nga079-${id}`, title, location, note, purpose: '吞噬摆位', source: 'nga079', terrain: '相对站位' });
+
 export const AEGIR_REFERENCES: readonly AegirReference[] = [
+  swallow('double-lead', '双路守线 · 两个鱼头同吃', '主帖「双吃摆法」', '幽灵鲨和深巡都朝向归溟幽灵鲨，后面的吞噬链给两路前排提供阻挡。先确定两路需要谁接怪，再按可部署格旋转。'),
+  swallow('straight', '入门 · 一条线朝同一侧', '主帖图 1.1', '箭头是干员面向；吞噬目标在身前一格。先定接怪端，再沿朝向排后续队友。'),
+  swallow('horizontal', '横向互对 · 两人闭环', '主帖图 1.2', '作者的横向示例由左侧发起。右侧若是需要持续输出或治疗的干员，先检查它会不会被吞噬击倒。'),
+  swallow('vertical', '纵向互对 · 两人闭环', '主帖图 1.3', '作者的纵向示例由上方发起；用来核对纵向朝向，别把上下摆位当成横排直接照抄。'),
+  swallow('loop-branch', '一侧接入 · 吃闭环', '主帖图 1.4', '先看图中 b、c 的互朝，再看 a 指向 b。接怪的干员放环外；环里优先放能承受吞噬的单位。'),
+  swallow('multi-branch', '多侧接入 · 环外留主力', '主帖图 1.5', '图中 a、b、c 分别指向 d/e 环。用三个箭头核对相邻格；实际阻挡和生存看本局编成。'),
+  swallow('double-support', '双吃变式 · 加一名支援', '主帖「双吃摆法」补图', '红蒂可换魔王。这张摆法原帖建议深巡开场血量超过 5000；也要核对本局承伤与两路技能覆盖。'),
+  swallow('clockwise', '四格回环 · 顺时针', '主帖图 3.1', '按箭头逐格对照；作者示例以幽灵鲨为发起端、深巡作末端。要留场的干员先放环外。'),
+  swallow('counterclockwise', '四格回环 · 反向摆法', '主帖图 3.2', '回环反过来摆后，被依次吞噬的顺序也会变。不要换一张图只翻转其中一个干员。'),
+  swallow('two-entries', '四格回环 · 两侧外接', '主帖图 3.3', '安哲拉与乌尔比安在环外，各自朝向相邻的环内单位。两路需分工时先检查输出覆盖。'),
+  swallow('anti-air', '飞行波 · 把对空留在环外', '主帖「回环链路」补图', '这张图用安哲拉、深巡处理飞行压力，克莱门莎不要算作对空位；技能和站位看下一波敌人。'),
+  swallow('mizuki-risk', '开战纠偏 · 水月进环会承伤', '评论第 32–33 楼', '图中的水月也在环内。被吞顺位越后，累计物理伤害可能越高；用实际血量、防御和助力检查，别按吞噬者人数估算。'),
   cactus('m17', 5, 'R5 · 双路过渡', '以左侧蓝门、右侧红门和中央仙人掌为参照。先守住两路；治疗跟着掉血的前排摆，别等四本才补。'),
   cactus('m26', 6, 'R6 · 幽灵鲨接怪', '橙色范围是选中幽灵鲨时显示的朝向与射程。图中朝红门方向接怪；另一侧也要留人，左边被面板挡住的格子请按本局核对。'),
   cactus('m27', 6, 'R6 · 深巡对空和攻速', '选中深巡看朝右的攻击范围。攻速加成覆盖自身和相邻四格，与攻击范围不同；下一格的终端要挨着深巡才能吃到。'),

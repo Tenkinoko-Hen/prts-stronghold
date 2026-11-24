@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">卫戍战报仪</string>
+    <string name="product_title">卫戍战报仪 · Stronghold Telemetry</string>
+    <string name="home_subtitle">局内战报 · 自动回合识别 · 离线归档</string>
+    <string name="home_body">点悬浮球打开本局战报，收起面板即可返回游戏。</string>
+    <string name="home_open_button">打开本局战报</string>
+    <string name="home_tips">使用提示\n• 首次开启需允许「显示在其他应用上层」。\n• 若 HyperOS 回到游戏后不显示，请检查后台弹出界面与后台运行权限。\n• 开启自动回合后需系统屏幕共享授权并框选游戏回合数字；漏怪、协防、Boss 总伤与出怪由玩家补记。\n• 截图与战报记录仅在本机处理，不上传，无联网或无障碍权限。</string>
+    <string name="permission_hint">尚未允许悬浮窗，仍可在应用内查看战报</string>
+    <string name="overlay_channel">悬浮战报</string>
+    <string name="overlay_title">卫戍战报仪正在悬浮</string>
+    <string name="overlay_grip">⠿ 卫戍战报仪</string>
+    <string name="overlay_collapse">收起战报</string>
+    <string name="overlay_drag">拖动战报窗口</string>
+    <string name="ball_desc">卫戍战报仪悬浮球，点击展开战报，可拖动</string>
+    <string name="ball_scan_desc">正在识别回合，点击展开战报</string>
+    <string name="report_export_prefix">卫戍战报仪</string>
+    <string name="report_album_dir">卫戍战报仪</string>
+    <string name="report_album_saved">已保存到相册「卫戍战报仪」</string>
+    <color name="launcher_background">#0c0e11</color>
+    <bool name="covenant_scan_enabled">false</bool>
+    <bool name="show_home_icon">true</bool>
+    <integer name="ball_icon_inset_dp">4</integer>
+</resources>

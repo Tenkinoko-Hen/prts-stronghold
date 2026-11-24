@@ -20,7 +20,7 @@ const opening: MetaCompGuide['phases'][number] = {
     { name: '斯卡蒂', tier: 'III', role: '过渡战力' },
   ],
   benchOperators: [],
-  keyActions: ['先买能打的牌。缺奶先带奶；双路别把输出全塞在同一条路。'],
+  keyActions: ['先买能守路的牌。缺治疗就补奶，双路分开留输出。'],
 };
 
 const steady: MetaCompGuide['phases'][number] = {
@@ -32,7 +32,7 @@ const steady: MetaCompGuide['phases'][number] = {
     { name: '安哲拉', tier: 'II', role: '续叠阿戈尔' },
     { name: '深巡', tier: 'III', role: '接怪、对空', note: '优先接承压大的一路，攻速覆盖相邻输出。' },
     { name: '归溟幽灵鲨', tier: 'IV', role: '抗线' },
-    { name: '水月', tier: 'IV', role: '低压侧终端', note: '留在吞噬链末端或旁侧，别被吃倒或换下。' },
+    { name: '水月', tier: 'IV', role: '低压侧终端', note: '优先放链外，避开其他阿戈尔正前一格。' },
     { name: '华法琳', tier: 'IV', role: '灵巧与治疗', note: '照顾水月和会掉血的前排。' },
   ],
   benchOperators: [],
@@ -47,7 +47,7 @@ const endgame: MetaCompGuide['phases'][number] = {
   fieldOperators: [
     { name: '克莱门莎', tier: 'VI', role: '侵蚀主输出', note: '优先 2 技能；对局内核对放逐舱方向与 Boss 走线。' },
     { name: '魔王', tier: 'VI', role: '可选 2 技能支援', note: '按实际走线保护主力；和红蒂的鼓舞不叠。' },
-    { name: '归溟幽灵鲨', tier: 'IV', role: '抗线或换补位' },
+    { name: '归溟幽灵鲨', tier: 'IV', role: '抗线与技力支援', note: '与克莱门莎邻接。被击倒或切换替身时，给周围八格的阿戈尔回技力。' },
     { name: '安哲拉', tier: 'II', role: '击倒叠层与吞噬材料' },
     { name: '乌尔比安', tier: 'V', role: '邻格临时增攻' },
     { name: '水月', tier: 'IV', role: '续灵巧或补副输出' },
@@ -56,6 +56,7 @@ const endgame: MetaCompGuide['phases'][number] = {
   benchOperators: [],
   keyActions: [
     '先把克莱门莎放在能打中 Boss 的输出端，确认朝向、攻击范围和首轮走线，再排吞噬链。',
+    '吞噬承接基础攻击和阻挡；阿戈尔层数提供生命值。多段吞噬可能吃到多次物伤，先核对方向和剩余阻挡。',
     '有帕拉斯可做灵巧支援；缺帕拉斯就保护水月或让深巡邻接。乌尔比安增攻、深巡攻速均只覆盖自身和相邻四格。',
     '对假想敌·械先试 2 技能的推向：若推离队友火力区，挪位或换朝向；道中已能独立守住再考虑 3 技能打 Boss。',
   ],
@@ -63,6 +64,7 @@ const endgame: MetaCompGuide['phases'][number] = {
 
 const gears = [
   '克莱门莎常用 2 技能。道中已稳、Boss 在射程内时可试 3 技能；注意弹药，别把关底技能照搬到道中。',
+  '克莱门莎 2 技能的放逐舱向前走三格，终点留下漩涡。先对照 Boss 走线；飞机波保留深巡、安哲拉或对空外援。',
   '装备先给当轮主力。克莱门莎到手后再转输出装；攻速线没叠起来时，优先补能立刻生效的战力。',
   '原帖有双进阶精准狙击镜的实例；也有天马之翼、动能装的配装。它们是备选，开局不锁装备。',
   '魔王用 2 技能；缺技力可找萨尔贡浓茶。可靠怀表压技能门槛但会降技能期间攻速，按回转缺口考虑。',
@@ -118,14 +120,21 @@ export const AEGIR_HUNTERS: MetaCompGuide = {
   covenants: ['阿戈尔', '灵巧优先', '突袭可选'],
   imageUrl: aegirImageUrl('m02'),
   secondaryImageUrl: aegirImageUrl('m06'),
-  coreHighlight: '前期少刷新，四本用歌蕾蒂娅策略补卡。双路用深巡或幽灵鲨顶重压路，水月在另一侧叠灵巧。',
+  coreHighlight: '通常 R6 四本开调度。能稳吃三元悬赏时可提前到 R5；双路分开扛线，克莱门莎关底接输出。',
   equipmentTips: [
     '五阶自选外援可参考赤刃明霄陈或维什戴尔，按本局缺对空、清杂还是关底输出选；别为等外援拆掉现有战力。',
     '歌蕾蒂娅干员本体是五阶：普通需同行三人，精锐后免人数条件，休整时补低阶阿戈尔。选了同名策略也要实际抓到本体。',
     ...gears,
   ],
   phases: [
-    { ...opening, keyActions: [...opening.keyActions, '原帖节奏 R2 二本、R4 三本、R6 四本；前期少刷新，升本会漏就延后。'] },
+    {
+      ...opening,
+      keyActions: [
+        ...opening.keyActions,
+        '稳妥线 R2 二本、R4 三本、R6 四本。R3 若能用七名干员稳拿三元悬赏，可在 R4 连升二、三本，R5 升四开调度。',
+        '两元速四是备选：R3 升二，R4 升三并补一人，R5 升四后可卖闲置牌筹 1 资源调度。会拆掉关键阻挡或治疗就等 R6。',
+      ],
+    },
     {
       ...steady,
       phaseName: '四本调度与补牌',
@@ -152,9 +161,9 @@ export const AEGIR_HUNTERS: MetaCompGuide = {
   roundPace: fromPace([
     [1, '【推导】买幽灵鲨或当轮战力，先凑能上场的牌。'],
     [2, '原帖二本。优先买能提升战力的牌，留安哲拉。'],
-    [2, '【推导】留钱升本；要掉血先买治疗、前排或现成对子。'],
+    [2, '【推导】常规留钱升本；能稳拿三元悬赏可准备 R5 四本，两元路线先保场。'],
     [3, '原帖三本。拿深巡、斯卡蒂；钱紧少刷新。'],
-    [3, '【推导】检查双路抗线和对空；缺奶先补奶。'],
+    [3, '【推导】常规补双路与对空；提前上四前，确认能守两路并留够 1 资源开调度。'],
     [4, '原帖四本开调度。用调度补阿戈尔和对子，守不住就延后升本。'],
     [4, '先稳四本阵。深巡或幽灵鲨顶一侧，水月配华法琳守另一侧。'],
     [5, '原帖顺风可上五；还在漏就留四本，先让两路都站住。'],

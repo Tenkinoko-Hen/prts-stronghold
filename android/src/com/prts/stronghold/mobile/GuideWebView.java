@@ -44,7 +44,9 @@ final class GuideWebView {
         settings.setDisplayZoomControls(false);
         view.addJavascriptInterface(new SessionBridge(context), "PRTSJournal");
         view.addJavascriptInterface(new ReportFiles.Bridge(context), "PRTSFiles");
-        view.addJavascriptInterface(new ScanBridge(context.getApplicationContext()), "PRTSScan");
+        if (context.getResources().getBoolean(R.bool.covenant_scan_enabled)) {
+            view.addJavascriptInterface(new ScanBridge(context.getApplicationContext()), "PRTSScan");
+        }
         view.addJavascriptInterface(new RoundBridge(context.getApplicationContext()), "PRTSRound");
         view.setWebViewClient(new WebViewClient() {
             private boolean local(Uri uri) { return "https".equals(uri.getScheme()) && HOST.equals(uri.getHost()); }

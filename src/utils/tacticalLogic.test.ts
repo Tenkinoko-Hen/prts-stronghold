@@ -184,7 +184,7 @@ test('Community routes distinguish main-faction bans from restricted secondary c
 });
 
 test('Community data uses canonical tiers and shipped source images', () => {
-  assert.equal(UPLOADED_GALLERY_ITEMS.length, 86);
+  assert.equal(UPLOADED_GALLERY_ITEMS.length, 87);
   assert.equal(new Set(UPLOADED_GALLERY_ITEMS.map((item) => item.id)).size, UPLOADED_GALLERY_ITEMS.length);
   for (const item of UPLOADED_GALLERY_ITEMS) {
     assert.ok(existsSync(new URL(`../../public${item.url}`, import.meta.url)), item.url);

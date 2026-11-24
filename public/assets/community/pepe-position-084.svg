@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 304" role="img" aria-labelledby="title">
+  <title id="title">佩佩四合院：阿米娅与凛御银灰朝向佩佩，指定受益干员放在佩佩身后</title>
+  <defs>
+    <marker id="tip" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#f0cc61"/>
+    </marker>
+  </defs>
+  <rect width="580" height="304" rx="12" fill="#141a21"/>
+  <g fill="#222c36" stroke="#3b4c5b">
+    <rect x="216" y="26" width="144" height="46" rx="5"/>
+    <rect x="216" y="204" width="144" height="46" rx="5"/>
+    <rect x="25" y="104" width="154" height="68" rx="5"/>
+  </g>
+  <rect x="216" y="104" width="144" height="68" rx="5" fill="#1d3b36" stroke="#71d9ac" stroke-width="2"/>
+  <path d="M288 79v16 M288 197v-16 M377 138h48" stroke="#f0cc61" stroke-width="3" marker-end="url(#tip)"/>
+  <path d="M187 138h20" stroke="#71d9ac" stroke-width="2" stroke-dasharray="4 3"/>
+  <g font-family="Microsoft YaHei, Noto Sans SC, sans-serif" font-size="19" text-anchor="middle" fill="#e4ebf1">
+    <text x="288" y="56">阿米娅</text><text x="288" y="234">凛御银灰</text>
+    <text x="102" y="133">指定受益干员</text><text x="102" y="155" font-size="14" fill="#aabece">佩佩身后一格</text>
+    <text x="288" y="133">佩佩</text><text x="288" y="155" font-size="14" fill="#9ce5c6">3 技能</text>
+    <text x="485" y="144" fill="#f0cc61">佩佩朝向</text>
+    <text x="290" y="281" font-size="15" fill="#aabece">NGA 084 · 按实际格位旋转，不限朝右</text>
+  </g>
+</svg>

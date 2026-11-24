@@ -1,12 +1,17 @@
-# 使用已锁定的官方 AAR/JAR，合并资源和初始化组件；不引入联网权限。
-function Prepare-OcrDependencies([string]$ProjectRoot, [string]$BuildRoot, [string]$BuildTools) {
+﻿# 使用已锁定的官方 AAR/JAR，合并资源和初始化组件；不引入联网权限。
+function Prepare-OcrDependencies(
+    [string]$ProjectRoot,
+    [string]$BuildRoot,
+    [string]$BuildTools,
+    [string]$ManifestSource = 'android\AndroidManifest.xml'
+) {
     $lock = Get-Content -LiteralPath 'android\ocr-dependencies.json' -Raw | ConvertFrom-Json
     $jars = [Collections.Generic.List[string]]::new()
     $resources = [Collections.Generic.List[string]]::new()
     $packages = [Collections.Generic.List[string]]::new()
     $assetRoots = [Collections.Generic.List[string]]::new()
     $nativeRoots = [Collections.Generic.List[string]]::new()
-    [xml]$manifest = Get-Content -LiteralPath 'android\AndroidManifest.xml' -Raw
+    [xml]$manifest = Get-Content -LiteralPath $ManifestSource -Raw
     $androidNs = 'http://schemas.android.com/apk/res/android'
     $toolsNs = 'http://schemas.android.com/tools'
     $application = $manifest.manifest.application
@@ -57,7 +62,7 @@ function Prepare-OcrDependencies([string]$ProjectRoot, [string]$BuildRoot, [stri
     foreach ($element in $manifest.SelectNodes('//*')) {
         foreach ($attribute in @($element.Attributes)) {
             if ($attribute.NamespaceURI -eq $toolsNs) { $null=$element.RemoveAttributeNode($attribute) }
-            elseif ($attribute.Value.Contains('${applicationId}')) { $attribute.Value=$attribute.Value.Replace('${applicationId}','com.prts.stronghold.mobile') }
+            elseif ($attribute.Value.Contains('${applicationId}')) { $attribute.Value=$attribute.Value.Replace('${applicationId}', $manifest.manifest.GetAttribute('package')) }
         }
     }
     $manifestPath=Join-Path $ProjectRoot "$BuildRoot\AndroidManifest.xml"

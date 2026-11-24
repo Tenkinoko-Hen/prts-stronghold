@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { UNIVERSAL_STACKERS } from '../data/strongholdData';
+import { PEPE_POSITION_IMAGE } from '../data/ngaCommunityComps';
 import { calculateStackingProjection } from '../utils/tacticalLogic';
 import { OperatorAvatar } from './OperatorAvatar';
 import { Calculator, CheckCircle2, RotateCcw, Sparkles } from 'lucide-react';
 
-export const StackingCalculatorView: React.FC = () => {
+export const StackingCalculatorView: React.FC<{ onOpenImage(url: string, title: string): void }> = ({ onOpenImage }) => {
   const [activeFieldIds, setActiveFieldIds] = useState<string[]>([
     'pallas',
     'saria',
@@ -90,6 +91,9 @@ export const StackingCalculatorView: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="px-3 py-1.5 text-xs font-bold bg-slate-900 text-amber-300 border border-amber-500/40 rounded-lg" onClick={() => onOpenImage(PEPE_POSITION_IMAGE, '佩佩四合院 · 站位')}>
+              佩佩四合院站位
+            </button>
             <button
               type="button"
               onClick={() => applyPreset('minor-dynasty')}

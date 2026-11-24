@@ -62,11 +62,11 @@ public class OverlayService extends Service {
         if (intent != null && "STOP".equals(intent.getAction())) { dispose(); stopSelf(); return START_NOT_STICKY; }
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY; }
         NotificationManager notifications = getSystemService(NotificationManager.class);
-        notifications.createNotificationChannel(new NotificationChannel(CHANNEL, "悬浮攻略", NotificationManager.IMPORTANCE_LOW));
+        notifications.createNotificationChannel(new NotificationChannel(CHANNEL, getString(R.string.overlay_channel), NotificationManager.IMPORTANCE_LOW));
         PendingIntent home = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, OverlayService.class).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, CHANNEL)
-            .setContentTitle("PRTS 随行攻略正在悬浮")
+            .setContentTitle(getString(R.string.overlay_title))
             .setContentText("点悬浮球展开 / 收起；可随时停止")
             .setSmallIcon(R.drawable.ic_notification).setOngoing(true).setContentIntent(home)
             .addAction(new Notification.Action.Builder(R.drawable.ic_notification, "关闭悬浮助手", stop).build()).build();
@@ -119,8 +119,9 @@ public class OverlayService extends Service {
 
     private void setBallScanning(boolean scanning) {
         ball.setText(scanning ? "识别中" : "");
-        ball.setForeground(scanning ? null : new InsetDrawable(getDrawable(R.drawable.ic_prts), dp(7)));
-        ball.setContentDescription(scanning ? "正在识别盟约，点击展开攻略" : "PRTS 悬浮球，点击展开攻略，可拖动");
+        int inset = getResources().getInteger(R.integer.ball_icon_inset_dp);
+        ball.setForeground(scanning ? null : new InsetDrawable(getDrawable(R.drawable.ic_overlay_ball), dp(inset)));
+        ball.setContentDescription(scanning ? getString(R.string.ball_scan_desc) : getString(R.string.ball_desc));
     }
 
     private void createPanel() {
@@ -135,8 +136,8 @@ public class OverlayService extends Service {
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.setPadding(dp(10), 0, dp(4), 0);
         TextView grip = new TextView(this);
-        grip.setText("⠿ PRTS");
-        grip.setContentDescription("拖动攻略窗口");
+        grip.setText(getString(R.string.overlay_grip));
+        grip.setContentDescription(getString(R.string.overlay_drag));
         grip.setTextColor(0xff9ce3bb);
         grip.setTextSize(13);
         toolbar.addView(grip, new LinearLayout.LayoutParams(0, dp(34), 1));
@@ -146,7 +147,7 @@ public class OverlayService extends Service {
             sizePanel();
             try { manager.updateViewLayout(panel, panelParams); } catch (RuntimeException error) { fail(); }
         });
-        toolbarButton(toolbar, "−", "收起攻略", v -> collapse());
+        toolbarButton(toolbar, "−", getString(R.string.overlay_collapse), v -> collapse());
         toolbarButton(toolbar, "×", "退出悬浮助手", v -> { dispose(); stopSelf(); });
         panel.addView(toolbar);
         web = GuideWebView.create(this, true);

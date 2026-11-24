@@ -4,13 +4,16 @@ import { existsSync } from 'node:fs';
 import { META_COMPS, SUB_COVENANT_GUIDES, TACTICAL_MAPS } from '../data/strongholdData';
 import { AEGIR_REFERENCES, AEGIR_SOURCES, aegirMapReferences, aegirImageUrl } from '../data/aegirReferences';
 import { AEGIR_HUNTERS_ID, AEGIR_PITH_ID } from '../data/aegirErosion';
+import { BOSS_ENCOUNTERS } from '../data/bossEncounterData';
+import { BOSS_ROUTE_GUIDES, BOSS_ROUTE_TERRAINS } from '../data/bossRoutes';
+import { NGA_COMMUNITY_COMPS } from '../data/ngaCommunityComps';
 import { recommendedSkill } from './guidePresentation';
 import { evaluateCompUnderBans, getRecommendedPaceForRound, isCovenantRecommendedForComp } from '../utils/tacticalLogic';
 import { baseTalentsFor, covenantEffects, modeOperators, operatorAbilities, reference, referenceNames, strategiesFor, trainingState } from './referenceData';
 
 test('Every named lineup operator has offline abilities, skill levels and covenant effects', () => {
   assert.equal(Object.keys(modeOperators).length, 143);
-  assert.equal(Object.keys(operatorAbilities).length, 145);
+  assert.equal(Object.keys(operatorAbilities).length, 146);
   assert.equal(Object.keys(covenantEffects).length, 26);
   for (const comp of META_COMPS) for (const phase of comp.phases) for (const op of [...phase.fieldOperators, ...phase.benchOperators]) {
     const names = referenceNames(op.name);
@@ -27,6 +30,9 @@ test('Every named lineup operator has offline abilities, skill levels and covena
   assert.deepEqual(referenceNames('任意一阶对子'), []);
   assert.deepEqual(referenceNames('暴躁铁皮'), ['暴躁铁皮']);
   assert.deepEqual(referenceNames('风絮/仇白'), ['风絮', '仇白']);
+  assert.deepEqual(referenceNames('火陈'), ['赤刃明霄陈']);
+  assert.deepEqual(referenceNames('假日威龙陈'), ['假日威龙陈']);
+  assert.equal(modeOperators['赤刃明霄陈'], undefined);
   assert.equal(modeOperators['假日威龙陈'], undefined);
 });
 
@@ -81,8 +87,8 @@ test('New strategies stay separate with viable eight-slot main phases and Ban de
   assert(!suzuran.covenants.some(c=>/炎|投资人|迅捷/.test(c)));
 });
 
-test('Aegir guide has all five sources offline; current-map results exclude other stages and case studies', () => {
-  assert.equal(AEGIR_REFERENCES.length, 39);
+test('Aegir guide includes 51 offline images without mixing relative placements into map results', () => {
+  assert.equal(AEGIR_REFERENCES.length, 51);
   assert.equal(new Set(AEGIR_REFERENCES.map(item => item.id)).size, AEGIR_REFERENCES.length);
   assert.deepEqual(new Set(AEGIR_REFERENCES.map(item => item.source)), new Set(Object.keys(AEGIR_SOURCES)));
   for (const item of AEGIR_REFERENCES) {
@@ -95,6 +101,45 @@ test('Aegir guide has all five sources offline; current-map results exclude othe
   assert.deepEqual(aegirMapReferences('desert-3', 'Boss战').map(item => item.id), ['s03', 's12']);
   assert.deepEqual(aegirMapReferences('desert-2', 'Boss战'), []);
   assert.equal(AEGIR_REFERENCES.find(item => item.id === 's09')?.purpose, '纠偏');
+  const digestion = AEGIR_REFERENCES.filter(item => item.purpose === '吞噬摆位');
+  assert.equal(digestion.length, 12);
+  assert(digestion.every(item => item.source === 'nga079' && item.mapId === undefined));
+});
+
+test('NGA drafts keep distinct pivots and only recommend confirmed Ban-compatible routes', () => {
+  for (const comp of NGA_COMMUNITY_COMPS) {
+    assert.deepEqual(comp.roundPace.map(item => item.round), Array.from({ length: 15 }, (_, i) => i + 1));
+    assert(comp.phases.every(phase => phase.fieldOperators.length <= 8));
+    for (const image of [comp.imageUrl, comp.secondaryImageUrl]) {
+      if (image) assert(existsSync(new URL(`../../public${image}`, import.meta.url)), image);
+    }
+  }
+  const byId = (id: string) => NGA_COMMUNITY_COMPS.find(comp => comp.id === id)!;
+  const bans = (id: string, bannedCovenants: string[], bannedOperators: string[] = []) =>
+    evaluateCompUnderBans(byId(id), { bannedCovenants, bannedOperators });
+  assert.equal(bans('kjerag-reprise-fast-four', ['迅捷']).status, 'optimal');
+  assert.equal(bans('kjerag-suzuran-snowhunter', ['迅捷']).status, 'viable');
+  assert.equal(bans('yan-bison-victoria-research', [], ['赤刃明霄陈']).status, 'blocked');
+  assert.equal(bans('yan-bison-victoria-research', [], ['假日威龙陈']).status, 'viable');
+  assert.equal(bans('sargon-victoria-mechanist', ['精准', '奥术']).status, 'viable');
+  const papyrus = byId('papyrus-pairs-pivot');
+  assert.equal(bans(papyrus.id, ['莱塔尼亚', '萨尔贡']).status, 'blocked');
+  assert.equal(bans(papyrus.id, ['萨尔贡']).status, 'viable');
+  assert.equal(getRecommendedPaceForRound(papyrus, 15).activePhaseName, papyrus.phases[1].phaseName);
+  assert.match(papyrus.roundPace[7].action, /唯一一次/);
+  assert.match(papyrus.roundPace[8].action, /剩余/);
+});
+
+test('Boss references preserve route originals and omit unconfigured hidden variants', () => {
+  assert.equal(BOSS_ENCOUNTERS.length, 10);
+  assert.equal(BOSS_ENCOUNTERS.filter(item => item.rounds[15]).length, 6);
+  assert.equal(BOSS_ENCOUNTERS.find(item => item.name === '矩兽')?.rounds[15], undefined);
+  assert.equal(BOSS_ENCOUNTERS.find(item => item.name === '假想敌：铳')?.rounds[15]?.stats[0], 5980000);
+  for (const guide of BOSS_ROUTE_GUIDES) {
+    for (const image of [guide.url, ...Array.from({ length: BOSS_ROUTE_TERRAINS.length + 1 }, (_, i) => `/assets/boss-routes/${guide.id}-${i + 1}.png`)]) {
+      assert(existsSync(new URL(`../../public${image}`, import.meta.url)), image);
+    }
+  }
 });
 
 test('Aegir strategies have separate operating plans and manual terminal phases', () => {

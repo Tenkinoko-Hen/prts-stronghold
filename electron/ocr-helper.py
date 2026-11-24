@@ -5,8 +5,6 @@ import json
 import sys
 import time
 
-from pathlib import Path
-
 NAMES = ["炎", "萨尔贡", "阿戈尔", "叙拉古", "卡西米尔", "维多利亚", "谢拉格", "乌萨斯", "伊比利亚", "莱塔尼亚",
          "精准", "远见", "投资人", "突袭", "不屈", "调和", "协防干员", "独行", "绝技", "聚合", "奥术", "迅捷", "灵巧", "坚守", "助力", "奇迹"]
 MAX_LINE = 32 * 1024 * 1024
@@ -111,14 +109,12 @@ def serve():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] in (["--battle-report"], ["--battle-report-check"]):
-        if not getattr(sys, "frozen", False):
-            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "modules/battle-report/electron"))
-        from prts_battle_core.live import self_check, serve as serve_report
-        if sys.argv[1] == "--battle-report-check":
-            self_check()
-        else:
-            serve_report()
+    if sys.argv[1:] == ["--battle-report"]:
+        from prts_battle_core.live import serve as serve_battle_report
+        serve_battle_report()
+    elif sys.argv[1:] == ["--battle-report-check"]:
+        from prts_battle_core.live import self_check
+        self_check()
     else:
         import cv2
         import numpy as np

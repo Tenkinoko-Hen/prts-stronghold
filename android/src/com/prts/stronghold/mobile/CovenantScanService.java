@@ -79,7 +79,7 @@ public class CovenantScanService extends Service {
             DisplayMetrics metrics = new DisplayMetrics();
             getSystemService(WindowManager.class).getDefaultDisplay().getRealMetrics(metrics);
             createReader(metrics.widthPixels,metrics.heightPixels);
-            display = projection.createVirtualDisplay("PRTS covenant scan", captureWidth,captureHeight,metrics.densityDpi,
+            display = projection.createVirtualDisplay(getString(R.string.app_name), captureWidth,captureHeight,metrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader.getSurface(),null,handler);
             if (roundMode) { RoundScanState.set("capturing", "请回到游戏，准备框选回合数字"); OverlayService.hideForRound(); }
             else { CovenantScanState.set("scanning","请回到游戏的本局盟约总览，停留片刻"); OverlayService.hideForScan(); }

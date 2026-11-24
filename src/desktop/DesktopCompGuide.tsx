@@ -46,6 +46,7 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSe
   const action = pace.currentAction || comp.strategistTip;
   const focused = phaseOverride === null ? mentionedOperators(action) : [];
   const dialogTitle = operator?.name || ({ overview: '阵容总览', strategy: '完整打法与适用条件', equipment: '核心装备与技能' }[dialog || 'strategy']);
+  const aegir = isAegirGuide(comp.id);
 
   return <div className="d-guide" data-testid="desktop-guide">
     <header className="d-guide-header d-panel">
@@ -54,9 +55,7 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSe
       <select aria-label="快速切换当前跟打阵容" value={comp.id} onChange={e => onSelectComp(e.target.value)}><option value={comp.id}>切换阵容…</option>{evaluations.filter(ev => ev.comp.id !== comp.id).map(ev => <option key={ev.comp.id} value={ev.comp.id}>{ev.comp.title} · {ev.statusLabel}</option>)}</select>
       <div className="d-tags d-header-covenants">{comp.covenants.map(cov => <span key={cov} className={bans.bannedCovenants.some(name => cov.includes(name)) ? 'is-hit' : ''}>{cov}</span>)}</div>
       <button className="d-button d-overview-button" onClick={() => setDialog('overview')}><Radar size={15} />阵容总览</button>
-      {isAegirGuide(comp.id)
-        ? <AegirReferenceButton key={comp.id} className="d-button" round={round} stage={round >= 14 ? 'Boss战' : '道中'} />
-        : <button className="d-button" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><Maximize2 size={14} />看原图</button>}
+      {!aegir && <button className="d-button" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><Maximize2 size={14} />看原图</button>}
     </header>
     <div className="d-guide-grid">
         <section className="d-panel d-phase-panel" aria-label="当前阶段阵容" data-phase-name={phase.phaseName}>
@@ -99,8 +98,9 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, onRound, onSe
           {tab === '全回合轴' && <ol className="d-timeline">{comp.roundPace.map(item => <li key={item.round} className={item.round === round ? 'is-active' : ''}><button ref={item.round === round ? activeRound : null} className="d-button d-timeline-row" aria-current={item.round === round ? 'step' : undefined} onClick={() => selectRound(item.round)}><span>R{item.round} · {item.tier} 本</span><span><DerivedText text={item.action} /></span></button></li>)}</ol>}
           </div>
         </section>
-        <section className="d-panel d-reference-panel"><div className="d-section-head"><h2>阵容参考原图</h2><div className="d-inline">{comp.secondaryImageUrl && <button className="d-text-button" onClick={() => onOpenImage(comp.secondaryImageUrl!, `${comp.title} · 补充图`)}>补充图</button>}<button className="d-icon" aria-label="放大阵容原图" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><Maximize2 size={15} /></button></div></div>
-          <button className="d-reference-image" aria-label="查看阵容原图" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><img src={comp.imageUrl} alt={comp.title} /></button>
+        <section className="d-panel d-reference-panel"><div className="d-section-head"><h2>{aegir ? '阿戈尔站位速查' : '阵容参考原图'}</h2><div className="d-inline">{comp.secondaryImageUrl && <button className="d-text-button" onClick={() => onOpenImage(comp.secondaryImageUrl!, `${comp.title} · 补充图`)}>补充图</button>}<button className="d-icon" aria-label="放大阵容原图" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><Maximize2 size={15} /></button></div></div>
+          {aegir ? <AegirReferenceButton key={comp.id} className="d-aegir-preview" preview round={round} stage={round >= 14 ? 'Boss战' : '道中'} />
+            : <button className="d-reference-image" aria-label="查看阵容原图" onClick={() => onOpenImage(comp.imageUrl, comp.title)}><img src={comp.imageUrl} alt={comp.title} /></button>}
           <div className="d-reference-footer"><button className="d-text-button d-action-link-pill" onClick={onCovenants}>相关盟约</button>{onTransfers && <button className="d-text-button d-action-link-pill" onClick={onTransfers}>转职配方</button>}</div>
         </section>
       </aside>

@@ -542,7 +542,6 @@ export default function HudStripApp({
 
   const maxOpDamage = Math.max(1, ...opRows.map(o => o.damage));
   const maxTeamDamage = Math.max(1, ...bossTeamData.rows.map(r => r.damage));
-  const maxLeakLoad = Math.max(1, ...leakData.cards.map(c => c.leaked + c.assisted));
   const emptyAlertCount = parsed?.deckPool ? trackedOps.filter(o => o.remaining === 0).length : 0;
   const fullGuideText = PRODUCT_BRAND.mode === 'full' && state.guide.paceTip ? state.guide.paceTip : '';
 
@@ -1036,98 +1035,133 @@ export default function HudStripApp({
                   </div>
                 )}
 
-                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '9.5px', color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>
-                  总漏 <b style={{ color: '#fbbf24' }}>{leakData.totalLeaks}</b> · 兜 <b style={{ color: '#00e5ff' }}>{leakData.totalAssisted}</b>
-                  {leakData.totalEscaped > 0 && <> · 逃 <b style={{ color: '#ff6b6b' }}>{leakData.totalEscaped}</b></>}
-                </span>
+                <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '9.5px', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  <span
+                    style={{
+                      padding: '1px 5px',
+                      borderRadius: '2px',
+                      background: leakData.totalLeaks > 0 ? 'rgba(245, 158, 11, 0.20)' : '#141b26',
+                      border: `1px solid ${leakData.totalLeaks > 0 ? 'rgba(245, 158, 11, 0.80)' : '#273447'}`,
+                      color: leakData.totalLeaks > 0 ? '#fbbf24' : '#64748b',
+                    }}
+                  >
+                    漏 {leakData.totalLeaks}
+                  </span>
+                  <span
+                    style={{
+                      padding: '1px 5px',
+                      borderRadius: '2px',
+                      background: leakData.totalAssisted > 0 ? 'rgba(0, 229, 255, 0.18)' : '#141b26',
+                      border: `1px solid ${leakData.totalAssisted > 0 ? 'rgba(0, 229, 255, 0.80)' : '#273447'}`,
+                      color: leakData.totalAssisted > 0 ? '#67e8f9' : '#64748b',
+                    }}
+                  >
+                    兜 {leakData.totalAssisted}
+                  </span>
+                  <span
+                    style={{
+                      padding: '1px 5px',
+                      borderRadius: '2px',
+                      background: leakData.totalEscaped > 0 ? 'rgba(255, 77, 79, 0.25)' : '#141b26',
+                      border: `1px solid ${leakData.totalEscaped > 0 ? 'rgba(255, 77, 79, 0.90)' : '#273447'}`,
+                      color: leakData.totalEscaped > 0 ? '#ff8080' : '#64748b',
+                    }}
+                  >
+                    {leakData.totalEscaped > 0 ? `逃 ${leakData.totalEscaped}` : '零逃'}
+                  </span>
+                </div>
               </div>
 
-              {/* 4-Column Equal-Width Player Leak/Assist Bar Cards */}
+              {/* 4-Column Equal-Width Player Dual-Track Bar Cards (兜 vs 漏) */}
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, leakData.cards.length)}, minmax(0, 1fr))`, gap: '4px' }}>
-                {leakData.cards.map(card => {
-                  const greenW = card.leaked === 0 ? Math.max(2, maxLeakLoad - card.assisted * 0.4) : 0;
-                  const cyanW = card.covered + card.assisted;
-                  const redW = card.escaped;
-                  const totalW = Math.max(0.01, greenW + cyanW + redW);
-                  return (
-                    <div
-                      key={card.seat}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        padding: '4px 5px',
-                        background: card.eliminated
-                          ? 'rgba(18, 22, 30, 0.55)'
-                          : card.isSelf
-                            ? 'rgba(255, 230, 0, 0.09)'
-                            : card.escaped > 0
-                              ? 'rgba(255, 77, 79, 0.11)'
-                              : '#131a24',
-                        border: `1px solid ${card.isSelf ? 'rgba(255, 230, 0, 0.52)' : card.escaped > 0 ? 'rgba(255, 77, 79, 0.5)' : '#263142'}`,
-                        borderRadius: '2px',
-                        opacity: card.eliminated ? 0.58 : 1,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
-                        {card.isSelf && (
-                          <small style={{ padding: '0 2.5px', fontSize: '8px', fontWeight: 800, background: '#ffe600', color: '#0b0d11', borderRadius: '1px', flexShrink: 0 }}>
-                            我
-                          </small>
-                        )}
-                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', fontWeight: card.isSelf ? 700 : 600, color: card.isSelf ? '#fff8b0' : '#e2e8f0' }}>
-                          {card.label}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
-                        {card.eliminated ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#f87171', fontWeight: 700 }}>
-                            <Skull size={9} />R{card.elimRound}出局
+                {(() => {
+                  const maxMetric = Math.max(1, ...leakData.cards.map(c => Math.max(c.leaked, c.assisted)));
+                  return leakData.cards.map(card => {
+                    const assistPct = (card.assisted / maxMetric) * 100;
+                    const coveredPct = (card.covered / maxMetric) * 100;
+                    const escapedPct = (card.escaped / maxMetric) * 100;
+                    return (
+                      <div
+                        key={card.seat}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '3.5px',
+                          padding: '4px 5px',
+                          background: card.eliminated
+                            ? 'rgba(18, 22, 30, 0.55)'
+                            : card.isSelf
+                              ? 'rgba(255, 230, 0, 0.09)'
+                              : card.escaped > 0
+                                ? 'rgba(255, 77, 79, 0.11)'
+                                : '#131a24',
+                          border: `1px solid ${card.isSelf ? 'rgba(255, 230, 0, 0.52)' : card.escaped > 0 ? 'rgba(255, 77, 79, 0.5)' : '#263142'}`,
+                          borderRadius: '2px',
+                          opacity: card.eliminated ? 0.58 : 1,
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
+                          {card.isSelf && (
+                            <small style={{ padding: '0 2.5px', fontSize: '8px', fontWeight: 800, background: '#ffe600', color: '#0b0d11', borderRadius: '1px', flexShrink: 0 }}>
+                              我
+                            </small>
+                          )}
+                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', fontWeight: card.isSelf ? 700 : 600, color: card.isSelf ? '#fff8b0' : '#e2e8f0' }}>
+                            {card.label}
                           </span>
-                        ) : (
-                          <>
-                            <b style={{ color: (card.hp ?? 99) <= 5 ? '#ff7875' : (card.hp ?? 0) >= 15 ? '#34d399' : '#cbd5e1' }}>
-                              ♥{card.hp ?? '—'}
-                            </b>
-                            <span style={{ color: '#94a3b8' }}>{card.shopLevel ? `${card.shopLevel}本` : '—'}</span>
-                          </>
-                        )}
-                      </div>
+                        </div>
 
-                      {/* Segmented 3-color bar */}
-                      <div style={{ display: 'flex', height: '7px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden' }}>
-                        {greenW > 0 && <span style={{ width: `${(greenW / totalW) * 100}%`, background: '#10b981' }} />}
-                        {cyanW > 0 && <span style={{ width: `${(cyanW / totalW) * 100}%`, background: '#00e5ff' }} />}
-                        {redW > 0 && <span style={{ width: `${(redW / totalW) * 100}%`, background: '#ff4d4f' }} />}
-                      </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
+                          {card.eliminated ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#f87171', fontWeight: 700 }}>
+                              <Skull size={9} />R{card.elimRound}出局
+                            </span>
+                          ) : (
+                            <>
+                              <b style={{ color: (card.hp ?? 99) <= 5 ? '#ff7875' : (card.hp ?? 0) >= 15 ? '#34d399' : '#cbd5e1' }}>
+                                ♥{card.hp ?? '—'}
+                              </b>
+                              <span style={{ color: '#38bdf8', fontWeight: 700 }}>{card.shopLevel ? `${card.shopLevel}本` : '—'}</span>
+                            </>
+                          )}
+                        </div>
 
-                      {/* Bottom crisp leak/assist numbers */}
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {card.leaked === 0 && card.assisted === 0 ? (
-                          <span style={{ color: '#34d399' }}>漏0 · 稳守</span>
-                        ) : card.leaked === 0 ? (
-                          <>
-                            <span style={{ color: '#34d399' }}>漏0 </span>
-                            <span style={{ color: '#00e5ff' }}>兜+{card.assisted}</span>
-                          </>
-                        ) : card.escaped === 0 ? (
-                          <>
-                            <span style={{ color: '#fbbf24' }}>漏{card.leaked} </span>
-                            <span style={{ color: '#00e5ff' }}>全兜✓</span>
-                          </>
-                        ) : (
-                          <>
-                            <span style={{ color: '#fbbf24' }}>漏{card.leaked} </span>
-                            <span style={{ color: '#ff6b6b' }}>逃{card.escaped}</span>
-                            {card.covered > 0 && <span style={{ color: '#00e5ff' }}> 兜{card.covered}</span>}
-                          </>
-                        )}
+                        {/* Track 1: 兜 (Assist Kills) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '8.5px', fontWeight: 700 }}>
+                          <span style={{ color: card.assisted > 0 ? '#00e5ff' : '#64748b', flexShrink: 0 }}>兜</span>
+                          <div style={{ flex: 1, height: '5px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                            {assistPct > 0 && <span style={{ width: `${assistPct}%`, background: '#00e5ff' }} />}
+                          </div>
+                          <span style={{ color: card.assisted > 0 ? '#67e8f9' : '#475569', flexShrink: 0, minWidth: '14px', textAlign: 'right' }}>
+                            {card.assisted > 0 ? `+${card.assisted}` : '0'}
+                          </span>
+                        </div>
+
+                        {/* Track 2: 漏 (Covered Amber + Escaped Red) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '8.5px', fontWeight: 700 }}>
+                          <span style={{ color: card.escaped > 0 ? '#ff6b6b' : card.leaked > 0 ? '#fbbf24' : '#64748b', flexShrink: 0 }}>漏</span>
+                          <div style={{ flex: 1, height: '5px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                            {coveredPct > 0 && <span style={{ width: `${coveredPct}%`, background: '#fb923c' }} />}
+                            {escapedPct > 0 && <span style={{ width: `${escapedPct}%`, background: '#ff4d4f' }} />}
+                          </div>
+                          <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {card.leaked === 0 ? (
+                              <span style={{ color: '#475569' }}>0</span>
+                            ) : card.escaped === 0 ? (
+                              <span style={{ color: '#fbbf24' }}>{card.leaked}</span>
+                            ) : (
+                              <>
+                                <span style={{ color: '#fbbf24' }}>{card.leaked}</span>
+                                <span style={{ color: '#ff6b6b', marginLeft: '2px' }}>逃{card.escaped}</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
 
               {/* Bottom Leaked Enemy Icons + Legend */}
@@ -1163,7 +1197,7 @@ export default function HudStripApp({
                   )}
                 </div>
                 <span style={{ flexShrink: 0, fontSize: '8.5px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                  <b style={{ color: '#10b981' }}>■</b>稳 <b style={{ color: '#00e5ff' }}>■</b>兜 <b style={{ color: '#ff4d4f' }}>■</b>逃
+                  <b style={{ color: '#00e5ff' }}>■</b>帮兜 <b style={{ color: '#fb923c' }}>■</b>已兜 <b style={{ color: '#ff4d4f' }}>■</b>逃逸
                 </span>
               </div>
             </div>

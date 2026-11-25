@@ -89,6 +89,10 @@ public class OverlayService extends Service {
     private LinearLayout stripLeakScopeBox;
     private TextView stripScopeCumBtn;
     private TextView stripScopeRoundBtn;
+    private LinearLayout stripLeakPills;
+    private TextView stripLeakPillTotal;
+    private TextView stripLeakPillAssist;
+    private TextView stripLeakPillEscaped;
     private LinearLayout stripActions;
     private TextView stripScanBtn;
     private LinearLayout stripModeCapsule;
@@ -597,6 +601,18 @@ public class OverlayService extends Service {
         scopeLp.leftMargin = dp(5);
         topRow.addView(stripLeakScopeBox, scopeLp);
 
+        stripLeakPills = new LinearLayout(this);
+        stripLeakPills.setOrientation(LinearLayout.HORIZONTAL);
+        stripLeakPills.setGravity(Gravity.CENTER_VERTICAL);
+        stripLeakPills.setVisibility(View.GONE);
+        stripLeakPillTotal = leakSummaryPill(stripLeakPills, false);
+        stripLeakPillAssist = leakSummaryPill(stripLeakPills, true);
+        stripLeakPillEscaped = leakSummaryPill(stripLeakPills, true);
+        LinearLayout.LayoutParams pillsLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        pillsLp.leftMargin = dp(6);
+        pillsLp.rightMargin = dp(4);
+        topRow.addView(stripLeakPills, pillsLp);
+
         stripTitleView = new TextView(this);
         stripTitleView.setTextSize(11f);
         stripTitleView.setTypeface(null, Typeface.BOLD);
@@ -863,14 +879,26 @@ public class OverlayService extends Service {
         refreshStripAndBallContent();
     }
 
+    private TextView leakSummaryPill(LinearLayout parent, boolean gapLeft) {
+        TextView tv = new TextView(this);
+        tv.setTextSize(10f);
+        tv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tv.setSingleLine(true);
+        tv.setPadding(dp(6), dp(2), dp(6), dp(2));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        if (gapLeft) lp.leftMargin = dp(4);
+        parent.addView(tv, lp);
+        return tv;
+    }
+
     private CharSequence buildLeakLegend() {
         SpannableStringBuilder sb = new SpannableStringBuilder();
-        appendColored(sb, "■", 0xff10b981);
-        appendColored(sb, "稳 ", 0xff94a3b8);
         appendColored(sb, "■", 0xff00e5ff);
-        appendColored(sb, "兜 ", 0xff94a3b8);
+        appendColored(sb, "帮兜 ", 0xff94a3b8);
+        appendColored(sb, "■", 0xfffb923c);
+        appendColored(sb, "已兜 ", 0xff94a3b8);
         appendColored(sb, "■", 0xffff4d4f);
-        appendColored(sb, "逃", 0xff94a3b8);
+        appendColored(sb, "逃逸", 0xff94a3b8);
         return sb;
     }
 
@@ -1096,10 +1124,10 @@ public class OverlayService extends Service {
 
     private void renderLeakBody(BattleCaptureState.LeakSnapshot leakSnap, boolean vpnRunning) {
         leakGrid.removeAllViews();
-        int maxLoad = 1;
+        int maxMetric = 1;
         for (BattleCaptureState.SeatLeakRow row : leakSnap.seats) {
-            int load = row.leaked + row.assisted;
-            if (load > maxLoad) maxLoad = load;
+            if (row.leaked > maxMetric) maxMetric = row.leaked;
+            if (row.assisted > maxMetric) maxMetric = row.assisted;
         }
 
         for (int i = 0; i < leakSnap.seats.size(); i++) {
@@ -1114,7 +1142,7 @@ public class OverlayService extends Service {
             LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1f);
             if (i > 0) cardLp.leftMargin = dp(4);
 
-            // Card Top: [我] Name   ♥HP
+            // Card Top: [我] Name   ♥HP 本数
             LinearLayout head = new LinearLayout(this);
             head.setOrientation(LinearLayout.HORIZONTAL);
             head.setGravity(Gravity.CENTER_VERTICAL);
@@ -1159,48 +1187,40 @@ public class OverlayService extends Service {
             head.addView(hpTv);
             card.addView(head);
 
-            // Card Middle: 3-color segmented bar [稳守 Green | 兜底 Cyan | 逃跑 Red]
-            LinearLayout barTrack = new LinearLayout(this);
-            barTrack.setOrientation(LinearLayout.HORIZONTAL);
-            barTrack.setBackground(background(0xff0b0f16, 2, 0xff1f2a3a));
-            barTrack.setPadding(dp(1), dp(1), dp(1), dp(1));
-            LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, dp(8));
-            barLp.topMargin = dp(4);
-            barLp.bottomMargin = dp(4);
-
-            float greenW = row.leaked == 0 ? Math.max(2f, (float) maxLoad - row.assisted * 0.4f) : 0f;
-            float cyanW = (float) (row.covered + row.assisted);
-            float redW = (float) row.escaped;
-            if (greenW <= 0f && cyanW <= 0f && redW <= 0f) greenW = 1f;
-
-            addBarSegment(barTrack, greenW, 0xff10b981);
-            addBarSegment(barTrack, cyanW, 0xff00e5ff);
-            addBarSegment(barTrack, redW, 0xffff4d4f);
-            card.addView(barTrack, barLp);
-
-            // Card Bottom: Crisp monospace numbers
-            TextView stats = new TextView(this);
-            stats.setTextSize(9f);
-            stats.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-            stats.setSingleLine(true);
-            stats.setEllipsize(TextUtils.TruncateAt.END);
-            SpannableStringBuilder sb = new SpannableStringBuilder();
-            if (row.leaked == 0 && row.assisted == 0) {
-                appendColored(sb, "漏0 · 稳守", 0xff34d399);
-            } else if (row.leaked == 0) {
-                appendColored(sb, "漏0 ", 0xff34d399);
-                appendColored(sb, "兜+" + row.assisted, 0xff00e5ff);
-            } else if (row.escaped == 0) {
-                appendColored(sb, "漏" + row.leaked + " ", 0xfffbbf24);
-                appendColored(sb, "全兜✓", 0xff00e5ff);
-                if (row.assisted > 0) appendColored(sb, " +" + row.assisted, 0xff67e8f9);
+            // Track 1: 兜 (帮队友兜底，纯青色直条)
+            SpannableStringBuilder assistNum = new SpannableStringBuilder();
+            if (row.assisted > 0) {
+                appendColored(assistNum, "+" + row.assisted, 0xff67e8f9);
             } else {
-                appendColored(sb, "漏" + row.leaked + " ", 0xfffbbf24);
-                appendColored(sb, "逃" + row.escaped, 0xffff6b6b);
-                if (row.covered > 0) appendColored(sb, " 兜" + row.covered, 0xff00e5ff);
+                appendColored(assistNum, "0", 0xff475569);
             }
-            stats.setText(sb);
-            card.addView(stats);
+            card.addView(buildDualMetricRow(
+                "兜",
+                row.assisted > 0 ? 0xff00e5ff : 0xff64748b,
+                (float) row.assisted, 0xff00e5ff,
+                0f, 0,
+                (float) maxMetric,
+                assistNum
+            ));
+
+            // Track 2: 漏 (本人漏怪：橙色已兜 + 猩红逃逸)
+            SpannableStringBuilder leakNum = new SpannableStringBuilder();
+            if (row.leaked == 0) {
+                appendColored(leakNum, "0", 0xff475569);
+            } else if (row.escaped == 0) {
+                appendColored(leakNum, String.valueOf(row.leaked), 0xfffbbf24);
+            } else {
+                appendColored(leakNum, String.valueOf(row.leaked), 0xfffbbf24);
+                appendColored(leakNum, " 逃" + row.escaped, 0xffff6b6b);
+            }
+            card.addView(buildDualMetricRow(
+                "漏",
+                row.escaped > 0 ? 0xffff6b6b : (row.leaked > 0 ? 0xfffbbf24 : 0xff64748b),
+                (float) row.covered, 0xfffb923c,
+                (float) row.escaped, 0xffff4d4f,
+                (float) maxMetric,
+                leakNum
+            ));
 
             leakGrid.addView(card, cardLp);
         }
@@ -1223,6 +1243,56 @@ public class OverlayService extends Service {
             empty.setSingleLine(true);
             leakEnemyChips.addView(empty);
         }
+    }
+
+    private LinearLayout buildDualMetricRow(
+        String label,
+        int labelColor,
+        float primaryVal,
+        int primaryColor,
+        float secondaryVal,
+        int secondaryColor,
+        float maxScale,
+        CharSequence rightText
+    ) {
+        LinearLayout rowView = new LinearLayout(this);
+        rowView.setOrientation(LinearLayout.HORIZONTAL);
+        rowView.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-1, -2);
+        rLp.topMargin = dp(3);
+        rowView.setLayoutParams(rLp);
+
+        TextView tag = new TextView(this);
+        tag.setText(label);
+        tag.setTextSize(8.5f);
+        tag.setTypeface(null, Typeface.BOLD);
+        tag.setTextColor(labelColor);
+        tag.setSingleLine(true);
+        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
+        tagLp.rightMargin = dp(4);
+        rowView.addView(tag, tagLp);
+
+        LinearLayout track = new LinearLayout(this);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        track.setBackground(background(0xff0b0f16, 2, 0xff1f2a3a));
+        track.setPadding(dp(1), dp(1), dp(1), dp(1));
+        float fill = Math.min(maxScale, Math.max(0f, primaryVal + secondaryVal));
+        float rem = Math.max(0f, maxScale - fill);
+        addBarSegment(track, primaryVal, primaryColor);
+        addBarSegment(track, secondaryVal, secondaryColor);
+        addBarSegment(track, rem, 0x00000000);
+        rowView.addView(track, new LinearLayout.LayoutParams(0, dp(6), 1f));
+
+        TextView num = new TextView(this);
+        num.setText(rightText);
+        num.setTextSize(8.5f);
+        num.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        num.setSingleLine(true);
+        num.setGravity(Gravity.END);
+        LinearLayout.LayoutParams numLp = new LinearLayout.LayoutParams(-2, -2);
+        numLp.leftMargin = dp(4);
+        rowView.addView(num, numLp);
+        return rowView;
     }
 
     private void addBarSegment(LinearLayout track, float weight, int color) {
@@ -1576,7 +1646,28 @@ public class OverlayService extends Service {
         stripRoundBadge.setText(badgeText);
         stripRoundBadge.setTextColor(badgeFg);
         stripRoundBadge.setBackground(background(badgeBg, 2, badgeBg));
-        stripTitleView.setText(stripLocked ? (titleText + " · 穿透") : titleText);
+        if (inLeak && activeLeakSnap != null) {
+            stripTitleView.setVisibility(View.GONE);
+            stripLeakPills.setVisibility(View.VISIBLE);
+            boolean hasLeaks = activeLeakSnap.totalLeaks > 0;
+            stripLeakPillTotal.setText("漏 " + activeLeakSnap.totalLeaks);
+            stripLeakPillTotal.setTextColor(hasLeaks ? 0xfffbbf24 : 0xff64748b);
+            stripLeakPillTotal.setBackground(background(hasLeaks ? 0x33f59e0b : 0xff141b26, 2, hasLeaks ? 0xccf59e0b : 0xff273447));
+
+            boolean hasAssist = activeLeakSnap.totalAssisted > 0;
+            stripLeakPillAssist.setText("兜 " + activeLeakSnap.totalAssisted);
+            stripLeakPillAssist.setTextColor(hasAssist ? 0xff67e8f9 : 0xff64748b);
+            stripLeakPillAssist.setBackground(background(hasAssist ? 0x3300e5ff : 0xff141b26, 2, hasAssist ? 0xcc00e5ff : 0xff273447));
+
+            boolean hasEsc = activeLeakSnap.totalEscaped > 0;
+            stripLeakPillEscaped.setText(hasEsc ? ("逃 " + activeLeakSnap.totalEscaped) : "零逃");
+            stripLeakPillEscaped.setTextColor(hasEsc ? 0xffff8080 : 0xff64748b);
+            stripLeakPillEscaped.setBackground(background(hasEsc ? 0x44ff4d4f : 0xff141b26, 2, hasEsc ? 0xeeff4d4f : 0xff273447));
+        } else {
+            stripLeakPills.setVisibility(View.GONE);
+            stripTitleView.setVisibility(View.VISIBLE);
+            stripTitleView.setText(stripLocked ? (titleText + " · 穿透") : titleText);
+        }
 
         // 3. 切换并渲染当前激活主体视图
         guideContainer.setVisibility(inGuide ? View.VISIBLE : View.GONE);

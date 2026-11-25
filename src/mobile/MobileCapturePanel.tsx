@@ -1,6 +1,31 @@
 // 青逝痕 Tenkinoko 制作
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, AlertTriangle, Radio, ShieldAlert, Square } from 'lucide-react';
+import enemyPortraitsJson from '../desktop/enemyPortraits.json';
+import enemyPortraitsUrl from '../desktop/enemyPortraits.webp';
+
+const portraitSlots = new Map(enemyPortraitsJson.ids.map((id, index) => [id, index]));
+const portraitRows = Math.ceil(enemyPortraitsJson.ids.length / enemyPortraitsJson.columns);
+
+function MobileEnemyIcon({ id, size = 16 }: { id?: string; size?: number }) {
+  const index = id ? portraitSlots.get(id) : undefined;
+  if (index === undefined) return null;
+  const col = index % enemyPortraitsJson.columns;
+  const row = Math.floor(index / enemyPortraitsJson.columns);
+  return (
+    <span
+      className="m-enemy-icon"
+      aria-hidden="true"
+      style={{
+        width: size,
+        height: size,
+        backgroundImage: `url(${enemyPortraitsUrl})`,
+        backgroundSize: `${enemyPortraitsJson.columns * 100}% ${portraitRows * 100}%`,
+        backgroundPosition: `${(col * 100) / (enemyPortraitsJson.columns - 1)}% ${(row * 100) / (portraitRows - 1)}%`,
+      }}
+    />
+  );
+}
 
 export interface MobileCaptureEnemy {
   id?: string;
@@ -10,7 +35,7 @@ export interface MobileCaptureEnemy {
 
 export interface MobileCaptureLeak {
   round: number;
-  selfLeaks: number;
+  selfLeaks?: number;
   totalLeaks: number;
   assistKills: number;
   uncoveredLeaks: number;
@@ -128,7 +153,7 @@ export function MobileCaptureToggle({
               ? (capture?.bansConfirmed
                 ? `✓ 已自动Ban选(${capture.bannedCovenants.length}) · ${capture.round ? `R${capture.round}` : '待开打'}`
                 : capture?.round ? `R${capture.round} · ${capture.messages} 帧` : '等进局自动Ban选…')
-              : '免Root · 自动Ban/出怪/漏怪'}
+              : '免Root · 自动Ban/出怪图标/4人漏兜/Boss DPS'}
           </small>
         </span>
         <button
@@ -149,9 +174,14 @@ export function MobileCaptureToggle({
 
 export function MobileLiveWaveStrip({ capture }: { capture?: MobileCaptureState | null }) {
   if (!capture || !capture.running) return null;
-  const hasForecast = Boolean(capture.forecastText);
-  const hasLeak = Boolean(capture.leak?.summary) && (
-    capture.leak.selfLeaks > 0 || capture.leak.totalLeaks > 0 || capture.leak.uncoveredLeaks > 0
+  const forecastList = capture.forecastEnemies || [];
+  const hasForecast = forecastList.length > 0 || Boolean(capture.forecastText);
+  const leakEnemies = capture.leak?.enemies || [];
+  const hasLeak = Boolean(capture.leak) && (
+    (capture.leak.selfLeaks ?? 0) > 0
+    || capture.leak.totalLeaks > 0
+    || capture.leak.assistKills > 0
+    || capture.leak.uncoveredLeaks > 0
   );
   if (!hasForecast && !hasLeak) return null;
 
@@ -160,15 +190,36 @@ export function MobileLiveWaveStrip({ capture }: { capture?: MobileCaptureState 
       {hasForecast && (
         <div className="m-live-row is-spawn">
           <span className="m-live-tag">
-            {capture.forecastRound > capture.round ? `下回合 R${capture.forecastRound}` : `本回合 R${capture.forecastRound}`}
+            {capture.forecastRound > capture.round ? `下波 R${capture.forecastRound}` : `本波 R${capture.forecastRound}`}
           </span>
-          <span className="m-live-val">{capture.forecastText}</span>
+          {forecastList.length > 0 ? (
+            <div className="m-live-chips">
+              {forecastList.slice(0, 6).map((enemy, idx) => (
+                <span className="m-enemy-chip" key={`${enemy.id || enemy.name}-${idx}`}>
+                  <MobileEnemyIcon id={enemy.id} size={16} />
+                  <span>{enemy.name}</span>
+                  <b>×{enemy.count}</b>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="m-live-val">{capture.forecastText}</span>
+          )}
         </div>
       )}
       {hasLeak && (
         <div className="m-live-row is-leak">
-          <span className="m-live-tag"><ShieldAlert size={11} /> 漏怪兜底</span>
-          <span className="m-live-val">{capture.leak.summary}</span>
+          <span className="m-live-tag"><ShieldAlert size={11} /> 漏兜</span>
+          <div className="m-live-chips">
+            {capture.leak.summary && <span className="m-live-leak-stat">{capture.leak.summary}</span>}
+            {leakEnemies.slice(0, 5).map((enemy, idx) => (
+              <span className="m-enemy-chip is-leak" key={`${enemy.id || enemy.name}-${idx}`}>
+                <MobileEnemyIcon id={enemy.id} size={15} />
+                <span>{enemy.name}</span>
+                <b>×{enemy.count}</b>
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>

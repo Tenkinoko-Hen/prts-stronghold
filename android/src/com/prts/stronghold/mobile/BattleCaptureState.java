@@ -5,6 +5,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,14 +14,151 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 手机免 Root 实时抓包对局聚合状态：
- * 汇总下回合出怪预告、本回合/最新回合己方漏怪与队友协防兜底数、自动同步 26 项盟约与当前回合，
- * 同时向 OverlayService 战术迷你条实时推送精炼摘要，向 WebView 暴露 JSON 状态。
+ * 手机免 Root 实时抓包对局聚合状态（v3.1）：
+ * - 开局 300 帧自动同步 26 项 Ban 选、4 名玩家名与 Boss ID；
+ * - 记录每回合下波出怪清单（保留 enemyId 供迷你条直接显示实机图标）；
+ * - 按回合完整追踪 4 名玩家的漏怪、协防兜底、被兜与逃跑数量，同时支持「累计」与「单回合」视图；
+ * - Boss 战实时追踪 4 名玩家的总伤害、DPS（/s）、占比（%）、排名（#1–#4）及 Boss 剩余血量百分比。
  */
 final class BattleCaptureState {
+    static final class EnemyCount {
+        final String enemyId;
+        final String name;
+        final int count;
+        EnemyCount(String enemyId, String name, int count) {
+            this.enemyId = enemyId;
+            this.name = name;
+            this.count = count;
+        }
+    }
+
+    static final class SeatLeakRow {
+        final int seat;
+        final String name;
+        final boolean isSelf;
+        final int hp;
+        final int leaked;    // 本人漏出总数
+        final int assisted;  // 帮队友兜底击杀数
+        final int covered;   // 本人漏怪中被队友兜住数
+        final int escaped;   // 本人漏怪中最终未兜住逃跑数
+        SeatLeakRow(int seat, String name, boolean isSelf, int hp, int leaked, int assisted, int covered, int escaped) {
+            this.seat = seat;
+            this.name = name;
+            this.isSelf = isSelf;
+            this.hp = hp;
+            this.leaked = leaked;
+            this.assisted = assisted;
+            this.covered = covered;
+            this.escaped = escaped;
+        }
+    }
+
+    static final class LeakSnapshot {
+        final int round; // 0 = cumulative
+        final int totalLeaks;
+        final int totalAssisted;
+        final int totalEscaped;
+        final List<SeatLeakRow> seats;
+        final List<EnemyCount> enemies;
+        LeakSnapshot(int round, int totalLeaks, int totalAssisted, int totalEscaped, List<SeatLeakRow> seats, List<EnemyCount> enemies) {
+            this.round = round;
+            this.totalLeaks = totalLeaks;
+            this.totalAssisted = totalAssisted;
+            this.totalEscaped = totalEscaped;
+            this.seats = seats;
+            this.enemies = enemies;
+        }
+    }
+
+    static final class BossPlayerRow {
+        final int rank;
+        final int seat;
+        final String name;
+        final boolean isSelf;
+        final int damage;
+        final int dps;
+        final double sharePct;
+        BossPlayerRow(int rank, int seat, String name, boolean isSelf, int damage, int dps, double sharePct) {
+            this.rank = rank;
+            this.seat = seat;
+            this.name = name;
+            this.isSelf = isSelf;
+            this.damage = damage;
+            this.dps = dps;
+            this.sharePct = sharePct;
+        }
+    }
+
+    static final class BossSnapshot {
+        final String bossEnemyId;
+        final String bossName;
+        final int bossHp;
+        final int bossMaxHp;
+        final int hpPct;
+        final int teamDamage;
+        final int teamDps;
+        final int elapsedSec;
+        final List<BossPlayerRow> players;
+        BossSnapshot(String bossEnemyId, String bossName, int bossHp, int bossMaxHp, int hpPct, int teamDamage, int teamDps, int elapsedSec, List<BossPlayerRow> players) {
+            this.bossEnemyId = bossEnemyId;
+            this.bossName = bossName;
+            this.bossHp = bossHp;
+            this.bossMaxHp = bossMaxHp;
+            this.hpPct = hpPct;
+            this.teamDamage = teamDamage;
+            this.teamDps = teamDps;
+            this.elapsedSec = elapsedSec;
+            this.players = players;
+        }
+    }
+
+    static final class TelemetrySnapshot {
+        final boolean vpnRunning;
+        final int currentRound;
+        final String phase;
+        final int selfSeat;
+        final int selfHp;
+        final int banCount;
+        final int forecastRound;
+        final List<EnemyCount> forecastEnemies;
+        final boolean activeRoundHasLeaks;
+        final LeakSnapshot cumulativeLeak;
+        final LeakSnapshot currentRoundLeak;
+        final BossSnapshot boss;
+        TelemetrySnapshot(
+            boolean vpnRunning, int currentRound, String phase, int selfSeat, int selfHp, int banCount,
+            int forecastRound, List<EnemyCount> forecastEnemies, boolean activeRoundHasLeaks,
+            LeakSnapshot cumulativeLeak, LeakSnapshot currentRoundLeak, BossSnapshot boss
+        ) {
+            this.vpnRunning = vpnRunning;
+            this.currentRound = currentRound;
+            this.phase = phase;
+            this.selfSeat = selfSeat;
+            this.selfHp = selfHp;
+            this.banCount = banCount;
+            this.forecastRound = forecastRound;
+            this.forecastEnemies = forecastEnemies;
+            this.activeRoundHasLeaks = activeRoundHasLeaks;
+            this.cumulativeLeak = cumulativeLeak;
+            this.currentRoundLeak = currentRoundLeak;
+            this.boss = boss;
+        }
+    }
+
+    private static final class RoundLeakRecord {
+        final int[] leakedBySeat = new int[5];
+        final int[] assistedBySeat = new int[5];
+        final int[] coveredForSeat = new int[5];
+        final int[] escapedBySeat = new int[5];
+        boolean helpSettled = false;
+        int selfLeaksRaw = -1;
+        final LinkedHashMap<String, Integer> leakedEnemyIds = new LinkedHashMap<>();
+        final Set<String> seenHelpKillKeys = new HashSet<>();
+    }
+
     private static volatile boolean running = false;
-    private static String status = "idle"; // idle | permission | running | error
-    private static String message = "未开启本机抓包（开启后可实时显示下回合出怪与漏怪兜底）";
+    private static String status = "idle";
+    private static String message = "未开启本机抓包（开启后可自动 Ban 选并实时显示出怪图标、4人漏兜与 Boss DPS）";
     private static int packetCount = 0;
     private static int messageCount = 0;
     private static long lastUpdateAt = 0;
@@ -28,28 +167,29 @@ final class BattleCaptureState {
     private static int currentRound = 0;
     private static String phase = "idle";
     private static int selfSeat = 0;
-    private static int selfHp = -1;
-    private static int bossHp = -1;
-    private static int bossTotalDamage = 0;
     private static int stageSeed = 0;
+    private static String bossIdRaw = "";
+    private static int bossHp = -1;
+    private static int bossMaxHp = 0;
+    private static long bossStartMs = 0;
+    private static long bossLastMs = 0;
 
+    private static final Map<Integer, String> playerNames = new HashMap<>();
+    private static final Map<Integer, Integer> hpBySeat = new HashMap<>();
+    private static final Map<Integer, Integer> bossDamageBySeat = new HashMap<>();
     private static final List<String> bannedCovenants = new ArrayList<>();
     private static boolean bansConfirmed = false;
-    // round -> (enemyId -> count)
     private static final Map<Integer, LinkedHashMap<String, Integer>> spawnPlanByRound = new LinkedHashMap<>();
-
-    // 漏怪 / 协防兜底统计（按回合）
-    private static int leakRound = 0;
-    private static int selfLeaks = -1;
-    private static int totalLeaks = 0;
-    private static int assistKills = 0;
-    private static int uncoveredLeaks = -1;
-    private static final LinkedHashMap<String, Integer> leakedEnemies = new LinkedHashMap<>();
-    private static final Set<String> seenHelpKillKeys = new HashSet<>();
+    private static final Map<Integer, RoundLeakRecord> leaksByRound = new LinkedHashMap<>();
 
     private BattleCaptureState() {}
 
     static synchronized boolean isRunning() { return running; }
+    static synchronized boolean isBansConfirmed() { return bansConfirmed; }
+    static synchronized int getCurrentRound() { return currentRound; }
+    static synchronized List<String> getBannedCovenantsSnapshot() {
+        return Collections.unmodifiableList(new ArrayList<>(bannedCovenants));
+    }
 
     static synchronized void setStatus(boolean active, String nextStatus, String detail) {
         running = active;
@@ -63,36 +203,40 @@ final class BattleCaptureState {
         currentRound = 0;
         phase = "idle";
         selfSeat = 0;
-        selfHp = -1;
-        bossHp = -1;
-        bossTotalDamage = 0;
         stageSeed = 0;
+        bossIdRaw = "";
+        bossHp = -1;
+        bossMaxHp = 0;
+        bossStartMs = 0;
+        bossLastMs = 0;
+        playerNames.clear();
+        hpBySeat.clear();
+        bossDamageBySeat.clear();
         bannedCovenants.clear();
         bansConfirmed = false;
         spawnPlanByRound.clear();
-        clearLeakStats(0);
+        leaksByRound.clear();
         lastUpdateAt = System.currentTimeMillis();
         pushToOverlay();
     }
 
-    private static void clearLeakStats(int round) {
-        leakRound = round;
-        selfLeaks = -1;
-        totalLeaks = 0;
-        assistKills = 0;
-        uncoveredLeaks = -1;
-        leakedEnemies.clear();
-        seenHelpKillKeys.clear();
-    }
+    static synchronized void notePacket() { packetCount++; }
 
-    static synchronized void notePacket() {
-        packetCount++;
+    private static RoundLeakRecord leakRecord(int round) {
+        int r = Math.max(1, Math.min(15, round));
+        RoundLeakRecord rec = leaksByRound.get(r);
+        if (rec == null) {
+            rec = new RoundLeakRecord();
+            leaksByRound.put(r, rec);
+        }
+        return rec;
     }
 
     static synchronized void accept(StrongholdWireDecoder.Event ev) {
         if (ev == null) return;
         messageCount++;
-        lastUpdateAt = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        lastUpdateAt = now;
 
         if ("phase".equals(ev.kind)) {
             boolean newSeed = ev.messageId == 300 && ev.stageSeed != 0 && ev.stageSeed != stageSeed;
@@ -102,13 +246,18 @@ final class BattleCaptureState {
                 currentRound = 0;
                 phase = "loading";
                 selfSeat = 0;
-                selfHp = -1;
+                bossIdRaw = "";
                 bossHp = -1;
-                bossTotalDamage = 0;
+                bossMaxHp = 0;
+                bossStartMs = 0;
+                bossLastMs = 0;
+                playerNames.clear();
+                hpBySeat.clear();
+                bossDamageBySeat.clear();
                 bannedCovenants.clear();
                 bansConfirmed = false;
                 spawnPlanByRound.clear();
-                clearLeakStats(0);
+                leaksByRound.clear();
                 if (ev.stageSeed != 0) stageSeed = ev.stageSeed;
             } else if (ev.stageSeed != 0 && stageSeed == 0) {
                 stageSeed = ev.stageSeed;
@@ -116,6 +265,12 @@ final class BattleCaptureState {
             }
 
             if (ev.selfUid >= 1 && ev.selfUid <= 4) selfSeat = ev.selfUid;
+            if (ev.bossId != null && !ev.bossId.isEmpty()) bossIdRaw = ev.bossId;
+            for (Map.Entry<Integer, String> p : ev.players.entrySet()) {
+                if (p.getKey() >= 1 && p.getKey() <= 4 && p.getValue() != null && !p.getValue().trim().isEmpty()) {
+                    playerNames.put(p.getKey(), p.getValue().trim());
+                }
+            }
 
             if (ev.messageId == 300 || !ev.bannedBonds.isEmpty()) {
                 bannedCovenants.clear();
@@ -128,96 +283,123 @@ final class BattleCaptureState {
             }
 
             if (ev.round >= 1 && ev.round <= 15) {
-                if (ev.round != currentRound && ev.round > currentRound) {
-                    // 新回合开始：清空旧回合漏怪计数以便记录新回合（若尚未结算则保留到新回合战斗开始）
-                    if ("self".equals(ev.phase) || "boss".equals(ev.phase)) {
-                        clearLeakStats(ev.round);
-                    }
+                if ("boss".equals(ev.phase) && ev.round != currentRound) {
+                    bossStartMs = now;
+                    bossLastMs = now;
+                    bossMaxHp = 0;
+                    bossDamageBySeat.clear();
                 }
                 currentRound = ev.round;
             }
-            if (ev.phase != null && !ev.phase.isEmpty()) phase = ev.phase;
+            if (ev.phase != null && !ev.phase.isEmpty()) {
+                if ("boss".equals(ev.phase) && bossStartMs == 0) {
+                    bossStartMs = now;
+                    bossLastMs = now;
+                }
+                phase = ev.phase;
+            }
 
-            updateHpAndBoss(ev);
+            updateRuntimeMaps(ev, now);
             mergeSpawns(ev.spawnPreviews);
 
             if (ev.hasEscapedSection) {
-                int r = ev.round > 0 ? ev.round : currentRound;
-                if (r > 0 && r != leakRound) clearLeakStats(r);
-                totalLeaks = ev.escapedEnemies.size();
-                leakedEnemies.clear();
+                int r = ev.round > 0 ? ev.round : Math.max(1, currentRound);
+                RoundLeakRecord rec = leakRecord(r);
+                // 按席位汇总本回合漏出数
+                int[] counts = new int[5];
+                rec.leakedEnemyIds.clear();
                 for (StrongholdWireDecoder.EscapedEnemy ee : ev.escapedEnemies) {
+                    if (ee.owner >= 1 && ee.owner <= 4) counts[ee.owner]++;
                     String eid = resolveEnemyId(ee.enemyId, ee.instanceId, ee.isToken);
-                    String name = StrongholdEnemyCatalog.enemyName(eid);
-                    Integer prev = leakedEnemies.get(name);
-                    leakedEnemies.put(name, prev == null ? 1 : prev + 1);
+                    if (!eid.isEmpty()) {
+                        Integer prev = rec.leakedEnemyIds.get(eid);
+                        rec.leakedEnemyIds.put(eid, prev == null ? 1 : prev + 1);
+                    }
                 }
-                if (uncoveredLeaks < 0 && totalLeaks > 0) {
-                    uncoveredLeaks = Math.max(0, totalLeaks - assistKills);
+                for (int s = 1; s <= 4; s++) {
+                    if (counts[s] > rec.leakedBySeat[s]) rec.leakedBySeat[s] = counts[s];
                 }
             }
-            if (ev.bossHp >= 0) bossHp = ev.bossHp;
+            if (ev.bossHp >= 0) {
+                bossHp = ev.bossHp;
+                if (bossHp > bossMaxHp) bossMaxHp = bossHp;
+                if (bossHp > 0 && bossStartMs == 0) bossStartMs = now;
+                bossLastMs = now;
+            }
         } else if ("preparation".equals(ev.kind)) {
             if (ev.round >= 1 && ev.round <= 15 && ev.round >= currentRound) {
                 currentRound = ev.round;
                 if (!"boss".equals(phase)) phase = "prep";
             }
-            if (ev.seat >= 1 && ev.seat <= 4 && (selfSeat == 0 || selfSeat == ev.seat)) {
+            if (ev.seat >= 1 && ev.seat <= 4) {
                 if (selfSeat == 0) selfSeat = ev.seat;
-                if (ev.hp >= 0) selfHp = ev.hp;
+                if (ev.hp >= 0) hpBySeat.put(ev.seat, ev.hp);
             }
         } else if ("runtime".equals(ev.kind)) {
-            updateHpAndBoss(ev);
+            updateRuntimeMaps(ev, now);
         } else if ("spawn_plan".equals(ev.kind)) {
-            // 新局首轮预告触发自动清理旧局预告
-            boolean rollover = currentRound > 1;
-            if (rollover) {
+            if (currentRound > 1) {
                 boolean hasR1 = false;
                 for (StrongholdWireDecoder.SpawnPreview sp : ev.spawnPreviews) {
                     if (sp.roundNumber == 1) { hasR1 = true; break; }
                 }
                 if (hasR1) {
                     spawnPlanByRound.clear();
-                    clearLeakStats(1);
+                    leaksByRound.clear();
                 }
             }
             mergeSpawns(ev.spawnPreviews);
         } else if ("self_finish".equals(ev.kind)) {
             if (ev.round >= 1 && ev.round <= 15 && !ev.fromRejoin) {
-                if (ev.round != leakRound) clearLeakStats(ev.round);
                 if (ev.round > currentRound) currentRound = ev.round;
-                selfLeaks = Math.max(0, ev.selfEscapedCount);
-                if (totalLeaks < selfLeaks) totalLeaks = selfLeaks;
+                RoundLeakRecord rec = leakRecord(ev.round);
+                rec.selfLeaksRaw = Math.max(0, ev.selfEscapedCount);
+                int seat = selfSeat >= 1 && selfSeat <= 4 ? selfSeat : 1;
+                if (rec.selfLeaksRaw > rec.leakedBySeat[seat]) {
+                    rec.leakedBySeat[seat] = rec.selfLeaksRaw;
+                }
             }
         } else if ("help_kill".equals(ev.kind)) {
-            if (leakRound == 0 && currentRound > 0) leakRound = currentRound;
+            int r = Math.max(1, currentRound);
+            RoundLeakRecord rec = leakRecord(r);
             for (StrongholdWireDecoder.HelpKill hk : ev.helpKills) {
                 String key = hk.instanceId + ":" + hk.isToken;
-                if (seenHelpKillKeys.add(key)) {
-                    assistKills = seenHelpKillKeys.size();
-                    if (totalLeaks > 0) {
-                        uncoveredLeaks = Math.max(0, totalLeaks - assistKills);
-                    }
+                if (rec.seenHelpKillKeys.add(key)) {
+                    if (hk.killerUid >= 1 && hk.killerUid <= 4) rec.assistedBySeat[hk.killerUid]++;
+                    if (hk.ownerUid >= 1 && hk.ownerUid <= 4) rec.coveredForSeat[hk.ownerUid]++;
                 }
             }
         } else if ("help_finish".equals(ev.kind)) {
             if (ev.round >= 1 && ev.round <= 15) {
-                if (ev.round != leakRound) clearLeakStats(ev.round);
                 if (ev.round > currentRound) currentRound = ev.round;
+                RoundLeakRecord rec = leakRecord(ev.round);
+                rec.helpSettled = true;
+                int[] assistSeat = new int[5];
+                int[] covSeat = new int[5];
+                int[] escSeat = new int[5];
                 for (StrongholdWireDecoder.HelpKill hk : ev.helpKills) {
-                    seenHelpKillKeys.add(hk.instanceId + ":" + hk.isToken);
-                }
-                assistKills = Math.max(assistKills, ev.helpKills.size());
-                uncoveredLeaks = ev.escapedEnemies.size();
-                totalLeaks = Math.max(totalLeaks, assistKills + uncoveredLeaks);
-                if (!ev.escapedEnemies.isEmpty()) {
-                    leakedEnemies.clear();
-                    for (StrongholdWireDecoder.EscapedEnemy ee : ev.escapedEnemies) {
-                        String eid = resolveEnemyId(ee.enemyId, ee.instanceId, ee.isToken);
-                        String name = StrongholdEnemyCatalog.enemyName(eid);
-                        Integer prev = leakedEnemies.get(name);
-                        leakedEnemies.put(name, prev == null ? 1 : prev + 1);
+                    rec.seenHelpKillKeys.add(hk.instanceId + ":" + hk.isToken);
+                    if (hk.killerUid >= 1 && hk.killerUid <= 4) assistSeat[hk.killerUid]++;
+                    if (hk.ownerUid >= 1 && hk.ownerUid <= 4) covSeat[hk.ownerUid]++;
+                    if (hk.enemyId != null && !hk.enemyId.isEmpty() && rec.leakedEnemyIds.isEmpty()) {
+                        Integer prev = rec.leakedEnemyIds.get(hk.enemyId);
+                        rec.leakedEnemyIds.put(hk.enemyId, prev == null ? 1 : prev + 1);
                     }
+                }
+                for (StrongholdWireDecoder.EscapedEnemy ee : ev.escapedEnemies) {
+                    if (ee.owner >= 1 && ee.owner <= 4) escSeat[ee.owner]++;
+                    String eid = resolveEnemyId(ee.enemyId, ee.instanceId, ee.isToken);
+                    if (!eid.isEmpty()) {
+                        Integer prev = rec.leakedEnemyIds.get(eid);
+                        if (prev == null) rec.leakedEnemyIds.put(eid, 1);
+                    }
+                }
+                for (int s = 1; s <= 4; s++) {
+                    rec.assistedBySeat[s] = Math.max(rec.assistedBySeat[s], assistSeat[s]);
+                    rec.coveredForSeat[s] = Math.max(rec.coveredForSeat[s], covSeat[s]);
+                    rec.escapedBySeat[s] = escSeat[s];
+                    int minLeaked = rec.coveredForSeat[s] + rec.escapedBySeat[s];
+                    if (minLeaked > rec.leakedBySeat[s]) rec.leakedBySeat[s] = minLeaked;
                 }
             }
         }
@@ -228,22 +410,30 @@ final class BattleCaptureState {
         pushToOverlay();
     }
 
-    private static void updateHpAndBoss(StrongholdWireDecoder.Event ev) {
-        if (selfSeat >= 1 && ev.hpBySeat.containsKey(selfSeat)) {
-            selfHp = ev.hpBySeat.get(selfSeat);
-        } else if (selfSeat == 0 && ev.hpBySeat.size() == 1) {
-            selfHp = ev.hpBySeat.values().iterator().next();
+    private static void updateRuntimeMaps(StrongholdWireDecoder.Event ev, long now) {
+        for (Map.Entry<Integer, Integer> e : ev.hpBySeat.entrySet()) {
+            if (e.getKey() >= 1 && e.getKey() <= 4 && e.getValue() != null) {
+                hpBySeat.put(e.getKey(), e.getValue());
+            }
         }
-        int sumDmg = 0;
-        for (Integer d : ev.bossDamageBySeat.values()) {
-            if (d != null && d > 0) sumDmg += d;
+        boolean anyDmg = false;
+        for (Map.Entry<Integer, Integer> e : ev.bossDamageBySeat.entrySet()) {
+            int s = e.getKey();
+            int dmg = e.getValue() != null ? e.getValue() : 0;
+            if (s >= 1 && s <= 4 && dmg > 0) {
+                Integer prev = bossDamageBySeat.get(s);
+                if (prev == null || dmg >= prev) bossDamageBySeat.put(s, dmg);
+                anyDmg = true;
+            }
         }
-        if (sumDmg > bossTotalDamage) bossTotalDamage = sumDmg;
+        if (anyDmg) {
+            if (bossStartMs == 0) bossStartMs = now;
+            bossLastMs = now;
+        }
     }
 
     private static void mergeSpawns(List<StrongholdWireDecoder.SpawnPreview> previews) {
         if (previews == null || previews.isEmpty()) return;
-        // 按 (round, actionIndex, enemyId) 归并防同一预告帧重复累加
         Map<Integer, Map<String, Integer>> batchByRound = new LinkedHashMap<>();
         for (StrongholdWireDecoder.SpawnPreview sp : previews) {
             if (sp.roundNumber < 1 || sp.roundNumber > 15 || sp.count <= 0) continue;
@@ -252,8 +442,7 @@ final class BattleCaptureState {
                 map = new LinkedHashMap<>();
                 batchByRound.put(sp.roundNumber, map);
             }
-            String key = sp.actionIndex + "|" + sp.enemyId;
-            map.put(key, sp.count);
+            map.put(sp.actionIndex + "|" + sp.enemyId, sp.count);
         }
         for (Map.Entry<Integer, Map<String, Integer>> entry : batchByRound.entrySet()) {
             LinkedHashMap<String, Integer> agg = new LinkedHashMap<>();
@@ -276,7 +465,6 @@ final class BattleCaptureState {
         return "";
     }
 
-    /** 选取当前最有参考价值的预告回合：战斗/结算后看下一回合，备战期优先看本回合或下一回合。 */
     static synchronized int pickForecastRound() {
         int next = currentRound > 0 ? Math.min(15, currentRound + 1) : 1;
         if ("prep".equals(phase) || "special_prep".equals(phase)) {
@@ -293,88 +481,163 @@ final class BattleCaptureState {
         return best;
     }
 
-    static synchronized String formatSpawnSummary(int roundNo, int maxKinds) {
+    static synchronized List<EnemyCount> getSpawnList(int roundNo) {
         LinkedHashMap<String, Integer> map = spawnPlanByRound.get(roundNo);
-        if (map == null || map.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder();
-        int shown = 0;
+        if (map == null || map.isEmpty()) return Collections.emptyList();
+        List<EnemyCount> list = new ArrayList<>();
         for (Map.Entry<String, Integer> e : map.entrySet()) {
-            if (shown >= maxKinds) {
-                sb.append(" 等").append(map.size()).append("种");
-                break;
-            }
-            if (shown > 0) sb.append(" · ");
-            sb.append(StrongholdEnemyCatalog.enemyName(e.getKey())).append("×").append(e.getValue());
-            shown++;
+            list.add(new EnemyCount(e.getKey(), StrongholdEnemyCatalog.enemyName(e.getKey()), e.getValue()));
         }
+        Collections.sort(list, (a, b) -> Integer.compare(b.count, a.count));
+        return list;
+    }
+
+    static synchronized String formatSpawnSummary(int roundNo, int maxKinds) {
+        List<EnemyCount> list = getSpawnList(roundNo);
+        if (list.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(maxKinds, list.size()); i++) {
+            if (i > 0) sb.append(" · ");
+            sb.append(list.get(i).name).append("×").append(list.get(i).count);
+        }
+        if (list.size() > maxKinds) sb.append(" 等").append(list.size()).append("种");
         return sb.toString();
+    }
+
+    private static String seatLabel(int seat) {
+        String n = playerNames.get(seat);
+        if (n != null && !n.isEmpty()) {
+            return n.length() > 6 ? n.substring(0, 6) : n;
+        }
+        return seat + "P";
+    }
+
+    private static int seatHp(int seat) {
+        Integer h = hpBySeat.get(seat);
+        return h != null ? h : -1;
+    }
+
+    /** 构造指定单回合（round > 0）或整局累计（round == 0）的 4 玩家漏/兜图表快照。 */
+    static synchronized LeakSnapshot buildLeakSnapshot(int targetRound) {
+        int[] leaked = new int[5];
+        int[] assisted = new int[5];
+        int[] covered = new int[5];
+        int[] escaped = new int[5];
+        LinkedHashMap<String, Integer> enemyCounts = new LinkedHashMap<>();
+
+        if (targetRound > 0) {
+            RoundLeakRecord rec = leaksByRound.get(targetRound);
+            if (rec != null) {
+                for (int s = 1; s <= 4; s++) {
+                    leaked[s] = rec.leakedBySeat[s];
+                    assisted[s] = rec.assistedBySeat[s];
+                    covered[s] = rec.coveredForSeat[s];
+                    escaped[s] = rec.helpSettled ? rec.escapedBySeat[s] : Math.max(0, rec.leakedBySeat[s] - rec.coveredForSeat[s]);
+                }
+                enemyCounts.putAll(rec.leakedEnemyIds);
+            }
+        } else {
+            for (RoundLeakRecord rec : leaksByRound.values()) {
+                for (int s = 1; s <= 4; s++) {
+                    leaked[s] += rec.leakedBySeat[s];
+                    assisted[s] += rec.assistedBySeat[s];
+                    covered[s] += rec.coveredForSeat[s];
+                    escaped[s] += rec.helpSettled ? rec.escapedBySeat[s] : Math.max(0, rec.leakedBySeat[s] - rec.coveredForSeat[s]);
+                }
+                for (Map.Entry<String, Integer> e : rec.leakedEnemyIds.entrySet()) {
+                    Integer prev = enemyCounts.get(e.getKey());
+                    enemyCounts.put(e.getKey(), (prev == null ? 0 : prev) + e.getValue());
+                }
+            }
+        }
+
+        int sumLeak = 0, sumAssist = 0, sumEsc = 0;
+        List<SeatLeakRow> rows = new ArrayList<>();
+        int effectiveSelf = selfSeat >= 1 && selfSeat <= 4 ? selfSeat : 1;
+        for (int s = 1; s <= 4; s++) {
+            sumLeak += leaked[s];
+            sumAssist += assisted[s];
+            sumEsc += escaped[s];
+            rows.add(new SeatLeakRow(s, seatLabel(s), s == effectiveSelf, seatHp(s), leaked[s], assisted[s], covered[s], escaped[s]));
+        }
+        List<EnemyCount> enemies = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : enemyCounts.entrySet()) {
+            enemies.add(new EnemyCount(e.getKey(), StrongholdEnemyCatalog.enemyName(e.getKey()), e.getValue()));
+        }
+        Collections.sort(enemies, (a, b) -> Integer.compare(b.count, a.count));
+        return new LeakSnapshot(targetRound, sumLeak, sumAssist, sumEsc, rows, enemies);
+    }
+
+    static synchronized BossSnapshot buildBossSnapshot() {
+        String resolvedId = EnemyPortraitAtlas.resolveBossEnemyId(bossIdRaw);
+        String bName = !resolvedId.isEmpty() ? StrongholdEnemyCatalog.enemyName(resolvedId) : "终局首领";
+        int teamDmg = 0;
+        for (int s = 1; s <= 4; s++) {
+            Integer d = bossDamageBySeat.get(s);
+            if (d != null && d > 0) teamDmg += d;
+        }
+        long elapsedMs = (bossStartMs > 0 && bossLastMs >= bossStartMs) ? (bossLastMs - bossStartMs) : 0;
+        int elapsedSec = Math.max(1, (int) Math.round(elapsedMs / 1000.0));
+        int teamDps = teamDmg > 0 ? Math.round((float) teamDmg / elapsedSec) : 0;
+
+        int effMaxHp = Math.max(bossMaxHp, (bossHp > 0 ? bossHp : 0) + teamDmg);
+        int hpPct = (effMaxHp > 0 && bossHp >= 0) ? Math.max(0, Math.min(100, Math.round(bossHp * 100f / effMaxHp))) : -1;
+
+        int effectiveSelf = selfSeat >= 1 && selfSeat <= 4 ? selfSeat : 1;
+        List<int[]> rawSeats = new ArrayList<>();
+        for (int s = 1; s <= 4; s++) {
+            int d = bossDamageBySeat.containsKey(s) ? bossDamageBySeat.get(s) : 0;
+            rawSeats.add(new int[] { s, d });
+        }
+        Collections.sort(rawSeats, (a, b) -> {
+            int c = Integer.compare(b[1], a[1]);
+            return c != 0 ? c : Integer.compare(a[0], b[0]);
+        });
+        List<BossPlayerRow> players = new ArrayList<>();
+        for (int i = 0; i < rawSeats.size(); i++) {
+            int s = rawSeats.get(i)[0];
+            int d = rawSeats.get(i)[1];
+            int dps = d > 0 ? Math.round((float) d / elapsedSec) : 0;
+            double share = teamDmg > 0 ? (d * 100.0 / teamDmg) : 0.0;
+            players.add(new BossPlayerRow(i + 1, s, seatLabel(s), s == effectiveSelf, d, dps, share));
+        }
+        return new BossSnapshot(resolvedId, bName, bossHp, effMaxHp, hpPct, teamDmg, teamDps, elapsedSec, players);
     }
 
     static synchronized String formatLeakSummary() {
-        if (leakRound <= 0) return "";
-        boolean hasAny = (selfLeaks >= 0) || totalLeaks > 0 || assistKills > 0 || uncoveredLeaks > 0;
-        if (!hasAny) return "";
+        int r = currentRound > 0 ? currentRound : 1;
+        LeakSnapshot snap = buildLeakSnapshot(r);
+        if (snap.totalLeaks == 0 && snap.totalAssisted == 0 && snap.totalEscaped == 0) return "";
         StringBuilder sb = new StringBuilder();
-        if (selfLeaks >= 0) {
-            sb.append("己漏 ").append(selfLeaks);
-        }
-        if (totalLeaks > 0 || assistKills > 0 || uncoveredLeaks >= 0) {
-            if (sb.length() > 0) sb.append(" · ");
-            if (uncoveredLeaks >= 0) {
-                sb.append("兜底 ").append(assistKills).append("/").append(Math.max(totalLeaks, assistKills + uncoveredLeaks));
-                if (uncoveredLeaks > 0) sb.append("（未兜 ").append(uncoveredLeaks).append("）");
-                else if (assistKills > 0) sb.append("（全兜住）");
-            } else {
-                sb.append("需兜底 ").append(totalLeaks);
-                if (assistKills > 0) sb.append("（已救 ").append(assistKills).append("）");
-            }
-        }
-        if (!leakedEnemies.isEmpty()) {
-            sb.append("｜");
-            int i = 0;
-            for (Map.Entry<String, Integer> e : leakedEnemies.entrySet()) {
-                if (i >= 2) break;
-                if (i > 0) sb.append("·");
-                sb.append(e.getKey()).append("×").append(e.getValue());
-                i++;
-            }
-        }
+        sb.append("总漏 ").append(snap.totalLeaks).append(" · 兜 ").append(snap.totalAssisted);
+        if (snap.totalEscaped > 0) sb.append(" · 逃 ").append(snap.totalEscaped);
         return sb.toString();
     }
 
-    private static void pushToOverlay() {
+    static synchronized TelemetrySnapshot buildTelemetrySnapshot() {
         int fcRound = pickForecastRound();
-        String spawnText = fcRound > 0 ? formatSpawnSummary(fcRound, 4) : "";
-        String leakText = formatLeakSummary();
-        boolean leakAlert = (leakRound > 0 && leakRound >= Math.max(1, currentRound - 1))
-            && ((selfLeaks > 0) || (totalLeaks > 0) || (uncoveredLeaks > 0) || "assist".equals(phase));
+        List<EnemyCount> fcList = fcRound > 0 ? getSpawnList(fcRound) : Collections.<EnemyCount>emptyList();
+        int curR = currentRound > 0 ? currentRound : 1;
+        LeakSnapshot curLeak = buildLeakSnapshot(curR);
+        LeakSnapshot cumLeak = buildLeakSnapshot(0);
+        boolean activeHasLeaks = curLeak.totalLeaks > 0 || curLeak.totalEscaped > 0 || "assist".equals(phase);
+        int myHp = selfSeat >= 1 && selfSeat <= 4 ? seatHp(selfSeat) : seatHp(1);
+        return new TelemetrySnapshot(
+            running, currentRound, phase, selfSeat, myHp, bansConfirmed ? bannedCovenants.size() : -1,
+            fcRound, fcList, activeHasLeaks, cumLeak, curLeak, buildBossSnapshot()
+        );
+    }
+
+    private static void pushToOverlay() {
+        TelemetrySnapshot snap = buildTelemetrySnapshot();
         try {
-            OverlayService.updateLiveTelemetry(
-                running,
-                currentRound,
-                phase,
-                selfHp,
-                fcRound,
-                spawnText,
-                leakAlert,
-                leakText,
-                bossHp,
-                bossTotalDamage,
-                bansConfirmed ? bannedCovenants.size() : -1
-            );
+            OverlayService.updateTelemetrySnapshot(snap);
         } catch (Throwable ignored) {}
     }
 
-    static synchronized boolean isBansConfirmed() { return bansConfirmed; }
-
-    static synchronized List<String> getBannedCovenantsSnapshot() {
-        return Collections.unmodifiableList(new ArrayList<>(bannedCovenants));
-    }
-
-    static synchronized int getCurrentRound() { return currentRound; }
-
     static synchronized String json() {
         try {
+            TelemetrySnapshot snap = buildTelemetrySnapshot();
             JSONObject obj = new JSONObject();
             obj.put("running", running);
             obj.put("status", status);
@@ -385,39 +648,28 @@ final class BattleCaptureState {
             obj.put("round", currentRound);
             obj.put("phase", phase);
             obj.put("selfSeat", selfSeat);
-            obj.put("selfHp", selfHp);
-            obj.put("bossHp", bossHp);
-            obj.put("bossTotalDamage", bossTotalDamage);
+            obj.put("selfHp", snap.selfHp);
+            obj.put("bossHp", snap.boss.bossHp);
+            obj.put("bossTotalDamage", snap.boss.teamDamage);
             obj.put("bansConfirmed", bansConfirmed);
             obj.put("bannedCovenants", new JSONArray(bannedCovenants));
-
-            int fcRound = pickForecastRound();
-            obj.put("forecastRound", fcRound);
+            obj.put("forecastRound", snap.forecastRound);
             JSONArray fcArr = new JSONArray();
-            if (fcRound > 0) {
-                LinkedHashMap<String, Integer> map = spawnPlanByRound.get(fcRound);
-                if (map != null) {
-                    for (Map.Entry<String, Integer> e : map.entrySet()) {
-                        fcArr.put(new JSONObject()
-                            .put("id", e.getKey())
-                            .put("name", StrongholdEnemyCatalog.enemyName(e.getKey()))
-                            .put("count", e.getValue()));
-                    }
-                }
+            for (EnemyCount ec : snap.forecastEnemies) {
+                fcArr.put(new JSONObject().put("id", ec.enemyId).put("name", ec.name).put("count", ec.count));
             }
             obj.put("forecastEnemies", fcArr);
-            obj.put("forecastText", fcRound > 0 ? formatSpawnSummary(fcRound, 5) : "");
+            obj.put("forecastText", snap.forecastRound > 0 ? formatSpawnSummary(snap.forecastRound, 5) : "");
 
             JSONObject leak = new JSONObject();
-            leak.put("round", leakRound);
-            leak.put("selfLeaks", selfLeaks);
-            leak.put("totalLeaks", totalLeaks);
-            leak.put("assistKills", assistKills);
-            leak.put("uncoveredLeaks", uncoveredLeaks);
+            leak.put("round", snap.currentRoundLeak.round);
+            leak.put("totalLeaks", snap.currentRoundLeak.totalLeaks);
+            leak.put("assistKills", snap.currentRoundLeak.totalAssisted);
+            leak.put("uncoveredLeaks", snap.currentRoundLeak.totalEscaped);
             leak.put("summary", formatLeakSummary());
             JSONArray leakList = new JSONArray();
-            for (Map.Entry<String, Integer> e : leakedEnemies.entrySet()) {
-                leakList.put(new JSONObject().put("name", e.getKey()).put("count", e.getValue()));
+            for (EnemyCount ec : snap.currentRoundLeak.enemies) {
+                leakList.put(new JSONObject().put("id", ec.enemyId).put("name", ec.name).put("count", ec.count));
             }
             leak.put("enemies", leakList);
             obj.put("leak", leak);

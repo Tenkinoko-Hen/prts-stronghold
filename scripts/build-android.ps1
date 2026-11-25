@@ -118,6 +118,14 @@ try {
         if ((Test-Path -LiteralPath $enemyCatalogPath) -and !$archive.GetEntry('assets/enemy_power.json')) {
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $enemyCatalogPath, 'assets/enemy_power.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
         }
+        $enemyAtlasWebp = Join-Path $projectRoot 'src\desktop\enemyPortraits.webp'
+        $enemyAtlasJson = Join-Path $projectRoot 'src\desktop\enemyPortraits.json'
+        if ((Test-Path -LiteralPath $enemyAtlasWebp) -and !$archive.GetEntry('assets/enemy_portraits.webp')) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $enemyAtlasWebp, 'assets/enemy_portraits.webp', [IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+        }
+        if ((Test-Path -LiteralPath $enemyAtlasJson) -and !$archive.GetEntry('assets/enemy_portraits.json')) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $enemyAtlasJson, 'assets/enemy_portraits.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
         foreach ($assetRoot in $ocr.Assets) {
             foreach ($asset in Get-ChildItem -LiteralPath $assetRoot -File -Recurse) {
                 $entryName = 'assets/' + (Get-RelPath $assetRoot $asset.FullName)

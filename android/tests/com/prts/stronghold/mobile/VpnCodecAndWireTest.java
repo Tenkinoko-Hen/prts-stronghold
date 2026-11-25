@@ -6,7 +6,7 @@ import java.io.DataOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** 端到端校验 IPv4/TCP/UDP 报文编解码、卫戍二进制帧解码（300/302/303/311/313/367）及聚合状态。 */
+/** 端到端校验 IPv4/TCP/UDP 报文编解码、卫戍二进制帧解码（300/302/303/311/313/367）及 v3.1 聚合状态（图标/4人漏兜/Boss MMO DPS）。 */
 public final class VpnCodecAndWireTest {
     private static int checks;
 
@@ -30,7 +30,7 @@ public final class VpnCodecAndWireTest {
         return baos.toByteArray();
     }
 
-    private static byte[] buildMinimalSceneBody(int state, int round, int selfHp, String previewEnemy, int previewCnt, int previewRound, String escapedEnemy, int bossHp) throws Exception {
+    private static byte[] buildMinimalSceneBody(int state, int round, int selfHp, String previewEnemy, int previewCnt, int previewRound, String escapedEnemy, int bossHp, int[] seatBossDmg) throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(baos);
         // scene header: b B B q
@@ -38,13 +38,16 @@ public final class VpnCodecAndWireTest {
         out.writeByte(state);
         out.writeByte(round);
         out.writeLong(123456L);
-        // runtime (1 seat)
-        out.writeShort(1);
-        out.writeByte(1); // uid
-        out.writeByte(0); out.writeByte(1); out.writeByte(0);
-        out.writeShort(selfHp);
-        out.writeByte(0); out.writeByte(0); out.writeByte(0); out.writeByte(0);
-        out.writeInt(bossHp > 0 ? 42000 : 0);
+        // runtime (4 seats if boss dmg supplied, else 2 seats)
+        int seatCount = seatBossDmg != null ? seatBossDmg.length : 2;
+        out.writeShort(seatCount);
+        for (int s = 1; s <= seatCount; s++) {
+            out.writeByte(s); // uid
+            out.writeByte(0); out.writeByte(1); out.writeByte(0);
+            out.writeShort(s == 1 ? selfHp : 24);
+            out.writeByte(0); out.writeByte(0); out.writeByte(0); out.writeByte(0);
+            out.writeInt(seatBossDmg != null ? seatBossDmg[s - 1] : 0);
+        }
         // spawn_preview
         if (previewEnemy != null) {
             out.writeShort(1);
@@ -64,7 +67,7 @@ public final class VpnCodecAndWireTest {
         // escaped_enemies
         if (escapedEnemy != null) {
             out.writeShort(1); // 1 block
-            out.writeShort(2); // 2 escaped enemies
+            out.writeShort(2); // 2 escaped enemies owned by seat 1
             for (int i = 0; i < 2; i++) {
                 out.writeByte(1);
                 writeStr(out, escapedEnemy);
@@ -105,21 +108,24 @@ public final class VpnCodecAndWireTest {
         out.writeByte(1); // self_uid
         out.writeShort(bannedBonds.length);
         for (String b : bannedBonds) writeStr(out, b);
-        // 1 player in roster
-        out.writeShort(1);
-        writeStr(out, "acc_1");
-        out.writeByte(1); // uid
-        out.writeShort(0); // squad slots
-        writeStr(out, "");
-        writeStr(out, "Doctor");
-        for (int i = 0; i < 5; i++) writeStr(out, "");
-        out.write(new byte[5]);
-        writeStr(out, "");
-        out.writeByte(0);
-        writeStr(out, "");
-        out.writeShort(0); // banned_units
+        // 4 players in roster
+        String[] names = { "Doctor", "Amiya", "Kaltsit", "W" };
+        out.writeShort(4);
+        for (int s = 1; s <= 4; s++) {
+            writeStr(out, "acc_" + s);
+            out.writeByte(s); // uid
+            out.writeShort(0); // squad slots
+            writeStr(out, "");
+            writeStr(out, names[s - 1]);
+            for (int i = 0; i < 5; i++) writeStr(out, "");
+            out.write(new byte[5]);
+            writeStr(out, "");
+            out.writeByte(0);
+            writeStr(out, "");
+            out.writeShort(0); // banned_units
+        }
         // scene body + enemy_types
-        out.write(buildMinimalSceneBody(state, round, 25, previewEnemy, previewCnt, previewRound, null, 0));
+        out.write(buildMinimalSceneBody(state, round, 25, previewEnemy, previewCnt, previewRound, null, 0, null));
         out.writeShort(0);
         return wrapFrame(300, baos.toByteArray());
     }
@@ -143,19 +149,21 @@ public final class VpnCodecAndWireTest {
         check(parsed.protocol == PacketCodec.PROTO_UDP && parsed.payloadLength == payload.length, "UDP payload len");
         check(PacketCodec.transportChecksum(serverIp, clientIp, PacketCodec.PROTO_UDP, udp, 20, udp.length - 20) == 0, "UDP checksum verifies to 0");
 
-        // 2. CovenantDetector 容错检查
+        // 2. CovenantDetector & Boss Portrait ID 映射检查
         check("乌萨斯".equals(CovenantDetector.matchToken("乌萨期")), "covenant fuzzy 乌萨斯");
         check(CovenantDetector.matchToken("谢拉古") == null, "reject ambiguous 谢拉古");
         check("灵巧".equals(CovenantDetector.matchToken("灵功")), "covenant near-two 灵巧");
+        check("enemy_9013_acstmk".equals(EnemyPortraitAtlas.resolveBossEnemyId("boss_1")), "boss_1 portrait id");
+        check("enemy_2124_dyjsfg".equals(EnemyPortraitAtlas.resolveBossEnemyId("boss_17")), "boss_17 portrait id");
 
-        // 3. StrongholdWireDecoder + BattleCaptureState 端到端解码（自动 Ban + 出怪预告 + 漏怪/协防兜底）
+        // 3. StrongholdWireDecoder + BattleCaptureState v3.1 端到端解码
         StrongholdEnemyCatalog.registerForTest("enemy_1006_shield_2", "重装防御组长");
         StrongholdEnemyCatalog.registerForTest("enemy_1005_yokai_2", "妖怪MKII");
+        StrongholdEnemyCatalog.registerForTest("enemy_9013_acstmk", "蒸汽骑士");
         BattleCaptureState.resetMatch();
         StrongholdWireDecoder decoder = new StrongholdWireDecoder();
 
         byte[] f300 = buildFrame300(98765, new String[] { "ursusShip", "yanShip", "preciShip" }, 3, 4, "enemy_1006_shield_2", 3, 5);
-        // 拆成两片模拟 TCP 粘包/半包分片
         int split = f300.length / 2;
         List<StrongholdWireDecoder.Event> ev1 = decoder.feed(StrongholdWireDecoder.DIR_DOWN, f300, 0, split);
         check(ev1.isEmpty(), "half frame waits cleanly");
@@ -181,19 +189,20 @@ public final class VpnCodecAndWireTest {
         for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_UP, f303, 0, f303.length)) {
             BattleCaptureState.accept(e);
         }
-        String r5Summary = BattleCaptureState.formatSpawnSummary(5, 4);
-        check(r5Summary.contains("重装防御组长×3") && r5Summary.contains("妖怪MKII×4"), "combined R5 forecast: " + r5Summary);
+        List<BattleCaptureState.EnemyCount> r5Spawns = BattleCaptureState.getSpawnList(5);
+        check(r5Spawns.size() == 2 && "enemy_1005_yokai_2".equals(r5Spawns.get(0).enemyId) && r5Spawns.get(0).count == 4,
+            "R5 spawn icons sorted by count");
 
-        // 下行 302 进入战斗漏怪 + 上行 311 己方结算漏 1 + 上行 313 协防兜底救 1 剩 1 未兜
-        byte[] f302 = wrapFrame(302, buildMinimalSceneBody(5, 4, 21, null, 0, 0, "enemy_1006_shield_2", 0));
+        // R4 战斗漏怪（1P 漏 2，2P 帮兜 1，剩 1 逃跑）
+        byte[] f302 = wrapFrame(302, buildMinimalSceneBody(5, 4, 21, null, 0, 0, "enemy_1006_shield_2", 0, null));
         for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f302, 0, f302.length)) {
             BattleCaptureState.accept(e);
         }
         ByteArrayOutputStream b311 = new ByteArrayOutputStream();
         DataOutputStream d311 = new DataOutputStream(b311);
         d311.writeByte(4); d311.writeByte(0);
-        d311.writeShort(1); d311.writeInt(100); // 1 escaped
-        d311.writeShort(0); // 0 tokens
+        d311.writeShort(2); d311.writeInt(100); d311.writeInt(101);
+        d311.writeShort(0);
         d311.writeShort(0); d311.writeShort(0);
         byte[] f311 = wrapFrame(311, b311.toByteArray());
         for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_UP, f311, 0, f311.length)) {
@@ -203,19 +212,66 @@ public final class VpnCodecAndWireTest {
         ByteArrayOutputStream b313 = new ByteArrayOutputStream();
         DataOutputStream d313 = new DataOutputStream(b313);
         d313.writeByte(4); d313.writeByte(0);
-        d313.writeShort(1); // 1 uncovered escaped
+        d313.writeShort(1); // 1 uncovered escaped owned by seat 1
         d313.writeByte(1); writeStr(d313, "enemy_1006_shield_2"); d313.writeInt(101); d313.writeByte(0); d313.writeByte(0);
-        d313.writeShort(1); // 1 assist kill
-        d313.writeByte(2); // killer seat 2
+        d313.writeShort(1); // 1 assist kill by seat 2 for seat 1
+        d313.writeByte(2);
         d313.writeByte(1); writeStr(d313, "enemy_1006_shield_2"); d313.writeInt(100); d313.writeByte(0); d313.writeByte(0);
         d313.write(new byte[5]);
         byte[] f313 = wrapFrame(313, b313.toByteArray());
         for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_UP, f313, 0, f313.length)) {
             BattleCaptureState.accept(e);
         }
-        String leakText = BattleCaptureState.formatLeakSummary();
-        check(leakText.contains("己漏 1") && leakText.contains("兜底 1/2") && leakText.contains("未兜 1") && leakText.contains("重装防御组长×1"),
-            "leak & assist summary exact: " + leakText);
+
+        // 校验单回合 R4 漏兜快照（含 4 席位细项 + 敌怪 ID 图标）
+        BattleCaptureState.LeakSnapshot r4Leak = BattleCaptureState.buildLeakSnapshot(4);
+        check(r4Leak.round == 4 && r4Leak.totalLeaks == 2 && r4Leak.totalAssisted == 1 && r4Leak.totalEscaped == 1,
+            "R4 leak totals exact");
+        check(r4Leak.seats.size() == 4, "4 seats in leak snapshot");
+        check("Doctor".equals(r4Leak.seats.get(0).name) && r4Leak.seats.get(0).isSelf && r4Leak.seats.get(0).leaked == 2
+            && r4Leak.seats.get(0).covered == 1 && r4Leak.seats.get(0).escaped == 1, "1P leak/covered/escaped exact");
+        check("Amiya".equals(r4Leak.seats.get(1).name) && r4Leak.seats.get(1).assisted == 1 && r4Leak.seats.get(1).leaked == 0,
+            "2P assist kill exact");
+        check(!r4Leak.enemies.isEmpty() && "enemy_1006_shield_2".equals(r4Leak.enemies.get(0).enemyId),
+            "R4 leaked enemy ID preserved for icon");
+
+        // R5 再发生 3P 漏 1 且被 1P 全兜，校验累计（round=0）与单回合（round=4 / round=5）隔离
+        ByteArrayOutputStream b313r5 = new ByteArrayOutputStream();
+        DataOutputStream d313r5 = new DataOutputStream(b313r5);
+        d313r5.writeByte(5); d313r5.writeByte(0);
+        d313r5.writeShort(0); // 0 escaped
+        d313r5.writeShort(1); // 1 assist kill by seat 1 for seat 3
+        d313r5.writeByte(1);
+        d313r5.writeByte(3); writeStr(d313r5, "enemy_1005_yokai_2"); d313r5.writeInt(201); d313r5.writeByte(0); d313r5.writeByte(0);
+        d313r5.write(new byte[5]);
+        byte[] f313r5 = wrapFrame(313, b313r5.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_UP, f313r5, 0, f313r5.length)) {
+            BattleCaptureState.accept(e);
+        }
+        BattleCaptureState.LeakSnapshot r5Leak = BattleCaptureState.buildLeakSnapshot(5);
+        BattleCaptureState.LeakSnapshot cumLeak = BattleCaptureState.buildLeakSnapshot(0);
+        check(r5Leak.totalLeaks == 1 && r5Leak.totalEscaped == 0 && r5Leak.seats.get(0).assisted == 1 && r5Leak.seats.get(2).covered == 1,
+            "R5 single-round leak exact");
+        check(cumLeak.totalLeaks == 3 && cumLeak.totalAssisted == 2 && cumLeak.totalEscaped == 1
+            && cumLeak.seats.get(0).assisted == 1 && cumLeak.seats.get(1).assisted == 1,
+            "cumulative leak snapshot aggregates R4+R5");
+
+        // 4. R14 Boss 阶段 MMO 排行与 DPS 校验
+        byte[] f302boss = wrapFrame(302, buildMinimalSceneBody(7, 14, 21, null, 0, 0, null, 180000, new int[] { 85000, 127000, 62000, 28000 }));
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f302boss, 0, f302boss.length)) {
+            BattleCaptureState.accept(e);
+        }
+        BattleCaptureState.BossSnapshot bossSnap = BattleCaptureState.buildBossSnapshot();
+        check("enemy_9013_acstmk".equals(bossSnap.bossEnemyId) && "蒸汽骑士".equals(bossSnap.bossName), "boss identity resolved");
+        check(bossSnap.teamDamage == 302000 && bossSnap.teamDps > 0 && bossSnap.hpPct > 0 && bossSnap.hpPct < 100,
+            "boss team dmg/dps/hpPct valid: dmg=" + bossSnap.teamDamage + " hpPct=" + bossSnap.hpPct);
+        check(bossSnap.players.size() == 4 && bossSnap.players.get(0).seat == 2 && bossSnap.players.get(0).rank == 1
+            && bossSnap.players.get(1).seat == 1 && bossSnap.players.get(1).isSelf && bossSnap.players.get(1).rank == 2
+            && bossSnap.players.get(3).seat == 4 && bossSnap.players.get(3).rank == 4,
+            "boss MMO ranking sorted #1->#4");
+        double shareSum = 0;
+        for (BattleCaptureState.BossPlayerRow row : bossSnap.players) shareSum += row.sharePct;
+        check(Math.abs(shareSum - 100.0) < 0.2, "boss sharePct sums to 100%: " + shareSum);
 
         System.out.println("VpnCodecAndWire: " + checks + " checks passed");
     }

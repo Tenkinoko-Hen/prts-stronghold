@@ -1,9 +1,21 @@
 // 青逝痕 Tenkinoko 制作
-import { useEffect, useMemo, useState } from 'react';
-import { Layers, Lock, PanelRightOpen, ShieldCheck, Skull, Swords, Unlock, Users, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Lock, PanelRightOpen, Skull, Unlock, X } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
-import { REPORT_SEATS, readBattleReport, reportBossRounds } from './battleReportData';
+import {
+  REPORT_SEATS,
+  defaultBossRound,
+  groupEnemyOutcomes,
+  hasBossDamage,
+  ownLeakKinds,
+  ownRoundLeaks,
+  readBattleReport,
+  reportBossRounds,
+  reportLeader,
+  type BattleRound,
+  type EnemyOutcome,
+} from './battleReportData';
 import { buildDeckMatchKey, readPersistedWishlist, WISHLIST_STORAGE_PREFIX } from './BattleReportDeckPool';
 import { seatDisplayText } from './BattleReportPanels';
 import { EnemyAvatar } from './BattleReportSpawns';
@@ -15,9 +27,11 @@ import type { HudOverlayState } from './battleReports';
 import './desktop.css';
 import './battleReports.css';
 
-export type HudNormalPage = 'intel' | 'peers';
+export type HudNormalPage = 'intel' | 'peers' | 'leak' | 'dps';
+type HudTab = 'intel' | 'leak' | 'dps';
+type HudDpsSub = 'team' | 'ops';
 
-const HUD_PAGE_STORAGE_KEY = 'prts:hud-normal-page:v1';
+const HUD_PAGE_STORAGE_KEY = 'prts:hud-normal-page:v2';
 
 interface HudOpRow {
   key: string;
@@ -27,11 +41,41 @@ interface HudOpRow {
   share: number;
 }
 
+interface SeatLeakCard {
+  seat: number;
+  label: string;
+  isSelf: boolean;
+  hp: number | undefined;
+  shopLevel: number | null;
+  elimRound: number | undefined;
+  eliminated: boolean;
+  leaked: number;
+  assisted: number;
+  covered: number;
+  escaped: number;
+}
+
+interface BossTeamRow {
+  rank: number;
+  seat: number;
+  label: string;
+  isSelf: boolean;
+  damage: number;
+  dps: number | null;
+  sharePct: number;
+}
+
 const hudPctFmt = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
 function fmtHudPct(prob: number): string {
   if (prob <= 0) return '0%';
   if (prob < 0.001) return '<0.1%';
   return `${hudPctFmt.format(prob * 100)}%`;
+}
+
+function fmtMmSs(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) return '';
+  const s = Math.round(seconds);
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function normalizeOpName(raw: string): string {
@@ -40,16 +84,42 @@ function normalizeOpName(raw: string): string {
   return raw.replace(/["“”'‘’「」『』]/g, '').trim();
 }
 
-function readSavedHudPage(fallback: HudNormalPage): HudNormalPage {
+function toHudTab(page: HudNormalPage): HudTab {
+  if (page === 'peers' || page === 'leak') return 'leak';
+  if (page === 'dps') return 'dps';
+  return 'intel';
+}
+
+function readSavedHudTab(fallback: HudTab): HudTab {
   try {
     if (typeof localStorage !== 'undefined') {
       const v = localStorage.getItem(HUD_PAGE_STORAGE_KEY);
-      if (v === 'intel' || v === 'peers') return v;
+      if (v === 'intel' || v === 'leak' || v === 'dps') return v;
+      if (v === 'peers') return 'leak';
     }
   } catch {
     // ignore storage errors
   }
   return fallback;
+}
+
+function collectRoundLeakedEnemies(row: BattleRound, report: ReturnType<typeof readBattleReport>): EnemyOutcome[] {
+  const list: EnemyOutcome[] = [];
+  for (const e of row.uncoveredEnemies) list.push({ id: e.id, name: e.name, count: e.count, unitPower: e.unitPower });
+  for (const e of row.assistEnemies) list.push({ id: e.id, name: e.name, count: e.count, unitPower: e.unitPower });
+  if (list.length === 0) {
+    for (const e of ownLeakKinds(row, report)) list.push(e);
+  }
+  if (list.length === 0 && !row.bossGroups) {
+    for (const w of row.rows) {
+      for (const e of w.enemies) {
+        if (e.id && e.leaked && e.leaked > 0) {
+          list.push({ id: e.id, name: e.name, count: e.leaked, unitPower: e.power });
+        }
+      }
+    }
+  }
+  return groupEnemyOutcomes(list);
 }
 
 export default function HudStripApp({
@@ -71,10 +141,14 @@ export default function HudStripApp({
       guide: { round: 1, compTitle: '', paceTip: '', suggestedOperators: [] },
     },
   );
-  const [normalPage, setNormalPage] = useState<HudNormalPage>(() =>
-    previewState ? initialPage : readSavedHudPage(initialPage),
+  const [activeTab, setActiveTab] = useState<HudTab>(() =>
+    previewState ? toHudTab(initialPage) : readSavedHudTab(toHudTab(initialPage)),
   );
+  const [leakCumulative, setLeakCumulative] = useState(true);
+  const [leakSelectedRound, setLeakSelectedRound] = useState<number>(1);
+  const [dpsSub, setDpsSub] = useState<HudDpsSub>('team');
   const [storageTick, setStorageTick] = useState(0);
+  const autoSwitchedBossRoundRef = useRef(0);
 
   useEffect(() => {
     if (previewState) {
@@ -96,10 +170,9 @@ export default function HudStripApp({
   }, [hudApi, previewState]);
 
   useEffect(() => {
-    if (previewState) setNormalPage(initialPage);
+    if (previewState) setActiveTab(toHudTab(initialPage));
   }, [initialPage, previewState]);
 
-  // Listen for live wishlist edits made in the main window's「当局牌库」tab
   useEffect(() => {
     if (previewState) return;
     const onStorage = (event: StorageEvent) => {
@@ -111,12 +184,12 @@ export default function HudStripApp({
     return () => window.removeEventListener('storage', onStorage);
   }, [previewState]);
 
-  const handleSelectPage = (page: HudNormalPage) => {
+  const handleSelectTab = (tab: HudTab) => {
     if (state.locked) return;
-    setNormalPage(page);
+    setActiveTab(tab);
     if (!previewState) {
       try {
-        localStorage.setItem(HUD_PAGE_STORAGE_KEY, page);
+        localStorage.setItem(HUD_PAGE_STORAGE_KEY, tab);
       } catch {
         // ignore storage errors
       }
@@ -136,74 +209,167 @@ export default function HudStripApp({
   const soloMode = isSoloMode(parsed?.mode);
   const selfSeat = parsed?.self ?? (soloMode ? 1 : null);
   const selfLineup = selfSeat !== null ? parsed?.lineups[selfSeat] : undefined;
-  const selfHp = selfSeat !== null ? parsed?.hp[selfSeat] : undefined;
-  const selfLeaks = activeRound ? (activeRound.selfLeaks ?? (selfSeat !== null ? activeRound.leaks[selfSeat] : undefined)) : undefined;
-  const selfAssists = activeRound && selfSeat !== null ? activeRound.assists[selfSeat] : undefined;
   const liveShopLevel = selfLineup?.shopLevel
     ?? Object.values(parsed?.lineups ?? {}).find(l => l.shopLevel)?.shopLevel
     ?? 1;
 
-  // 1. Collect per-operator DPS / damage rows for current round (or active boss round)
+  // 1. Per-operator DPS / damage rows (PC exclusive)
   const roundTele = parsed?.telemetry?.rounds[roundNo] ?? parsed?.telemetry ?? null;
-  const opRows: HudOpRow[] = [];
-  if (roundTele && roundTele.operators.length > 0) {
-    const valid = roundTele.operators.filter(o => o.totalDamage > 0);
-    const total = valid.reduce((s, o) => s + o.totalDamage, 0);
-    for (const op of valid) {
-      opRows.push({
-        key: `${op.seat ?? 0}:${op.charId}`,
-        name: op.name,
-        damage: op.totalDamage,
-        dps: op.activeDps ?? op.spanDps,
-        share: total > 0 ? op.totalDamage / total : 0,
-      });
-    }
-  } else if (parsed) {
-    const bossRound = [activeRound, ...reportBossRounds(parsed).map(n => parsed.rounds.find(r => r.number === n)).reverse()]
-      .find(r => r && (r.bossOfficial.length > 0 || r.bossUplinkRows.length > 0));
-    if (bossRound) {
-      const hits = bossRound.bossOfficial.length ? bossRound.bossOfficial : bossRound.bossUplinkRows;
-      const agg = new Map<string, { name: string; damage: number }>();
-      for (const h of hits) {
-        if (h.damage <= 0) continue;
-        const k = `${h.seat}:${h.charId || h.identifier}`;
-        const prev = agg.get(k);
-        const name = h.operatorName || `干员 #${h.identifier}`;
-        if (!prev) agg.set(k, { name, damage: h.damage });
-        else prev.damage += h.damage;
+  const opRows = useMemo<HudOpRow[]>(() => {
+    const rows: HudOpRow[] = [];
+    if (roundTele && roundTele.operators.length > 0) {
+      const valid = roundTele.operators.filter(o => o.totalDamage > 0);
+      const total = valid.reduce((s, o) => s + o.totalDamage, 0);
+      for (const op of valid) {
+        rows.push({
+          key: `${op.seat ?? 0}:${op.charId}`,
+          name: op.name,
+          damage: op.totalDamage,
+          dps: op.activeDps ?? op.spanDps,
+          share: total > 0 ? op.totalDamage / total : 0,
+        });
       }
-      const list = [...agg.entries()].sort((a, b) => b[1].damage - a[1].damage);
-      const total = list.reduce((s, [, v]) => s + v.damage, 0);
-      for (const [k, v] of list) {
-        opRows.push({ key: k, name: v.name, damage: v.damage, dps: null, share: total > 0 ? v.damage / total : 0 });
+      return rows;
+    }
+    if (parsed) {
+      const bossRound = [activeRound, ...reportBossRounds(parsed).map(n => parsed.rounds.find(r => r.number === n)).reverse()]
+        .find(r => r && (r.bossOfficial.length > 0 || r.bossUplinkRows.length > 0));
+      if (bossRound) {
+        const hits = bossRound.bossOfficial.length ? bossRound.bossOfficial : bossRound.bossUplinkRows;
+        const agg = new Map<string, { name: string; damage: number }>();
+        for (const h of hits) {
+          if (h.damage <= 0) continue;
+          const k = `${h.seat}:${h.charId || h.identifier}`;
+          const prev = agg.get(k);
+          const name = h.operatorName || `干员 #${h.identifier}`;
+          if (!prev) agg.set(k, { name, damage: h.damage });
+          else prev.damage += h.damage;
+        }
+        const list = [...agg.entries()].sort((a, b) => b[1].damage - a[1].damage);
+        const total = list.reduce((s, [, v]) => s + v.damage, 0);
+        for (const [k, v] of list) {
+          rows.push({ key: k, name: v.name, damage: v.damage, dps: null, share: total > 0 ? v.damage / total : 0 });
+        }
       }
     }
-  }
+    return rows;
+  }, [activeRound, parsed, roundTele]);
 
-  // 2. Page 1 (牌池+出怪): Tracked Deck Pool operators (Wishlist > Suggested Comp Core > Contested)
+  // 2. Boss 4-player MMO ranking + Boss HP bar
+  const bossRoundNo = useMemo(() => (parsed ? defaultBossRound(parsed) : 14), [parsed]);
+  const bossRound = useMemo(
+    () => parsed?.rounds.find(r => r.number === bossRoundNo) ?? (activeRound?.phase === 'boss' ? activeRound : undefined),
+    [activeRound, bossRoundNo, parsed],
+  );
+  const bossPool = parsed?.telemetry?.enemyPool?.boss ?? roundTele?.enemyPool?.boss ?? null;
+  const bossLeader = useMemo(() => (parsed ? reportLeader(parsed, bossRound?.number ?? bossRoundNo) : null), [bossRound?.number, bossRoundNo, parsed]);
+
+  const bossElapsedSec = useMemo<number | null>(() => {
+    const bossTele = (bossRound ? parsed?.telemetry?.rounds[bossRound.number] : null) ?? roundTele;
+    if (bossTele?.logicSeconds && bossTele.logicSeconds > 0) return bossTele.logicSeconds;
+    const tl = bossTele?.timeline;
+    if (tl && tl.length >= 2) {
+      const span = tl[tl.length - 1].t - tl[0].t;
+      if (span > 0) return span;
+    }
+    return null;
+  }, [bossRound, parsed?.telemetry?.rounds, roundTele]);
+
+  const bossTeamData = useMemo(() => {
+    const seats = soloMode ? ([1] as const) : REPORT_SEATS;
+    const dmgBySeat: Record<number, number> = {};
+    if (bossRound) {
+      for (const s of seats) {
+        const direct = bossRound.bossDamage[s] ?? bossRound.bossUplink[s];
+        if (direct !== undefined && direct > 0) {
+          dmgBySeat[s] = direct;
+        }
+      }
+      if (Object.keys(dmgBySeat).length === 0) {
+        const hits = bossRound.bossOfficial.length ? bossRound.bossOfficial : bossRound.bossUplinkRows;
+        for (const h of hits) {
+          if (h.damage > 0) dmgBySeat[h.seat] = (dmgBySeat[h.seat] ?? 0) + h.damage;
+        }
+      }
+    }
+    const teamTotal = seats.reduce((sum, s) => sum + (dmgBySeat[s] ?? 0), 0);
+    const ranked = [...seats].sort((a, b) => (dmgBySeat[b] ?? 0) - (dmgBySeat[a] ?? 0) || a - b);
+    const rows: BossTeamRow[] = ranked.map((seat, idx) => {
+      const damage = dmgBySeat[seat] ?? 0;
+      const pctFallback = bossRound?.bossPercent[seat];
+      const sharePct = teamTotal > 0 ? (damage * 100) / teamTotal : (pctFallback ?? 0);
+      const dps = damage > 0 && bossElapsedSec && bossElapsedSec > 0 ? damage / bossElapsedSec : null;
+      return {
+        rank: idx + 1,
+        seat,
+        label: parsed ? seatDisplayText(seat, parsed) : `${seat}P`,
+        isSelf: seat === selfSeat,
+        damage,
+        dps,
+        sharePct,
+      };
+    });
+    const teamDps = teamTotal > 0 && bossElapsedSec && bossElapsedSec > 0 ? teamTotal / bossElapsedSec : null;
+    const bossHp = bossPool?.hp ?? bossRound?.bossHp ?? null;
+    const bossMaxHp = bossPool?.maxHp ?? (bossHp !== null ? Math.max(bossHp + teamTotal, bossHp) : null);
+    const hpPct = bossHp !== null && bossMaxHp && bossMaxHp > 0
+      ? Math.max(0, Math.min(100, Math.round((bossHp * 100) / bossMaxHp)))
+      : null;
+    const bossEnemyId = bossPool?.enemyId || bossLeader?.id || '';
+    const bossName = bossPool?.name || bossLeader?.name || '终局首领';
+    return { rows, teamTotal, teamDps, bossHp, hpPct, bossEnemyId, bossName };
+  }, [bossElapsedSec, bossLeader, bossPool, bossRound, parsed, selfSeat, soloMode]);
+
+  const isBossContext = Boolean(
+    activeRound?.phase === 'boss'
+    || (parsed && reportBossRounds(parsed).includes(roundNo) && (hasBossDamage(activeRound) || activeRound?.bossEnded || Boolean(bossPool)))
+    || hasBossDamage(bossRound)
+    || Boolean(bossPool)
+    || opRows.length > 0,
+  );
+
+  // Auto-switch to DPS once per Boss round (never overrides user's subsequent clicks!)
+  useEffect(() => {
+    if (previewState) return;
+    const activeBossActive = Boolean(
+      activeRound?.phase === 'boss'
+      || (parsed && reportBossRounds(parsed).includes(roundNo) && (hasBossDamage(activeRound) || Boolean(bossPool))),
+    );
+    if (activeBossActive && autoSwitchedBossRoundRef.current !== roundNo) {
+      autoSwitchedBossRoundRef.current = roundNo;
+      setActiveTab('dps');
+      setDpsSub(!soloMode && bossTeamData.teamTotal > 0 ? 'team' : 'ops');
+    } else if (!activeBossActive && autoSwitchedBossRoundRef.current !== 0 && roundNo < 14) {
+      autoSwitchedBossRoundRef.current = 0;
+    }
+  }, [activeRound, bossPool, bossTeamData.teamTotal, parsed, previewState, roundNo, soloMode]);
+
+  // Keep leakSelectedRound synced to latest round when viewing cumulative
+  useEffect(() => {
+    if (leakCumulative) {
+      setLeakSelectedRound(roundNo);
+    }
+  }, [leakCumulative, roundNo]);
+
+  // 3. Intel Tab: Deck Pool tracked operators
   const matchKey = buildDeckMatchKey(parsed);
   const { trackedOps, trackedSource } = useMemo<{
     trackedOps: DeckPoolOperator[];
     trackedSource: 'wishlist' | 'comp' | 'hot';
   }>(() => {
     const pool = parsed?.deckPool;
-    if (!pool || pool.operators.length === 0) {
-      return { trackedOps: [], trackedSource: 'hot' };
-    }
+    if (!pool || pool.operators.length === 0) return { trackedOps: [], trackedSource: 'hot' };
     const saved = previewState ? { chars: [], traps: [] } : readPersistedWishlist(matchKey, storageTick > 0);
     if (saved.chars.length > 0) {
       const idSet = new Set(saved.chars);
       const matched = pool.operators.filter(o => idSet.has(o.charId));
-      if (matched.length > 0) {
-        return { trackedOps: matched.slice(0, 6), trackedSource: 'wishlist' };
-      }
+      if (matched.length > 0) return { trackedOps: matched.slice(0, 6), trackedSource: 'wishlist' };
     }
     const suggested = state.guide.suggestedOperators ?? [];
     if (suggested.length > 0) {
       const wanted = new Set(suggested.map(normalizeOpName).filter(Boolean));
       const matched: DeckPoolOperator[] = [];
       const seen = new Set<string>();
-      // Preserve guide order, prioritizing unlocked / in-shop / empty alerts
       for (const raw of suggested) {
         const clean = normalizeOpName(raw);
         if (!clean || !wanted.has(clean)) continue;
@@ -213,11 +379,8 @@ export default function HudStripApp({
           matched.push(found);
         }
       }
-      if (matched.length > 0) {
-        return { trackedOps: matched.slice(0, 6), trackedSource: 'comp' };
-      }
+      if (matched.length > 0) return { trackedOps: matched.slice(0, 6), trackedSource: 'comp' };
     }
-    // Lite / no-guide fallback: track own deployed board units (highest tier non-golden first) before generic hot pool
     const ownDeployed = selfLineup?.deployed ?? [];
     if (ownDeployed.length > 0) {
       const preferredNames = [...ownDeployed]
@@ -232,11 +395,8 @@ export default function HudStripApp({
           boardMatched.push(hit);
         }
       }
-      if (boardMatched.length > 0) {
-        return { trackedOps: boardMatched.slice(0, 5), trackedSource: 'comp' };
-      }
+      if (boardMatched.length > 0) return { trackedOps: boardMatched.slice(0, 5), trackedSource: 'comp' };
     }
-    // Fallback: prioritize operators currently in player's shop, depleted alerts, or highest contested tier
     const ranked = [...pool.operators].sort((a, b) => {
       const aShop = selfSeat !== null && a.inShopSeats.includes(selfSeat) ? 1 : 0;
       const bShop = selfSeat !== null && b.inShopSeats.includes(selfSeat) ? 1 : 0;
@@ -251,7 +411,7 @@ export default function HudStripApp({
     return { trackedOps: ranked.slice(0, 4), trackedSource: 'hot' };
   }, [liveShopLevel, matchKey, parsed?.deckPool, previewState, selfLineup?.deployed, selfSeat, state.guide.suggestedOperators, storageTick]);
 
-  // 3. Page 1 (牌池+出怪): Aggregated enemy preview for current (or next upcoming) round
+  // 4. Intel Tab: Next/Current Wave Enemy Icons
   const { waveSpawns, spawnRound, spawnIsNext } = useMemo(() => {
     if (!parsed || parsed.preview.length === 0) {
       return { waveSpawns: [] as Array<{ id: string; name: string; count: number | null; boss?: true }>, spawnRound: roundNo, spawnIsNext: false };
@@ -272,51 +432,124 @@ export default function HudStripApp({
     }
     const list = [...merged.values()]
       .sort((a, b) => Number(Boolean(b.boss)) - Number(Boolean(a.boss)) || (b.count ?? 0) - (a.count ?? 0));
-    return {
-      waveSpawns: list.slice(0, 8),
-      spawnRound: chosenRound,
-      spawnIsNext: chosenRound > roundNo,
-    };
+    return { waveSpawns: list.slice(0, 8), spawnRound: chosenRound, spawnIsNext: chosenRound > roundNo };
   }, [activeRound?.phase, parsed, roundNo]);
 
-  // 4. Page 2 (队友态势): All 4 seats sorted with alive / self info & top deployed units
-  const peerRows = useMemo(() => {
-    if (!parsed) return [];
+  // 5. Leak/Assist Tab (漏兜): 4-player chart + leaked enemy real icons (Cumulative OR Single Round)
+  const leakData = useMemo(() => {
+    if (!parsed) {
+      return { cards: [] as SeatLeakCard[], enemies: [] as EnemyOutcome[], totalLeaks: 0, totalAssisted: 0, totalEscaped: 0 };
+    }
     const seats = soloMode ? ([1] as const) : REPORT_SEATS;
-    return seats.map(seat => {
-      const lineup = parsed.lineups[seat];
-      const hp = parsed.hp[seat];
-      const elimRound = parsed.eliminated[seat];
-      const eliminated = elimRound !== undefined;
-      const rLeak = activeRound?.leaks[seat];
-      const rAssist = activeRound?.assists[seat];
-      const deployed = [...(lineup?.deployed ?? [])].sort(
-        (a, b) => Number(b.isGolden) - Number(a.isGolden) || b.tier - a.tier,
-      );
-      return {
-        seat,
-        isSelf: seat === selfSeat,
-        label: seatDisplayText(seat, parsed),
-        hp,
-        elimRound,
-        eliminated,
-        shopLevel: lineup?.shopLevel ?? null,
-        rLeak,
-        rAssist,
-        deployed,
-      };
-    });
-  }, [activeRound, parsed, selfSeat, soloMode]);
+    const targetRounds = leakCumulative
+      ? parsed.rounds
+      : parsed.rounds.filter(r => r.number === leakSelectedRound);
 
-  const activeNormalPage: HudNormalPage = soloMode ? 'intel' : normalPage;
+    const leakedMap: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const assistedMap: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const coveredMap: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const escapedMap: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const rawEnemies: EnemyOutcome[] = [];
+
+    for (const r of targetRounds) {
+      for (const s of seats) {
+        const l = (s === selfSeat ? ownRoundLeaks(r, parsed) : r.leaks[s]) ?? r.leakMinimums[s] ?? 0;
+        const a = r.assists[s] ?? 0;
+        const esc = r.uncoveredLeaks[s] ?? 0;
+        const pairCovered = r.assistPairs.reduce((sum, pair) => sum + (pair.owner === s ? pair.count : 0), 0);
+        const cov = pairCovered > 0 ? pairCovered : (r.uncoveredStatus ? Math.max(0, l - esc) : 0);
+        const effLeak = Math.max(l, cov + esc);
+        leakedMap[s] += effLeak;
+        assistedMap[s] += a;
+        coveredMap[s] += cov;
+        escapedMap[s] += esc;
+      }
+      rawEnemies.push(...collectRoundLeakedEnemies(r, parsed));
+    }
+
+    const cards: SeatLeakCard[] = seats.map(seat => ({
+      seat,
+      label: seatDisplayText(seat, parsed),
+      isSelf: seat === selfSeat,
+      hp: parsed.hp[seat],
+      shopLevel: parsed.lineups[seat]?.shopLevel ?? null,
+      elimRound: parsed.eliminated[seat],
+      eliminated: parsed.eliminated[seat] !== undefined,
+      leaked: leakedMap[seat],
+      assisted: assistedMap[seat],
+      covered: coveredMap[seat],
+      escaped: escapedMap[seat],
+    }));
+
+    return {
+      cards,
+      enemies: groupEnemyOutcomes(rawEnemies).slice(0, 6),
+      totalLeaks: seats.reduce((sum, s) => sum + leakedMap[s], 0),
+      totalAssisted: seats.reduce((sum, s) => sum + assistedMap[s], 0),
+      totalEscaped: seats.reduce((sum, s) => sum + escapedMap[s], 0),
+    };
+  }, [leakCumulative, leakSelectedRound, parsed, selfSeat, soloMode]);
+
+  const currentRoundLeakCount = useMemo(() => {
+    if (!activeRound) return 0;
+    return REPORT_SEATS.reduce((sum, s) => sum + (activeRound.leaks[s] ?? 0), 0) || (activeRound.selfLeaks ?? 0);
+  }, [activeRound]);
+
+  // Effective tab & DPS sub-mode
+  const effectiveTab: HudTab = (activeTab === 'leak' && soloMode)
+    ? 'intel'
+    : (activeTab === 'dps' && !isBossContext)
+      ? 'intel'
+      : activeTab;
+  const effectiveDpsSub: HudDpsSub = (dpsSub === 'team' && (soloMode || bossTeamData.teamTotal === 0) && opRows.length > 0)
+    ? 'ops'
+    : (dpsSub === 'ops' && opRows.length === 0 && bossTeamData.teamTotal > 0)
+      ? 'team'
+      : dpsSub;
+
+  // Unified color theme matching mobile v3.1 (Yellow = Intel, Cyan = Cumulative Leak, Orange = Single/Escaped Leak, Crimson = Boss DPS)
+  const themeAccent = effectiveTab === 'dps'
+    ? '#ff4d4f'
+    : effectiveTab === 'leak'
+      ? (!leakCumulative || leakData.totalEscaped > 0 ? '#ff7a00' : '#00e5ff')
+      : '#ffe600';
+  const shellBg = effectiveTab === 'dps'
+    ? (state.locked ? 'rgba(24, 10, 13, 0.84)' : 'rgba(20, 10, 14, 0.96)')
+    : effectiveTab === 'leak' && (!leakCumulative || leakData.totalEscaped > 0)
+      ? (state.locked ? 'rgba(24, 15, 8, 0.84)' : 'rgba(22, 14, 9, 0.96)')
+      : (state.locked ? 'rgba(11, 14, 20, 0.84)' : 'rgba(12, 16, 23, 0.96)');
+
   const maxOpDamage = Math.max(1, ...opRows.map(o => o.damage));
-  const bossPool = parsed?.telemetry?.enemyPool?.boss;
-  const fullGuideText = PRODUCT_BRAND.mode === 'full' && state.guide.paceTip
-    ? state.guide.paceTip
-    : parsed?.difficulty || state.guide.compTitle || '';
-  const emptyAlertCount = parsed?.deckPool
-    ? trackedOps.filter(o => o.remaining === 0).length
-    : 0;
+  const maxTeamDamage = Math.max(1, ...bossTeamData.rows.map(r => r.damage));
+  const maxLeakLoad = Math.max(1, ...leakData.cards.map(c => c.leaked + c.assisted));
+  const emptyAlertCount = parsed?.deckPool ? trackedOps.filter(o => o.remaining === 0).length : 0;
+  const fullGuideText = PRODUCT_BRAND.mode === 'full' && state.guide.paceTip ? state.guide.paceTip : '';
+
+  const maxSelectableRound = Math.max(1, Math.min(15, parsed?.current || parsed?.rounds.at(-1)?.number || roundNo || 15));
+  const stepLeakRound = (delta: number) => {
+    if (state.locked) return;
+    if (leakCumulative) {
+      setLeakCumulative(false);
+      setLeakSelectedRound(maxSelectableRound);
+      return;
+    }
+    setLeakSelectedRound(prev => Math.max(1, Math.min(maxSelectableRound, prev + delta)));
+  };
+
+  const badgeLabel = effectiveTab === 'dps'
+    ? `R${String(bossRound?.number ?? roundNo).padStart(2, '0')}·BOSS`
+    : effectiveTab === 'leak'
+      ? (leakCumulative ? `R1-${String(roundNo).padStart(2, '0')}` : `R${String(leakSelectedRound).padStart(2, '0')}`)
+      : parsed?.mode === 'mode_solo_stage'
+        ? 'SOLO'
+        : `R${String(roundNo).padStart(2, '0')}${liveShopLevel ? `·${liveShopLevel}本` : ''}`;
+
+  const peerBarPalettes = [
+    'linear-gradient(90deg, rgba(14, 92, 112, 0.85), rgba(8, 145, 178, 0.72))',
+    'linear-gradient(90deg, rgba(76, 29, 149, 0.85), rgba(124, 58, 237, 0.72))',
+    'linear-gradient(90deg, rgba(30, 58, 95, 0.85), rgba(37, 99, 235, 0.72))',
+    'linear-gradient(90deg, rgba(39, 50, 68, 0.85), rgba(71, 85, 105, 0.72))',
+  ];
 
   return (
     <div
@@ -336,50 +569,104 @@ export default function HudStripApp({
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          background: state.locked ? 'rgba(11, 14, 20, 0.82)' : 'rgba(12, 16, 23, 0.95)',
-          border: `1px solid ${state.locked ? 'rgba(255, 230, 0, 0.42)' : '#2d3644'}`,
-          borderLeft: '3px solid #ffe600',
+          background: shellBg,
+          border: `1px solid ${state.locked ? `${themeAccent}66` : `${themeAccent}88`}`,
+          borderLeft: `3px solid ${themeAccent}`,
           borderRadius: '2px',
           color: '#f1f5f9',
           overflow: 'hidden',
         }}
       >
-        {/* Top Compact Drag Header (26px) */}
+        {/* Top Compact Drag Header (25px) with Unified Mode Capsule [情报 | 漏兜 | DPS] */}
         <header
           style={{
             flex: 'none',
-            height: '26px',
+            height: '25px',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '0 7px',
-            borderBottom: '1px solid rgba(45, 54, 68, 0.75)',
+            gap: '5px',
+            padding: '0 6px',
+            borderBottom: '1px solid rgba(45, 54, 68, 0.78)',
             WebkitAppRegion: state.locked ? 'no-drag' : 'drag',
-            fontSize: '11.5px',
+            fontSize: '11px',
           } as React.CSSProperties}
         >
           <span
             style={{
               padding: '0 5px',
-              background: 'rgba(255, 230, 0, 0.16)',
-              color: '#ffe600',
+              background: themeAccent,
+              color: effectiveTab === 'dps' ? '#ffffff' : '#0b0d11',
               fontFamily: 'var(--font-mono)',
-              fontWeight: 700,
+              fontWeight: 800,
+              fontSize: '10px',
               borderRadius: '2px',
+              flexShrink: 0,
             }}
           >
-            {parsed?.mode === 'mode_solo_stage' ? 'SOLO' : `R${String(roundNo).padStart(2, '0')}`}
-          </span>
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#94a3b8', fontSize: '11px' }}>
-            {[parsed?.difficulty, state.guide.compTitle, selfLineup?.shopLevel ? `${selfLineup.shopLevel}本` : ''].filter(Boolean).join(' · ') || `${PRODUCT_BRAND.shortName} 战术悬浮条`}
+            {badgeLabel}
           </span>
 
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#cbd5e1', fontSize: '10.5px', fontWeight: 600 }}>
+            {effectiveTab === 'dps'
+              ? bossTeamData.bossName
+              : [state.guide.compTitle, parsed?.difficulty].filter(Boolean).join(' · ') || `${PRODUCT_BRAND.shortName} 战术悬浮条`}
+          </span>
+
+          {/* Unified Mode Capsule */}
+          {parsed && !state.locked && (
+            <div
+              role="tablist"
+              aria-label="悬浮条视图切换"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                background: '#0c1017',
+                border: '1px solid #2a3444',
+                borderRadius: '2px',
+                padding: '1px',
+                gap: '1px',
+                flexShrink: 0,
+                WebkitAppRegion: 'no-drag',
+              } as React.CSSProperties}
+            >
+              {([
+                ['intel', '情报', '#ffe600', '#0b0d11'],
+                ...(!soloMode ? [['leak', currentRoundLeakCount > 0 ? `漏兜·${currentRoundLeakCount}` : '漏兜', currentRoundLeakCount > 0 ? '#ff7a00' : '#00e5ff', '#0b0d11'] as const] : []),
+                ...(isBossContext ? [['dps', 'DPS', '#ff4d4f', '#ffffff'] as const] : []),
+              ] as ReadonlyArray<readonly [HudTab, string, string, string]>).map(([id, label, activeBg, activeFg]) => {
+                const active = effectiveTab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => handleSelectTab(id)}
+                    style={{
+                      padding: '1px 5px',
+                      fontSize: '9.5px',
+                      fontWeight: 700,
+                      border: 'none',
+                      borderRadius: '1px',
+                      cursor: 'pointer',
+                      lineHeight: 1.25,
+                      color: active ? activeFg : '#94a3b8',
+                      background: active ? activeBg : 'transparent',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {state.locked ? (
-            <span style={{ color: '#ffe600', fontSize: '10px', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-              穿透已锁 · {state.shortcut}
+            <span style={{ color: themeAccent, fontSize: '9.5px', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+              穿透 · {state.shortcut}
             </span>
           ) : (
-            <div style={{ display: 'inline-flex', gap: '4px', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <div style={{ display: 'inline-flex', gap: '3px', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
               {(state.clientSource === 'mumu' || state.drawerCollapsed) && (
                 <button
                   type="button"
@@ -388,9 +675,9 @@ export default function HudStripApp({
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '3px',
-                    padding: '1px 5px',
-                    fontSize: '10.5px',
+                    gap: '2px',
+                    padding: '1px 4px',
+                    fontSize: '9.5px',
                     color: '#00e5ff',
                     border: '1px solid rgba(0,229,255,0.45)',
                     background: 'rgba(0,229,255,0.12)',
@@ -398,7 +685,7 @@ export default function HudStripApp({
                     cursor: 'pointer',
                   }}
                 >
-                  <PanelRightOpen size={10} />展开抽屉
+                  <PanelRightOpen size={9.5} />抽屉
                 </button>
               )}
               <button
@@ -408,9 +695,9 @@ export default function HudStripApp({
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '3px',
-                  padding: '1px 5px',
-                  fontSize: '10.5px',
+                  gap: '2px',
+                  padding: '1px 4px',
+                  fontSize: '9.5px',
                   color: '#ffe600',
                   border: '1px solid rgba(255,230,0,0.45)',
                   background: 'rgba(255,230,0,0.1)',
@@ -418,7 +705,7 @@ export default function HudStripApp({
                   cursor: 'pointer',
                 }}
               >
-                <Lock size={10} />穿透
+                <Lock size={9.5} />穿透
               </button>
               <button
                 type="button"
@@ -427,7 +714,7 @@ export default function HudStripApp({
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  padding: '1px 4px',
+                  padding: '1px 3px',
                   color: '#94a3b8',
                   border: '1px solid #2d3644',
                   background: '#161c26',
@@ -435,13 +722,13 @@ export default function HudStripApp({
                   cursor: 'pointer',
                 }}
               >
-                <X size={11} />
+                <X size={10} />
               </button>
             </div>
           )}
         </header>
 
-        {/* Unified Vertically-Scrollable Body */}
+        {/* Scrollable Tactical Body */}
         <div
           className="d-hud-scroll"
           style={{
@@ -451,357 +738,553 @@ export default function HudStripApp({
             flexDirection: 'column',
           }}
         >
-          {fullGuideText && (
-            <div
-              style={{
-                flex: 'none',
-                padding: '4.5px 8px',
-                borderBottom: '1px solid rgba(45, 54, 68, 0.55)',
-                background: 'rgba(255, 230, 0, 0.04)',
-                fontSize: '11px',
-                lineHeight: 1.4,
-                color: '#e2e8f0',
-                whiteSpace: 'normal',
-                wordBreak: 'break-word',
-              }}
-            >
-              {fullGuideText}
+          {!parsed ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', color: '#94a3b8', fontSize: '11px', gap: '5px' }}>
+              <Unlock size={11} />
+              等待对局实时信号 · 自动同步牌池、出怪图标、4 人漏兜与 Boss DPS
             </div>
-          )}
-
-          <div
-            style={{
-              flex: '1 0 auto',
-              padding: '5px 8px 6px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              fontSize: '11px',
-            }}
-          >
-            {opRows.length > 0 ? (
-              /* Boss / Live Telemetry Mode: Per-Operator Avatars + Damage Bars + DPS */
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#8894a6', fontSize: '10px' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: PRTS_CHART.blue, fontWeight: 650 }}>
-                    <Swords size={10} />// 当回合干员输出 · {opRows.length} 人（可向下滚动）
-                  </span>
-                  {bossPool && (
-                    <span style={{ color: '#e88b85', fontFamily: 'var(--font-mono)' }}>
-                      首领余 {formatTelemetryTotal(bossPool.hp)}
-                    </span>
+          ) : effectiveTab === 'dps' ? (
+            /* ===== TAB 3: Boss MMO Damage Meter & Live DPS ([4人榜 | 干员DPS]) ===== */
+            <div style={{ flex: '1 0 auto', padding: '4px 7px 5px', display: 'flex', flexDirection: 'column', gap: '3.5px' }}>
+              {/* Boss HP Bar + [4人榜 | 干员DPS] Switch */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minHeight: '20px' }}>
+                {bossTeamData.bossEnemyId && <EnemyAvatar id={bossTeamData.bossEnemyId} size={18} />}
+                <div
+                  style={{
+                    flex: 1,
+                    position: 'relative',
+                    height: '18px',
+                    background: '#1d0b10',
+                    border: '1px solid rgba(255, 77, 79, 0.55)',
+                    borderRadius: '2px',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0 6px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '9.5px',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {bossTeamData.hpPct !== null && bossTeamData.hpPct > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: `${bossTeamData.hpPct}%`,
+                        background: 'linear-gradient(90deg, #b91c1c, #f97316)',
+                        opacity: 0.72,
+                      }}
+                    />
                   )}
+                  <span style={{ position: 'relative', color: '#ffffff', fontWeight: 700 }}>
+                    {bossTeamData.hpPct !== null
+                      ? `BOSS HP ${bossTeamData.hpPct}% · 余 ${formatTelemetryTotal(bossTeamData.bossHp ?? 0)}`
+                      : bossTeamData.bossHp !== null
+                        ? `BOSS 余 ${formatTelemetryTotal(bossTeamData.bossHp)}`
+                        : 'BOSS 伤害统计'}
+                  </span>
+                  <span style={{ position: 'relative', color: '#fef08a', fontWeight: 700 }}>
+                    {bossTeamData.teamTotal > 0
+                      ? `全队 ${formatTelemetryTotal(bossTeamData.teamTotal)}${bossTeamData.teamDps ? ` · ${formatTelemetryRate(bossTeamData.teamDps)}` : ''}${fmtMmSs(bossElapsedSec) ? ` · ${fmtMmSs(bossElapsedSec)}` : ''}`
+                      : opRows.length > 0
+                        ? `参战 ${opRows.length} 干员`
+                        : '等待伤害'}
+                  </span>
                 </div>
-                {opRows.map((op, i) => (
+
+                {!soloMode && opRows.length > 0 && bossTeamData.teamTotal > 0 && !state.locked && (
                   <div
-                    key={op.key}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1.4em 18px minmax(3.8em, 5.4em) 1fr auto auto',
-                      alignItems: 'center',
-                      gap: '5px',
-                      minHeight: '20px',
-                      fontVariantNumeric: 'tabular-nums',
+                      display: 'inline-flex',
+                      background: '#0c1017',
+                      border: '1px solid #442329',
+                      borderRadius: '2px',
+                      padding: '1px',
+                      gap: '1px',
+                      flexShrink: 0,
                     }}
                   >
-                    <small style={{ color: '#6b7888', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{i + 1}.</small>
-                    <CompactOperatorBadge name={op.name} size={18} />
-                    <strong style={{ color: '#eef2f7', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.name}</strong>
-                    <span style={{ height: '6px', background: PRTS_CHART.plotBg, border: '1px solid #232a35', borderRadius: '1px', overflow: 'hidden' }}>
-                      <i style={{ display: 'block', height: '100%', width: `${Math.max(6, (op.damage / maxOpDamage) * 100)}%`, background: i === 0 ? PRTS_CHART.ochre : PRTS_CHART.blue }} />
-                    </span>
-                    <b style={{ color: '#f1f5f9', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
-                      {formatTelemetryTotal(op.damage)}
-                    </b>
-                    <small style={{ color: i === 0 ? PRTS_CHART.ochreBright : PRTS_CHART.blue, fontFamily: 'var(--font-mono)', fontSize: '10.5px', minWidth: '4.4em', textAlign: 'right' }}>
-                      {op.dps != null ? formatTelemetryRate(op.dps) : `${Math.round(op.share * 100)}%`}
-                    </small>
-                  </div>
-                ))}
-              </>
-            ) : parsed ? (
-              /* Normal Round Mode: Switchable 2-Page Tactical HUD (牌池+出怪 ↔ 队友态势) */
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minHeight: '20px' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3.5px', color: selfLeaks === 0 ? PRTS_CHART.sage : selfLeaks ? PRTS_CHART.crimson : '#cbd5e1', fontWeight: 650, fontSize: '10.5px' }}>
-                    <ShieldCheck size={11} />
-                    {selfLeaks === undefined ? '进行中' : selfLeaks === 0 ? '零漏' : `漏 ${selfLeaks}`}
-                  </span>
-                  {selfHp !== undefined && (
-                    <span style={{ color: selfHp <= 5 ? PRTS_CHART.crimson : '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px', fontWeight: 600 }}>
-                      ♡{selfHp}
-                    </span>
-                  )}
-                  {!!selfAssists && (
-                    <span style={{ color: PRTS_CHART.blue, fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
-                      兜+{selfAssists}
-                    </span>
-                  )}
-
-                  {/* Inline 2-Page Switcher */}
-                  {!soloMode ? (
-                    <div
-                      role="tablist"
-                      aria-label="悬浮窗情报切页"
-                      style={{
-                        marginLeft: 'auto',
-                        display: 'inline-flex',
-                        background: '#0d1118',
-                        border: '1px solid #263040',
-                        borderRadius: '2px',
-                        padding: '1px',
-                        gap: '2px',
-                      }}
-                    >
-                      {([
-                        ['intel', '牌池+出怪', Layers],
-                        ['peers', '队友态势', Users],
-                      ] as const).map(([id, label, Icon]) => {
-                        const active = activeNormalPage === id;
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            role="tab"
-                            aria-selected={active}
-                            disabled={state.locked}
-                            onClick={() => handleSelectPage(id)}
-                            title={state.locked ? `已锁定当前页（按 ${state.shortcut} 解锁切换）` : `切换到${label}`}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px',
-                              padding: '1px 5px',
-                              fontSize: '10px',
-                              fontWeight: active ? 650 : 500,
-                              color: active ? '#ffe600' : state.locked ? '#4d596a' : '#8e9bae',
-                              background: active ? 'rgba(255, 230, 0, 0.14)' : 'transparent',
-                              border: active ? '1px solid rgba(255, 230, 0, 0.35)' : '1px solid transparent',
-                              borderRadius: '1px',
-                              cursor: state.locked ? 'default' : 'pointer',
-                              lineHeight: 1.3,
-                            }}
-                          >
-                            <Icon size={9.5} />
-                            <span>{label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <span style={{ marginLeft: 'auto', color: PRTS_CHART.blue, fontSize: '10px', fontWeight: 600 }}>
-                      // 牌池+出怪 · 首领战自动切 DPS
-                    </span>
-                  )}
-                </div>
-
-                {activeNormalPage === 'intel' ? (
-                  /* PAGE 1: 牌池核心余量/概率 + 本波/下波出怪预告 */
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    {parsed.deckPool && trackedOps.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
-                          <span style={{ color: PRTS_CHART.blue, fontWeight: 650 }}>
-                            {trackedSource === 'wishlist'
-                              ? `// 心仪牌池 · ${liveShopLevel}本`
-                              : trackedSource === 'comp'
-                                ? `// 阵容核心牌池 · ${liveShopLevel}本`
-                                : `// 热门牌池 · ${liveShopLevel}本`}
-                          </span>
-                          <span style={{ fontFamily: 'var(--font-mono)', color: emptyAlertCount > 0 ? '#e88b85' : '#6f7d90' }}>
-                            {emptyAlertCount > 0 ? `池空告警 ${emptyAlertCount}` : `单刷 ${parsed.deckPool.shopSlots[liveShopLevel]?.char ?? 4} 格`}
-                          </span>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '3.5px' }}>
-                          {trackedOps.map(op => {
-                            const odds = computeOperatorOdds(parsed.deckPool!, op, liveShopLevel);
-                            const inSelfShop = selfSeat !== null && op.inShopSeats.includes(selfSeat);
-                            const isEmpty = odds.status === 'empty' || op.remaining === 0;
-                            const isLocked = odds.status === 'locked';
-                            return (
-                              <div
-                                key={op.charId}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '2px 5px 2px 3px',
-                                  background: isEmpty ? 'rgba(214, 72, 64, 0.10)' : inSelfShop ? 'rgba(216, 191, 75, 0.10)' : '#141922',
-                                  border: `1px solid ${isEmpty ? 'rgba(214, 72, 64, 0.50)' : inSelfShop ? 'rgba(216, 191, 75, 0.45)' : '#232c3b'}`,
-                                  borderLeft: isEmpty ? `2px solid ${PRTS_CHART.crimson}` : inSelfShop ? `2px solid ${PRTS_CHART.ochre}` : '2px solid #2d384b',
-                                  borderRadius: '2px',
-                                  minWidth: 0,
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}
-                              >
-                                <CompactOperatorBadge name={op.name} size={16} />
-                                <span style={{ color: isEmpty ? '#f5b4b0' : '#e4eaf3', fontSize: '10.5px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-                                  {op.name}
-                                </span>
-                                {inSelfShop ? (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '9.5px' }}>
-                                    <b style={{ color: PRTS_CHART.ochreBright }}>在售</b>
-                                    <small style={{ color: '#8f9db0' }}>剩{op.remaining}</small>
-                                  </span>
-                                ) : isEmpty ? (
-                                  <span style={{ flexShrink: 0, color: '#f08680', fontFamily: 'var(--font-mono)', fontSize: '9.5px', fontWeight: 700 }}>
-                                    池空 0/{op.totalCopies}
-                                  </span>
-                                ) : isLocked ? (
-                                  <span style={{ flexShrink: 0, color: '#7c8a9c', fontFamily: 'var(--font-mono)', fontSize: '9.5px' }}>
-                                    {odds.tripleDiscoverProb !== null
-                                      ? `三连${fmtHudPct(odds.tripleDiscoverProb)}`
-                                      : `${op.tier}本 剩${op.remaining}`}
-                                  </span>
-                                ) : (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '9.5px' }}>
-                                    <small style={{ color: '#8a98ab' }}>剩{op.remaining}</small>
-                                    <b style={{ color: odds.perRollProb >= 0.25 ? PRTS_CHART.ochreBright : PRTS_CHART.blue }}>
-                                      {fmtHudPct(odds.perRollProb)}
-                                    </b>
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {waveSpawns.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
-                          <span style={{ color: '#9eb0c6', fontWeight: 650 }}>
-                            // R{spawnRound} {spawnIsNext ? '下波出怪预告' : '本波出怪预告'}
-                          </span>
-                          <span style={{ fontFamily: 'var(--font-mono)', color: '#6b7888' }}>
-                            {waveSpawns.length} 怪种
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3.5px' }}>
-                          {waveSpawns.map(sp => (
-                            <span
-                              key={`${sp.id}-${sp.name}`}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3.5px',
-                                padding: '1.5px 5px 1.5px 2px',
-                                background: '#131822',
-                                border: `1px solid ${sp.boss ? 'rgba(216,191,75,0.48)' : '#242e3e'}`,
-                                borderRadius: '2px',
-                                fontSize: '10px',
-                                color: '#d5deea',
-                              }}
-                            >
-                              <EnemyAvatar id={sp.id} size={16} />
-                              <span>{sp.name}</span>
-                              {sp.count !== null && (
-                                <b style={{ fontFamily: 'var(--font-mono)', color: sp.boss ? PRTS_CHART.ochreBright : PRTS_CHART.blue, fontSize: '9.5px' }}>
-                                  ×{sp.count}
-                                </b>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {!parsed.deckPool && waveSpawns.length === 0 && (
-                      <span style={{ color: '#6b7888', fontSize: '10.5px' }}>
-                        等待牌池与出怪预告同步 · 首领战自动切换参战干员输出与 DPS
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  /* PAGE 2: 队友态势（四席实时血量 / 本数 / 淘汰状态 / 核心在场干员头像） */
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    {peerRows.map(peer => (
-                      <div
-                        key={peer.seat}
+                    {([
+                      ['team', '4人榜'],
+                      ['ops', '干员DPS'],
+                    ] as const).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setDpsSub(id)}
                         style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'minmax(4.8em, 6.8em) auto 1fr',
-                          alignItems: 'center',
-                          gap: '6px',
-                          padding: '2.5px 6px',
-                          minHeight: '22px',
-                          background: peer.eliminated ? 'rgba(18, 22, 30, 0.55)' : peer.isSelf ? 'rgba(216, 191, 75, 0.07)' : '#131822',
-                          border: `1px solid ${peer.isSelf ? 'rgba(216, 191, 75, 0.35)' : '#232c3b'}`,
-                          borderLeft: peer.isSelf ? `2px solid ${PRTS_CHART.ochre}` : peer.eliminated ? '2px solid #485364' : '2px solid #2b384c',
-                          borderRadius: '2px',
-                          opacity: peer.eliminated ? 0.56 : 1,
-                          fontVariantNumeric: 'tabular-nums',
+                          padding: '1px 4px',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          border: 'none',
+                          borderRadius: '1px',
+                          cursor: 'pointer',
+                          color: effectiveDpsSub === id ? '#ffffff' : '#fca5a5',
+                          background: effectiveDpsSub === id ? '#dc2626' : 'transparent',
                         }}
                       >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
-                          <span style={{ color: peer.eliminated ? '#808d9e' : '#e6edf6', fontSize: '10.5px', fontWeight: peer.isSelf ? 700 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {peer.label}
-                          </span>
-                          {peer.isSelf && (
-                            <small style={{ flexShrink: 0, padding: '0 3px', fontSize: '9px', background: 'rgba(216,191,75,0.18)', color: PRTS_CHART.ochreBright, borderRadius: '1px', fontWeight: 700 }}>
-                              我
-                            </small>
-                          )}
-                        </span>
-
-                        {peer.eliminated ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#d87c76', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 600 }}>
-                            <Skull size={10} />R{peer.elimRound} 淘汰
-                          </span>
-                        ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
-                            <b style={{ color: (peer.hp ?? 99) <= 5 ? '#f08680' : (peer.hp ?? 0) >= 15 ? PRTS_CHART.sage : '#cbd5e1' }}>
-                              ♡{peer.hp ?? '—'}
-                            </b>
-                            <span style={{ color: '#90a0b5' }}>{peer.shopLevel ? `${peer.shopLevel}本` : '—'}</span>
-                            {!!peer.rLeak && <span style={{ color: '#e88b85' }}>漏{peer.rLeak}</span>}
-                            {!!peer.rAssist && <span style={{ color: PRTS_CHART.blue }}>兜+{peer.rAssist}</span>}
-                          </span>
-                        )}
-
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px', minWidth: 0 }}>
-                          {peer.eliminated ? (
-                            <span style={{ color: '#677487', fontSize: '9.5px' }}>已回牌池</span>
-                          ) : peer.deployed.length > 0 ? (
-                            <>
-                              {peer.deployed.slice(0, 4).map(u => (
-                                <span
-                                  key={u.instId}
-                                  title={`${u.name}${u.isGolden ? '★' : ''}`}
-                                  style={{
-                                    display: 'inline-flex',
-                                    padding: '1px',
-                                    borderRadius: '2px',
-                                    border: `1px solid ${u.isGolden ? 'rgba(216,191,75,0.75)' : '#283447'}`,
-                                    background: u.isGolden ? 'rgba(216,191,75,0.14)' : '#0f141c',
-                                  }}
-                                >
-                                  <CompactOperatorBadge name={u.name} size={15} />
-                                </span>
-                              ))}
-                              {peer.deployed.length > 4 && (
-                                <small style={{ color: '#7d8b9e', fontFamily: 'var(--font-mono)', fontSize: '9.5px' }}>
-                                  +{peer.deployed.length - 4}
-                                </small>
-                              )}
-                            </>
-                          ) : (
-                            <span style={{ color: '#647285', fontSize: '9.5px' }}>待布阵</span>
-                          )}
-                        </div>
-                      </div>
+                        {label}
+                      </button>
                     ))}
                   </div>
                 )}
-              </>
-            ) : (
-              <span style={{ color: '#94a3b8', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: 'auto', marginBottom: 'auto' }}>
-                <Unlock size={11} />
-                等待进入卫戍对局 · 按 {state.shortcut} 切换鼠标点击穿透
-              </span>
-            )}
-          </div>
+              </div>
+
+              {/* MMO Horizontal Ranking Bars */}
+              {effectiveDpsSub === 'team' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {(() => {
+                    let peerIdx = 0;
+                    return bossTeamData.rows.map(row => {
+                      const pct = row.damage > 0 ? Math.max(4, (row.damage / maxTeamDamage) * 100) : 0;
+                      const barBg = row.isSelf
+                        ? 'linear-gradient(90deg, rgba(138, 115, 8, 0.88), rgba(212, 177, 6, 0.78))'
+                        : peerBarPalettes[Math.min(peerIdx++, peerBarPalettes.length - 1)];
+                      return (
+                        <div
+                          key={row.seat}
+                          style={{
+                            position: 'relative',
+                            height: '22px',
+                            background: '#11161f',
+                            border: `1px solid ${row.isSelf ? 'rgba(255, 230, 0, 0.62)' : '#232d3d'}`,
+                            borderRadius: '2px',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '0 6px',
+                            gap: '5px',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {pct > 0 && (
+                            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: barBg }} />
+                          )}
+                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 800, color: row.rank === 1 ? '#ffe600' : row.isSelf ? '#fef08a' : '#94a3b8', minWidth: '18px' }}>
+                            #{row.rank}
+                          </span>
+                          {row.isSelf && (
+                            <small style={{ position: 'relative', padding: '0 3px', fontSize: '8.5px', fontWeight: 800, background: '#ffe600', color: '#0b0d11', borderRadius: '1px' }}>
+                              我
+                            </small>
+                          )}
+                          <strong style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10.5px', color: '#ffffff' }}>
+                            {row.label}
+                          </strong>
+                          <b style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: '#ffffff', minWidth: '42px', textAlign: 'right' }}>
+                            {row.damage > 0 ? formatTelemetryTotal(row.damage) : '—'}
+                          </b>
+                          {row.dps !== null && (
+                            <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '9.5px', color: row.isSelf ? '#fef08a' : '#bae6fd', minWidth: '52px', textAlign: 'right' }}>
+                              {formatTelemetryRate(row.dps)}
+                            </span>
+                          )}
+                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#e2e8f0', minWidth: '36px', textAlign: 'right' }}>
+                            {row.sharePct.toFixed(1)}%
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {opRows.map((op, i) => {
+                    const pct = Math.max(4, (op.damage / maxOpDamage) * 100);
+                    const barBg = i === 0
+                      ? 'linear-gradient(90deg, rgba(138, 115, 8, 0.88), rgba(212, 177, 6, 0.78))'
+                      : peerBarPalettes[Math.min(i - 1, peerBarPalettes.length - 1)];
+                    return (
+                      <div
+                        key={op.key}
+                        style={{
+                          position: 'relative',
+                          height: '22px',
+                          background: '#11161f',
+                          border: `1px solid ${i === 0 ? 'rgba(255, 230, 0, 0.58)' : '#232d3d'}`,
+                          borderRadius: '2px',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '0 6px',
+                          gap: '5px',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: barBg }} />
+                        <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '9.5px', fontWeight: 800, color: i === 0 ? '#ffe600' : '#94a3b8', minWidth: '16px' }}>
+                          #{i + 1}
+                        </span>
+                        <span style={{ position: 'relative', display: 'inline-flex' }}>
+                          <CompactOperatorBadge name={op.name} size={16} />
+                        </span>
+                        <strong style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10.5px', color: '#ffffff' }}>
+                          {op.name}
+                        </strong>
+                        <b style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: '#ffffff', minWidth: '42px', textAlign: 'right' }}>
+                          {formatTelemetryTotal(op.damage)}
+                        </b>
+                        <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '9.5px', color: i === 0 ? '#fef08a' : '#bae6fd', minWidth: '52px', textAlign: 'right' }}>
+                          {op.dps !== null ? formatTelemetryRate(op.dps) : `${(op.share * 100).toFixed(1)}%`}
+                        </span>
+                        {op.dps !== null && (
+                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '9.5px', fontWeight: 700, color: '#e2e8f0', minWidth: '34px', textAlign: 'right' }}>
+                            {(op.share * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : effectiveTab === 'leak' ? (
+            /* ===== TAB 2: 漏兜 4 人可视化柱图 + [累计 | 单回合] + 漏怪实机图标 ===== */
+            <div style={{ flex: '1 0 auto', padding: '4px 7px 5px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {/* Sub-bar: [累计 | 单回合] + ◀ R08 ▶ + Summary */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minHeight: '20px' }}>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    background: '#0c1017',
+                    border: '1px solid #2a3444',
+                    borderRadius: '2px',
+                    padding: '1px',
+                    gap: '1px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={state.locked}
+                    onClick={() => setLeakCumulative(true)}
+                    style={{
+                      padding: '1px 5px',
+                      fontSize: '9.5px',
+                      fontWeight: 700,
+                      border: 'none',
+                      borderRadius: '1px',
+                      cursor: state.locked ? 'default' : 'pointer',
+                      background: leakCumulative ? '#00e5ff' : 'transparent',
+                      color: leakCumulative ? '#0b0d11' : '#94a3b8',
+                    }}
+                  >
+                    累计
+                  </button>
+                  <button
+                    type="button"
+                    disabled={state.locked}
+                    onClick={() => { setLeakCumulative(false); setLeakSelectedRound(roundNo); }}
+                    style={{
+                      padding: '1px 5px',
+                      fontSize: '9.5px',
+                      fontWeight: 700,
+                      border: 'none',
+                      borderRadius: '1px',
+                      cursor: state.locked ? 'default' : 'pointer',
+                      background: !leakCumulative ? '#ff7a00' : 'transparent',
+                      color: !leakCumulative ? '#0b0d11' : '#94a3b8',
+                    }}
+                  >
+                    单回合
+                  </button>
+                </div>
+
+                {!state.locked && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={() => stepLeakRound(-1)}
+                      title="上一回合"
+                      style={{ display: 'inline-grid', placeItems: 'center', width: '18px', height: '18px', padding: 0, background: '#161c26', border: '1px solid #2a3444', color: '#ffe600', borderRadius: '2px', cursor: 'pointer' }}
+                    >
+                      <ChevronLeft size={11} />
+                    </button>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#e2e8f0', minWidth: '34px', textAlign: 'center' }}>
+                      {leakCumulative ? `R1-${roundNo}` : `R${String(leakSelectedRound).padStart(2, '0')}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => stepLeakRound(1)}
+                      title="下一回合"
+                      style={{ display: 'inline-grid', placeItems: 'center', width: '18px', height: '18px', padding: 0, background: '#161c26', border: '1px solid #2a3444', color: '#ffe600', borderRadius: '2px', cursor: 'pointer' }}
+                    >
+                      <ChevronRight size={11} />
+                    </button>
+                  </div>
+                )}
+
+                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '9.5px', color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>
+                  总漏 <b style={{ color: '#fbbf24' }}>{leakData.totalLeaks}</b> · 兜 <b style={{ color: '#00e5ff' }}>{leakData.totalAssisted}</b>
+                  {leakData.totalEscaped > 0 && <> · 逃 <b style={{ color: '#ff6b6b' }}>{leakData.totalEscaped}</b></>}
+                </span>
+              </div>
+
+              {/* 4-Column Equal-Width Player Leak/Assist Bar Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, leakData.cards.length)}, minmax(0, 1fr))`, gap: '4px' }}>
+                {leakData.cards.map(card => {
+                  const greenW = card.leaked === 0 ? Math.max(2, maxLeakLoad - card.assisted * 0.4) : 0;
+                  const cyanW = card.covered + card.assisted;
+                  const redW = card.escaped;
+                  const totalW = Math.max(0.01, greenW + cyanW + redW);
+                  return (
+                    <div
+                      key={card.seat}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        padding: '4px 5px',
+                        background: card.eliminated
+                          ? 'rgba(18, 22, 30, 0.55)'
+                          : card.isSelf
+                            ? 'rgba(255, 230, 0, 0.09)'
+                            : card.escaped > 0
+                              ? 'rgba(255, 77, 79, 0.11)'
+                              : '#131a24',
+                        border: `1px solid ${card.isSelf ? 'rgba(255, 230, 0, 0.52)' : card.escaped > 0 ? 'rgba(255, 77, 79, 0.5)' : '#263142'}`,
+                        borderRadius: '2px',
+                        opacity: card.eliminated ? 0.58 : 1,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
+                        {card.isSelf && (
+                          <small style={{ padding: '0 2.5px', fontSize: '8px', fontWeight: 800, background: '#ffe600', color: '#0b0d11', borderRadius: '1px', flexShrink: 0 }}>
+                            我
+                          </small>
+                        )}
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', fontWeight: card.isSelf ? 700 : 600, color: card.isSelf ? '#fff8b0' : '#e2e8f0' }}>
+                          {card.label}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
+                        {card.eliminated ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#f87171', fontWeight: 700 }}>
+                            <Skull size={9} />R{card.elimRound}出局
+                          </span>
+                        ) : (
+                          <>
+                            <b style={{ color: (card.hp ?? 99) <= 5 ? '#ff7875' : (card.hp ?? 0) >= 15 ? '#34d399' : '#cbd5e1' }}>
+                              ♥{card.hp ?? '—'}
+                            </b>
+                            <span style={{ color: '#94a3b8' }}>{card.shopLevel ? `${card.shopLevel}本` : '—'}</span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Segmented 3-color bar */}
+                      <div style={{ display: 'flex', height: '7px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden' }}>
+                        {greenW > 0 && <span style={{ width: `${(greenW / totalW) * 100}%`, background: '#10b981' }} />}
+                        {cyanW > 0 && <span style={{ width: `${(cyanW / totalW) * 100}%`, background: '#00e5ff' }} />}
+                        {redW > 0 && <span style={{ width: `${(redW / totalW) * 100}%`, background: '#ff4d4f' }} />}
+                      </div>
+
+                      {/* Bottom crisp leak/assist numbers */}
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {card.leaked === 0 && card.assisted === 0 ? (
+                          <span style={{ color: '#34d399' }}>漏0 · 稳守</span>
+                        ) : card.leaked === 0 ? (
+                          <>
+                            <span style={{ color: '#34d399' }}>漏0 </span>
+                            <span style={{ color: '#00e5ff' }}>兜+{card.assisted}</span>
+                          </>
+                        ) : card.escaped === 0 ? (
+                          <>
+                            <span style={{ color: '#fbbf24' }}>漏{card.leaked} </span>
+                            <span style={{ color: '#00e5ff' }}>全兜✓</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ color: '#fbbf24' }}>漏{card.leaked} </span>
+                            <span style={{ color: '#ff6b6b' }}>逃{card.escaped}</span>
+                            {card.covered > 0 && <span style={{ color: '#00e5ff' }}> 兜{card.covered}</span>}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Leaked Enemy Icons + Legend */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '2.5px 5px', background: 'rgba(255,255,255,0.04)', borderRadius: '2px', minHeight: '22px' }}>
+                <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#fb923c', flexShrink: 0 }}>
+                  {leakCumulative ? '累计高漏' : `R${String(leakSelectedRound).padStart(2, '0')} 漏怪`}
+                </span>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
+                  {leakData.enemies.length > 0 ? (
+                    leakData.enemies.slice(0, 4).map(e => (
+                      <span
+                        key={e.id}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          padding: '1px 4px 1px 2px',
+                          background: '#221215',
+                          border: '1px solid rgba(255, 77, 79, 0.45)',
+                          borderRadius: '2px',
+                          fontSize: '9.5px',
+                          color: '#e2e8f0',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <EnemyAvatar id={e.id} size={14} />
+                        <span>{e.name.length > 5 ? e.name.slice(0, 5) : e.name}</span>
+                        <b style={{ fontFamily: 'var(--font-mono)', color: '#fca5a5', fontSize: '9px' }}>×{e.count}</b>
+                      </span>
+                    ))
+                  ) : (
+                    <span style={{ color: '#6b7888', fontSize: '9.5px' }}>本段零漏怪记录</span>
+                  )}
+                </div>
+                <span style={{ flexShrink: 0, fontSize: '8.5px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                  <b style={{ color: '#10b981' }}>■</b>稳 <b style={{ color: '#00e5ff' }}>■</b>兜 <b style={{ color: '#ff4d4f' }}>■</b>逃
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* ===== TAB 1: 情报（PC 独有牌池余量概率 + 下波出怪实机图标 + Full 节奏提示）===== */
+            <>
+              {fullGuideText && (
+                <div
+                  style={{
+                    flex: 'none',
+                    padding: '3.5px 7px',
+                    borderBottom: '1px solid rgba(45, 54, 68, 0.55)',
+                    background: 'rgba(255, 230, 0, 0.05)',
+                    fontSize: '10.5px',
+                    lineHeight: 1.35,
+                    color: '#e2e8f0',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {fullGuideText}
+                </div>
+              )}
+
+              <div style={{ flex: '1 0 auto', padding: '4.5px 7px 5px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                {parsed.deckPool && trackedOps.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
+                      <span style={{ color: PRTS_CHART.blue, fontWeight: 700 }}>
+                        {trackedSource === 'wishlist'
+                          ? `// 心仪牌池 · ${liveShopLevel}本`
+                          : trackedSource === 'comp'
+                            ? `// 核心牌池 · ${liveShopLevel}本`
+                            : `// 热门牌池 · ${liveShopLevel}本`}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: emptyAlertCount > 0 ? '#e88b85' : '#6f7d90' }}>
+                        {emptyAlertCount > 0 ? `池空告警 ${emptyAlertCount}` : `单刷 ${parsed.deckPool.shopSlots[liveShopLevel]?.char ?? 4} 格`}
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '3.5px' }}>
+                      {trackedOps.map(op => {
+                        const odds = computeOperatorOdds(parsed.deckPool!, op, liveShopLevel);
+                        const inSelfShop = selfSeat !== null && op.inShopSeats.includes(selfSeat);
+                        const isEmpty = odds.status === 'empty' || op.remaining === 0;
+                        const isLocked = odds.status === 'locked';
+                        return (
+                          <div
+                            key={op.charId}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 5px 2px 3px',
+                              background: isEmpty ? 'rgba(214, 72, 64, 0.10)' : inSelfShop ? 'rgba(216, 191, 75, 0.10)' : '#141922',
+                              border: `1px solid ${isEmpty ? 'rgba(214, 72, 64, 0.50)' : inSelfShop ? 'rgba(216, 191, 75, 0.45)' : '#232c3b'}`,
+                              borderLeft: isEmpty ? `2px solid ${PRTS_CHART.crimson}` : inSelfShop ? `2px solid ${PRTS_CHART.ochre}` : '2px solid #2d384b',
+                              borderRadius: '2px',
+                              minWidth: 0,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            <CompactOperatorBadge name={op.name} size={15} />
+                            <span style={{ color: isEmpty ? '#f5b4b0' : '#e4eaf3', fontSize: '10px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                              {op.name}
+                            </span>
+                            {inSelfShop ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
+                                <b style={{ color: PRTS_CHART.ochreBright }}>在售</b>
+                                <small style={{ color: '#8f9db0' }}>剩{op.remaining}</small>
+                              </span>
+                            ) : isEmpty ? (
+                              <span style={{ flexShrink: 0, color: '#f08680', fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700 }}>
+                                池空 0/{op.totalCopies}
+                              </span>
+                            ) : isLocked ? (
+                              <span style={{ flexShrink: 0, color: '#7c8a9c', fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
+                                {odds.tripleDiscoverProb !== null
+                                  ? `三连${fmtHudPct(odds.tripleDiscoverProb)}`
+                                  : `${op.tier}本 剩${op.remaining}`}
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3.5px', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
+                                <small style={{ color: '#8a98ab' }}>剩{op.remaining}</small>
+                                <b style={{ color: odds.perRollProb >= 0.25 ? PRTS_CHART.ochreBright : PRTS_CHART.blue }}>
+                                  {fmtHudPct(odds.perRollProb)}
+                                </b>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {waveSpawns.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
+                      <span style={{ color: '#00e5ff', fontWeight: 700 }}>
+                        // R{spawnRound} {spawnIsNext ? '下波出怪' : '本波出怪'}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: '#6b7888' }}>
+                        {waveSpawns.length} 怪种
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3.5px' }}>
+                      {waveSpawns.map(sp => (
+                        <span
+                          key={`${sp.id}-${sp.name}`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3.5px',
+                            padding: '1.5px 5px 1.5px 2px',
+                            background: '#131822',
+                            border: `1px solid ${sp.boss ? 'rgba(255,230,0,0.55)' : '#242e3e'}`,
+                            borderRadius: '2px',
+                            fontSize: '9.5px',
+                            color: '#e2e8f0',
+                          }}
+                        >
+                          <EnemyAvatar id={sp.id} size={15} />
+                          <span>{sp.name}</span>
+                          {sp.count !== null && (
+                            <b style={{ fontFamily: 'var(--font-mono)', color: '#ffe600', fontSize: '9px' }}>
+                              ×{sp.count}
+                            </b>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!parsed.deckPool && waveSpawns.length === 0 && (
+                  <span style={{ color: '#6b7888', fontSize: '10.5px' }}>
+                    等待牌池与出怪预告同步 · 可随时切「漏兜」查 4 人数据，Boss 战自动切 MMO DPS 榜
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </section>
     </div>

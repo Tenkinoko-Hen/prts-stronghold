@@ -10,8 +10,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.InsetDrawable;
 import android.os.Build;
@@ -19,7 +21,10 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -29,17 +34,24 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.WebView;
 import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.util.List;
+import java.util.Locale;
 
 /**
- * PRTS 悬浮战术终端服务：
+ * PRTS 悬浮战术终端服务（v3.1）：
  * - 默认 FLAG_NOT_FOCUSABLE：展开侧边抽屉时底层《明日方舟》永不失焦，窗外点击 100% 直达游戏；
  * - 悬浮球快捷手势：单击展开抽屉 / 双击一键识别盟约 / 长按切顶部战术迷你条；
- * - 战术迷你条 v2：横屏自适应宽栏 + WRAP_CONTENT 2~3 行零截断（点击正文折叠/展开），覆盖全 7 态：
- *   待选 / 常规回合 / ↑升本节奏 / Ban受限 / Boss终局 / 漏怪止损兜底 / 触控穿透锁定，
- *   并在开启本机免 Root VPN 抓包时实时直显「下回合出怪种类」与「漏怪/协防兜底数量」。
+ * - 战术迷你条 v3.1：
+ *   1. [跟打]：下回合/本回合出怪实机图标 + 数量 + 精简回合运营指令（点击折叠/展开）；
+ *   2. [漏兜]：任意回合可切，内置 [累计 | 单回合] + ◀ Rxx ▶ 回合翻页，4 人彩色柱图直显漏/兜/逃 + 漏怪实机图标（无文字策略）；
+ *   3. [DPS]：Boss 阶段自动切换，顶部 Boss 实机头像 + 实时血条 + 全队秒伤，主体 4 行 MMO 横向排行计量条（#1–#4 总伤/DPS/占比）；
+ *   4. [穿透]：保留当前图标/图表半透明锁定防误触，右侧悬浮独立「解锁」小钮。
  */
 public class OverlayService extends Service {
     private static volatile OverlayService active;
@@ -57,39 +69,60 @@ public class OverlayService extends Service {
     private static String pendingProgress = "";
     private static String pendingBanWarning = "";
     private static String pendingLoadoutHint = "";
-    private static String pendingFallbackAdvice = "";
     private static String pendingDetail = "";
 
-    // 来自免 Root 本机 VPN 抓包的实时战报数据
-    private static boolean liveVpnRunning = false;
-    private static String livePhase = "";
-    private static int liveSelfHp = -1;
-    private static int liveForecastRound = 0;
-    private static String liveForecastText = "";
-    private static boolean liveLeakAlert = false;
-    private static String liveLeakText = "";
-    private static int liveBossHp = -1;
-    private static int liveBossDamage = 0;
-    private static int liveBanCount = -1;
+    // 来自免 Root 本机 VPN 抓包的实时结构化战报快照
+    private static BattleCaptureState.TelemetrySnapshot liveTelemetry = null;
 
     private WindowManager manager;
     private TextView ball;
     private LinearLayout panel;
     private LinearLayout strip;
+
+    // Top bar views
     private TextView stripPrevBtn;
     private TextView stripNextBtn;
     private TextView stripRoundBadge;
+    private ImageView stripBossHeaderIcon;
     private TextView stripTitleView;
-    private TextView stripStatusPill;
+    private LinearLayout stripLeakScopeBox;
+    private TextView stripScopeCumBtn;
+    private TextView stripScopeRoundBtn;
     private LinearLayout stripActions;
     private TextView stripScanBtn;
-    private TextView stripFallbackBtn;
-    private LinearLayout stripFocusRow;
-    private View stripFocusAccent;
-    private TextView stripFocusKey;
-    private TextView stripFocusVal;
-    private TextView stripFocusProg;
-    private TextView stripBodyView;
+    private LinearLayout stripModeCapsule;
+    private TextView stripTabDpsBtn;
+    private TextView stripTabGuideBtn;
+    private TextView stripTabLeakBtn;
+
+    // Body A: 跟打（出怪图标 + 攻略正文）
+    private LinearLayout guideContainer;
+    private LinearLayout guideFocusRow;
+    private View guideFocusAccent;
+    private TextView guideFocusKey;
+    private HorizontalScrollView guideEnemyScroll;
+    private LinearLayout guideEnemyChips;
+    private TextView guideFocusFallbackVal;
+    private TextView guideFocusProg;
+    private TextView guideBodyView;
+
+    // Body B: 漏兜（4 人彩色柱图 + 漏怪实机图标）
+    private LinearLayout leakContainer;
+    private LinearLayout leakGrid;
+    private LinearLayout leakFooterRow;
+    private TextView leakFooterTag;
+    private LinearLayout leakEnemyChips;
+    private TextView leakLegendView;
+
+    // Body C: Boss MMO DPS 榜
+    private LinearLayout dpsContainer;
+    private FrameLayout bossHpTrack;
+    private View bossHpFill;
+    private View bossHpRest;
+    private TextView bossHpLeftText;
+    private TextView bossHpRightText;
+    private LinearLayout bossRankList;
+
     private TextView unlockChip;
     private WebView web;
     private WindowManager.LayoutParams ballParams;
@@ -100,9 +133,12 @@ public class OverlayService extends Service {
     private volatile boolean expanded;
     private volatile boolean stripMode;
     private volatile boolean stripLocked;
-    private boolean stripFallbackMode = false;
+    private String stripTab = "guide"; // "guide" | "leak" | "dps"
+    private boolean leakCumulative = true;
+    private int leakSelectedRound = 1;
+    private int autoSwitchedBossRound = 0;
     private boolean stripBodyCompact = false;
-    private boolean compactPanel = true; // 横屏默认右侧紧凑抽屉，不挡游戏主战场
+    private boolean compactPanel = true;
     private boolean panelFocusable = false;
     private int alphaIndex = 0;
     private Button sizeButton;
@@ -160,30 +196,17 @@ public class OverlayService extends Service {
             if (progressText != null) pendingProgress = progressText.trim();
             if (banWarning != null) pendingBanWarning = banWarning.trim();
             if (loadoutHint != null) pendingLoadoutHint = loadoutHint.trim();
-            if (fallbackAdvice != null) pendingFallbackAdvice = fallbackAdvice.trim();
             if (detail != null) pendingDetail = cleanDerivedPrefix(detail);
             if (active != null) active.refreshStripAndBallContent();
         });
     }
 
-    static void updateLiveTelemetry(
-        final boolean vpnRunning, final int round, final String phase, final int selfHp,
-        final int forecastRound, final String forecastText,
-        final boolean leakAlert, final String leakText,
-        final int bossHp, final int bossDamage, final int banCount
-    ) {
+    static void updateTelemetrySnapshot(final BattleCaptureState.TelemetrySnapshot snap) {
         MAIN.post(() -> {
-            liveVpnRunning = vpnRunning;
-            if (round >= 1 && round <= 15) pendingRound = round;
-            livePhase = phase != null ? phase : "";
-            liveSelfHp = selfHp;
-            liveForecastRound = forecastRound;
-            liveForecastText = forecastText != null ? forecastText : "";
-            liveLeakAlert = leakAlert;
-            liveLeakText = leakText != null ? leakText : "";
-            liveBossHp = bossHp;
-            liveBossDamage = bossDamage;
-            liveBanCount = banCount;
+            liveTelemetry = snap;
+            if (snap != null && snap.currentRound >= 1 && snap.currentRound <= 15) {
+                pendingRound = snap.currentRound;
+            }
             if (active != null) active.refreshStripAndBallContent();
         });
     }
@@ -215,6 +238,27 @@ public class OverlayService extends Service {
         return shape;
     }
 
+    private GradientDrawable gradientBar(int startColor, int endColor, int radius) {
+        GradientDrawable shape = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[] { startColor, endColor });
+        shape.setCornerRadius(dp(radius));
+        return shape;
+    }
+
+    private static String fmtWan(int value) {
+        if (value >= 1_000_000) return String.format(Locale.US, "%.0fW", value / 10000.0);
+        if (value >= 10_000) return String.format(Locale.US, "%.1fW", value / 10000.0);
+        return String.format(Locale.US, "%,d", Math.max(0, value));
+    }
+
+    private static String fmtComma(int value) {
+        return String.format(Locale.US, "%,d", Math.max(0, value));
+    }
+
+    private static String fmtMmSs(int seconds) {
+        int s = Math.max(0, seconds);
+        return String.format(Locale.US, "%02d:%02d", s / 60, s % 60);
+    }
+
     @Override public void onCreate() {
         super.onCreate();
         active = this;
@@ -233,7 +277,6 @@ public class OverlayService extends Service {
         updateForegroundNotification();
         if (ball == null) {
             createBall();
-            // 后台静默预热 WebView，首次点开悬浮球零白屏/零等待
             MAIN.postDelayed(() -> {
                 if (active == this && panel == null && ball != null) {
                     try { createPanel(); } catch (RuntimeException ignored) {}
@@ -434,7 +477,7 @@ public class OverlayService extends Service {
             ball.setForeground(null);
             ball.setContentDescription(getString(R.string.ball_scan_desc));
         } else if (pendingRound >= 1 && pendingRound <= 15) {
-            ball.setText(String.format("R%02d", pendingRound));
+            ball.setText(String.format(Locale.US, "R%02d", pendingRound));
             ball.setTextColor(0xffffe600);
             ball.setBackground(background(0xe80b0d11, 26, 0xbbffe600));
             ball.setForeground(null);
@@ -451,9 +494,9 @@ public class OverlayService extends Service {
     private int preferredStripWidth() {
         boolean landscape = usableWidth > usableHeight;
         if (landscape) {
-            return Math.min(dp(476), Math.max(dp(330), usableWidth - dp(128)));
+            return Math.min(dp(476), Math.max(dp(344), usableWidth - dp(120)));
         }
-        return Math.min(dp(396), Math.max(dp(260), usableWidth - dp(24)));
+        return Math.min(dp(404), Math.max(dp(280), usableWidth - dp(20)));
     }
 
     private void positionStripDefault() {
@@ -461,9 +504,8 @@ public class OverlayService extends Service {
         stripParams.width = preferredStripWidth();
         boolean landscape = usableWidth > usableHeight;
         if (landscape) {
-            // 横屏默认落在左侧「1/3」与右侧倒计时之间的黄金空区，不挡关键按钮
-            int preferredX = Math.round(usableWidth * 0.35f);
-            stripParams.x = Math.max(dp(8), Math.min(preferredX, Math.max(dp(8), usableWidth - stripParams.width - dp(92))));
+            int preferredX = Math.round(usableWidth * 0.34f);
+            stripParams.x = Math.max(dp(8), Math.min(preferredX, Math.max(dp(8), usableWidth - stripParams.width - dp(90))));
         } else {
             stripParams.x = Math.max(dp(8), (usableWidth - stripParams.width) / 2);
         }
@@ -477,17 +519,17 @@ public class OverlayService extends Service {
         strip.setBackground(background(0xf20b0d11, 4, 0xffffe600));
         strip.setElevation(dp(9));
 
-        // Row 1: 回合步进 + 阵容标题 + 状态标签 + 精简右侧控件（兜底 / 穿透 / 展开 / 球）
+        // ===== Row 1: Top Header Bar =====
         LinearLayout topRow = new LinearLayout(this);
         topRow.setOrientation(LinearLayout.HORIZONTAL);
         topRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        stripPrevBtn = stepButton("◀", v -> stepRoundFromStrip(-1));
+        stripPrevBtn = stepButton("◀", v -> handleStepButton(-1));
         topRow.addView(stripPrevBtn);
 
         stripRoundBadge = new TextView(this);
-        stripRoundBadge.setTextSize(10.5f);
-        stripRoundBadge.setTypeface(null, 1);
+        stripRoundBadge.setTextSize(10f);
+        stripRoundBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         stripRoundBadge.setTextColor(0xff0b0c0e);
         stripRoundBadge.setPadding(dp(5), dp(1), dp(5), dp(1));
         stripRoundBadge.setBackground(background(0xffffe600, 2, 0xffffe600));
@@ -496,12 +538,46 @@ public class OverlayService extends Service {
         badgeLp.rightMargin = dp(3);
         topRow.addView(stripRoundBadge, badgeLp);
 
-        stripNextBtn = stepButton("▶", v -> stepRoundFromStrip(1));
+        stripNextBtn = stepButton("▶", v -> handleStepButton(1));
         topRow.addView(stripNextBtn);
 
+        // Boss portrait icon (shown in DPS tab when Boss icon exists)
+        stripBossHeaderIcon = new ImageView(this);
+        stripBossHeaderIcon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        stripBossHeaderIcon.setBackground(background(0xff1a0d12, 2, 0x88ff4d4f));
+        stripBossHeaderIcon.setPadding(dp(1), dp(1), dp(1), dp(1));
+        stripBossHeaderIcon.setVisibility(View.GONE);
+        LinearLayout.LayoutParams bossIconLp = new LinearLayout.LayoutParams(dp(18), dp(18));
+        bossIconLp.leftMargin = dp(5);
+        topRow.addView(stripBossHeaderIcon, bossIconLp);
+
+        // [累计 | 单回合] sub-capsule (shown in leak tab)
+        stripLeakScopeBox = new LinearLayout(this);
+        stripLeakScopeBox.setOrientation(LinearLayout.HORIZONTAL);
+        stripLeakScopeBox.setGravity(Gravity.CENTER_VERTICAL);
+        stripLeakScopeBox.setPadding(dp(1), dp(1), dp(1), dp(1));
+        stripLeakScopeBox.setBackground(background(0xff0d1118, 3, 0xff2b3444));
+        stripLeakScopeBox.setVisibility(View.GONE);
+        stripScopeCumBtn = capsuleChip("累计", v -> {
+            leakCumulative = true;
+            refreshStripAndBallContent();
+        });
+        stripScopeRoundBtn = capsuleChip("单回合", v -> {
+            leakCumulative = false;
+            if (leakSelectedRound < 1 || leakSelectedRound > 15) {
+                leakSelectedRound = Math.max(1, effectiveCurrentRound());
+            }
+            refreshStripAndBallContent();
+        });
+        stripLeakScopeBox.addView(stripScopeCumBtn);
+        stripLeakScopeBox.addView(stripScopeRoundBtn);
+        LinearLayout.LayoutParams scopeLp = new LinearLayout.LayoutParams(-2, -2);
+        scopeLp.leftMargin = dp(5);
+        topRow.addView(stripLeakScopeBox, scopeLp);
+
         stripTitleView = new TextView(this);
-        stripTitleView.setTextSize(11.5f);
-        stripTitleView.setTypeface(null, 1);
+        stripTitleView.setTextSize(11f);
+        stripTitleView.setTypeface(null, Typeface.BOLD);
         stripTitleView.setTextColor(0xfff1f5f9);
         stripTitleView.setSingleLine(true);
         stripTitleView.setEllipsize(TextUtils.TruncateAt.END);
@@ -510,85 +586,210 @@ public class OverlayService extends Service {
         titleLp.rightMargin = dp(4);
         topRow.addView(stripTitleView, titleLp);
 
-        stripStatusPill = new TextView(this);
-        stripStatusPill.setTextSize(9.5f);
-        stripStatusPill.setTypeface(null, 1);
-        stripStatusPill.setPadding(dp(4), dp(1), dp(4), dp(1));
-        stripStatusPill.setSingleLine(true);
-        LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(-2, -2);
-        pillLp.rightMargin = dp(4);
-        topRow.addView(stripStatusPill, pillLp);
-
+        // Right controls
         stripActions = new LinearLayout(this);
         stripActions.setOrientation(LinearLayout.HORIZONTAL);
         stripActions.setGravity(Gravity.CENTER_VERTICAL);
+
         stripScanBtn = miniStripButton(stripActions, "扫盟约", 0xff00e5ff, v -> triggerQuickCovenantScan());
-        stripFallbackBtn = miniStripButton(stripActions, "兜底", 0xffff9f43, v -> {
-            stripFallbackMode = !stripFallbackMode;
+
+        // Mode capsule: [DPS | 跟打 | 漏兜]
+        stripModeCapsule = new LinearLayout(this);
+        stripModeCapsule.setOrientation(LinearLayout.HORIZONTAL);
+        stripModeCapsule.setGravity(Gravity.CENTER_VERTICAL);
+        stripModeCapsule.setPadding(dp(1), dp(1), dp(1), dp(1));
+        stripModeCapsule.setBackground(background(0xff0d1118, 3, 0xff2b3444));
+        stripTabDpsBtn = capsuleChip("DPS", v -> {
+            stripTab = "dps";
             refreshStripAndBallContent();
         });
+        stripTabGuideBtn = capsuleChip("跟打", v -> {
+            stripTab = "guide";
+            refreshStripAndBallContent();
+        });
+        stripTabLeakBtn = capsuleChip("漏兜", v -> {
+            stripTab = "leak";
+            int cur = effectiveCurrentRound();
+            if (cur >= 1 && cur <= 15 && leakCumulative) leakSelectedRound = cur;
+            refreshStripAndBallContent();
+        });
+        stripModeCapsule.addView(stripTabDpsBtn);
+        stripModeCapsule.addView(stripTabGuideBtn);
+        stripModeCapsule.addView(stripTabLeakBtn);
+        LinearLayout.LayoutParams capLp = new LinearLayout.LayoutParams(-2, -2);
+        capLp.leftMargin = dp(3);
+        stripActions.addView(stripModeCapsule, capLp);
+
         miniStripButton(stripActions, "穿透", 0xffffe600, v -> setStripLocked(true));
         miniStripButton(stripActions, "展开", 0xffe2e8f0, v -> expand());
         miniStripButton(stripActions, "球", 0xff94a3b8, v -> collapseToBall());
         topRow.addView(stripActions);
         strip.addView(topRow);
 
-        // Row 2: 战术重点条（出怪预告 / 漏怪兜底 / 抓牌清单 / Ban受限 / Boss核装 + 核心进度）
-        stripFocusRow = new LinearLayout(this);
-        stripFocusRow.setOrientation(LinearLayout.HORIZONTAL);
-        stripFocusRow.setGravity(Gravity.CENTER_VERTICAL);
-        stripFocusRow.setPadding(dp(6), dp(2), dp(6), dp(2));
-        stripFocusRow.setBackgroundColor(0x14ffffff);
-        LinearLayout.LayoutParams focusLp = new LinearLayout.LayoutParams(-1, -2);
-        focusLp.topMargin = dp(3);
+        // ===== Body A: 跟打（怪物实机图标条 + 运营正文）=====
+        guideContainer = new LinearLayout(this);
+        guideContainer.setOrientation(LinearLayout.VERTICAL);
 
-        stripFocusAccent = new View(this);
-        stripFocusAccent.setBackgroundColor(0xff00e5ff);
-        LinearLayout.LayoutParams accLp = new LinearLayout.LayoutParams(dp(2), dp(13));
+        guideFocusRow = new LinearLayout(this);
+        guideFocusRow.setOrientation(LinearLayout.HORIZONTAL);
+        guideFocusRow.setGravity(Gravity.CENTER_VERTICAL);
+        guideFocusRow.setPadding(dp(5), dp(3), dp(5), dp(3));
+        guideFocusRow.setBackgroundColor(0x1600e5ff);
+        LinearLayout.LayoutParams gfLp = new LinearLayout.LayoutParams(-1, -2);
+        gfLp.topMargin = dp(4);
+
+        guideFocusAccent = new View(this);
+        guideFocusAccent.setBackgroundColor(0xff00e5ff);
+        LinearLayout.LayoutParams accLp = new LinearLayout.LayoutParams(dp(2), dp(15));
         accLp.rightMargin = dp(5);
-        stripFocusRow.addView(stripFocusAccent, accLp);
+        guideFocusRow.addView(guideFocusAccent, accLp);
 
-        stripFocusKey = new TextView(this);
-        stripFocusKey.setTextSize(10f);
-        stripFocusKey.setTypeface(null, 1);
-        stripFocusKey.setTextColor(0xff00e5ff);
-        stripFocusKey.setSingleLine(true);
+        guideFocusKey = new TextView(this);
+        guideFocusKey.setTextSize(9.5f);
+        guideFocusKey.setTypeface(null, Typeface.BOLD);
+        guideFocusKey.setTextColor(0xff00e5ff);
+        guideFocusKey.setSingleLine(true);
         LinearLayout.LayoutParams fkLp = new LinearLayout.LayoutParams(-2, -2);
         fkLp.rightMargin = dp(5);
-        stripFocusRow.addView(stripFocusKey, fkLp);
+        guideFocusRow.addView(guideFocusKey, fkLp);
 
-        stripFocusVal = new TextView(this);
-        stripFocusVal.setTextSize(10.5f);
-        stripFocusVal.setTextColor(0xffe2e8f0);
-        stripFocusVal.setMaxLines(2);
-        stripFocusVal.setEllipsize(TextUtils.TruncateAt.END);
-        stripFocusRow.addView(stripFocusVal, new LinearLayout.LayoutParams(0, -2, 1f));
+        guideEnemyScroll = new HorizontalScrollView(this);
+        guideEnemyScroll.setHorizontalScrollBarEnabled(false);
+        guideEnemyScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        guideEnemyChips = new LinearLayout(this);
+        guideEnemyChips.setOrientation(LinearLayout.HORIZONTAL);
+        guideEnemyChips.setGravity(Gravity.CENTER_VERTICAL);
+        guideEnemyScroll.addView(guideEnemyChips, new FrameLayout.LayoutParams(-2, -2));
+        guideFocusRow.addView(guideEnemyScroll, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        stripFocusProg = new TextView(this);
-        stripFocusProg.setTextSize(10f);
-        stripFocusProg.setTypeface(null, 1);
-        stripFocusProg.setTextColor(0xffffe600);
-        stripFocusProg.setSingleLine(true);
+        guideFocusFallbackVal = new TextView(this);
+        guideFocusFallbackVal.setTextSize(10f);
+        guideFocusFallbackVal.setTextColor(0xffe2e8f0);
+        guideFocusFallbackVal.setMaxLines(2);
+        guideFocusFallbackVal.setEllipsize(TextUtils.TruncateAt.END);
+        guideFocusFallbackVal.setVisibility(View.GONE);
+        guideFocusRow.addView(guideFocusFallbackVal, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        guideFocusProg = new TextView(this);
+        guideFocusProg.setTextSize(9.5f);
+        guideFocusProg.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        guideFocusProg.setTextColor(0xffffe600);
+        guideFocusProg.setSingleLine(true);
         LinearLayout.LayoutParams fpLp = new LinearLayout.LayoutParams(-2, -2);
         fpLp.leftMargin = dp(6);
-        stripFocusRow.addView(stripFocusProg, fpLp);
+        guideFocusRow.addView(guideFocusProg, fpLp);
 
-        strip.addView(stripFocusRow, focusLp);
+        guideContainer.addView(guideFocusRow, gfLp);
 
-        // Row 3: 完整回合运营指令 / 应急兜底策略（自动换行不截断，点正文切换 完整 / 精简1行）
-        stripBodyView = new TextView(this);
-        stripBodyView.setTextSize(11f);
-        stripBodyView.setTextColor(0xffe2e8f0);
-        stripBodyView.setLineSpacing(dp(2), 1f);
-        stripBodyView.setMaxLines(4);
-        stripBodyView.setEllipsize(TextUtils.TruncateAt.END);
-        stripBodyView.setOnClickListener(v -> {
+        guideBodyView = new TextView(this);
+        guideBodyView.setTextSize(10.5f);
+        guideBodyView.setTextColor(0xffe2e8f0);
+        guideBodyView.setLineSpacing(dp(2), 1f);
+        guideBodyView.setMaxLines(3);
+        guideBodyView.setEllipsize(TextUtils.TruncateAt.END);
+        guideBodyView.setOnClickListener(v -> {
             stripBodyCompact = !stripBodyCompact;
             refreshStripAndBallContent();
         });
         LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(-1, -2);
-        bodyLp.topMargin = dp(3);
-        strip.addView(stripBodyView, bodyLp);
+        bodyLp.topMargin = dp(4);
+        guideContainer.addView(guideBodyView, bodyLp);
+        strip.addView(guideContainer);
+
+        // ===== Body B: 漏兜图表（4 人彩色柱图 + 漏怪图标底条）=====
+        leakContainer = new LinearLayout(this);
+        leakContainer.setOrientation(LinearLayout.VERTICAL);
+        leakContainer.setVisibility(View.GONE);
+
+        leakGrid = new LinearLayout(this);
+        leakGrid.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams gridLp = new LinearLayout.LayoutParams(-1, -2);
+        gridLp.topMargin = dp(4);
+        leakContainer.addView(leakGrid, gridLp);
+
+        leakFooterRow = new LinearLayout(this);
+        leakFooterRow.setOrientation(LinearLayout.HORIZONTAL);
+        leakFooterRow.setGravity(Gravity.CENTER_VERTICAL);
+        leakFooterRow.setPadding(dp(5), dp(3), dp(5), dp(3));
+        leakFooterRow.setBackgroundColor(0x14ffffff);
+        LinearLayout.LayoutParams lfLp = new LinearLayout.LayoutParams(-1, -2);
+        lfLp.topMargin = dp(4);
+
+        leakFooterTag = new TextView(this);
+        leakFooterTag.setTextSize(9.5f);
+        leakFooterTag.setTypeface(null, Typeface.BOLD);
+        leakFooterTag.setTextColor(0xfffb923c);
+        leakFooterTag.setSingleLine(true);
+        LinearLayout.LayoutParams lftLp = new LinearLayout.LayoutParams(-2, -2);
+        lftLp.rightMargin = dp(5);
+        leakFooterRow.addView(leakFooterTag, lftLp);
+
+        HorizontalScrollView leakScroll = new HorizontalScrollView(this);
+        leakScroll.setHorizontalScrollBarEnabled(false);
+        leakScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        leakEnemyChips = new LinearLayout(this);
+        leakEnemyChips.setOrientation(LinearLayout.HORIZONTAL);
+        leakEnemyChips.setGravity(Gravity.CENTER_VERTICAL);
+        leakScroll.addView(leakEnemyChips, new FrameLayout.LayoutParams(-2, -2));
+        leakFooterRow.addView(leakScroll, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        leakLegendView = new TextView(this);
+        leakLegendView.setTextSize(9f);
+        leakLegendView.setSingleLine(true);
+        leakLegendView.setText(buildLeakLegend());
+        LinearLayout.LayoutParams legLp = new LinearLayout.LayoutParams(-2, -2);
+        legLp.leftMargin = dp(6);
+        leakFooterRow.addView(leakLegendView, legLp);
+
+        leakContainer.addView(leakFooterRow, lfLp);
+        strip.addView(leakContainer);
+
+        // ===== Body C: Boss MMO DPS 榜（Boss 血条 + 4 行横向渐变计量条）=====
+        dpsContainer = new LinearLayout(this);
+        dpsContainer.setOrientation(LinearLayout.VERTICAL);
+        dpsContainer.setVisibility(View.GONE);
+
+        bossHpTrack = new FrameLayout(this);
+        bossHpTrack.setBackground(background(0xff1e0c11, 3, 0x88ff4d4f));
+        LinearLayout.LayoutParams hpTrackLp = new LinearLayout.LayoutParams(-1, dp(19));
+        hpTrackLp.topMargin = dp(4);
+
+        LinearLayout hpFillWrap = new LinearLayout(this);
+        hpFillWrap.setOrientation(LinearLayout.HORIZONTAL);
+        bossHpFill = new View(this);
+        bossHpFill.setBackground(gradientBar(0xffb91c1c, 0xfff97316, 2));
+        bossHpRest = new View(this);
+        hpFillWrap.addView(bossHpFill, new LinearLayout.LayoutParams(0, -1, 1f));
+        hpFillWrap.addView(bossHpRest, new LinearLayout.LayoutParams(0, -1, 0f));
+        bossHpTrack.addView(hpFillWrap, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout hpTextRow = new LinearLayout(this);
+        hpTextRow.setOrientation(LinearLayout.HORIZONTAL);
+        hpTextRow.setGravity(Gravity.CENTER_VERTICAL);
+        hpTextRow.setPadding(dp(6), 0, dp(6), 0);
+        bossHpLeftText = new TextView(this);
+        bossHpLeftText.setTextSize(9.5f);
+        bossHpLeftText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        bossHpLeftText.setTextColor(0xffffffff);
+        bossHpLeftText.setSingleLine(true);
+        hpTextRow.addView(bossHpLeftText, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        bossHpRightText = new TextView(this);
+        bossHpRightText.setTextSize(9.5f);
+        bossHpRightText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        bossHpRightText.setTextColor(0xfffef08a);
+        bossHpRightText.setSingleLine(true);
+        hpTextRow.addView(bossHpRightText, new LinearLayout.LayoutParams(-2, -2));
+        bossHpTrack.addView(hpTextRow, new FrameLayout.LayoutParams(-1, -1));
+
+        dpsContainer.addView(bossHpTrack, hpTrackLp);
+
+        bossRankList = new LinearLayout(this);
+        bossRankList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rankLp = new LinearLayout.LayoutParams(-1, -2);
+        rankLp.topMargin = dp(3);
+        dpsContainer.addView(bossRankList, rankLp);
+        strip.addView(dpsContainer);
 
         stripParams = params(preferredStripWidth(), WindowManager.LayoutParams.WRAP_CONTENT, false, true);
         positionStripDefault();
@@ -597,7 +798,7 @@ public class OverlayService extends Service {
         unlockChip = new TextView(this);
         unlockChip.setText("解锁");
         unlockChip.setTextSize(10.5f);
-        unlockChip.setTypeface(null, 1);
+        unlockChip.setTypeface(null, Typeface.BOLD);
         unlockChip.setTextColor(0xffffe600);
         unlockChip.setGravity(Gravity.CENTER);
         unlockChip.setBackground(background(0xee0b0d11, 3, 0xffffe600));
@@ -605,6 +806,44 @@ public class OverlayService extends Service {
         unlockParams = params(dp(38), dp(26), false, true);
         unlockChip.setOnClickListener(v -> setStripLocked(false));
         refreshStripAndBallContent();
+    }
+
+    private CharSequence buildLeakLegend() {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        appendColored(sb, "■", 0xff10b981);
+        appendColored(sb, "稳 ", 0xff94a3b8);
+        appendColored(sb, "■", 0xff00e5ff);
+        appendColored(sb, "兜 ", 0xff94a3b8);
+        appendColored(sb, "■", 0xffff4d4f);
+        appendColored(sb, "逃", 0xff94a3b8);
+        return sb;
+    }
+
+    private static void appendColored(SpannableStringBuilder sb, String text, int color) {
+        int start = sb.length();
+        sb.append(text);
+        sb.setSpan(new ForegroundColorSpan(color), start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private TextView capsuleChip(String label, View.OnClickListener action) {
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(9.5f);
+        tv.setTypeface(null, Typeface.BOLD);
+        tv.setPadding(dp(5), dp(1), dp(5), dp(1));
+        tv.setSingleLine(true);
+        tv.setOnClickListener(action);
+        return tv;
+    }
+
+    private void styleCapsuleChip(TextView chip, boolean active, int activeBg, int activeFg, int inactiveFg) {
+        if (active) {
+            chip.setTextColor(activeFg);
+            chip.setBackground(background(activeBg, 2, activeBg));
+        } else {
+            chip.setTextColor(inactiveFg);
+            chip.setBackground(null);
+        }
     }
 
     private TextView stepButton(String label, View.OnClickListener action) {
@@ -619,7 +858,26 @@ public class OverlayService extends Service {
         return btn;
     }
 
-    private void stepRoundFromStrip(int delta) {
+    private int effectiveCurrentRound() {
+        if (liveTelemetry != null && liveTelemetry.currentRound >= 1 && liveTelemetry.currentRound <= 15) {
+            return liveTelemetry.currentRound;
+        }
+        return pendingRound >= 1 && pendingRound <= 15 ? pendingRound : 1;
+    }
+
+    private void handleStepButton(int delta) {
+        if ("leak".equals(stripTab)) {
+            int maxRound = (liveTelemetry != null && liveTelemetry.currentRound >= 1 && liveTelemetry.currentRound <= 15)
+                ? liveTelemetry.currentRound : 15;
+            if (leakCumulative) {
+                leakCumulative = false;
+                leakSelectedRound = Math.max(1, Math.min(maxRound, effectiveCurrentRound()));
+            } else {
+                leakSelectedRound = Math.max(1, Math.min(maxRound, leakSelectedRound + delta));
+            }
+            refreshStripAndBallContent();
+            return;
+        }
         int current = pendingRound >= 1 && pendingRound <= 15 ? pendingRound : 1;
         int next = Math.max(1, Math.min(15, current + delta));
         if (next == current) return;
@@ -642,8 +900,8 @@ public class OverlayService extends Service {
     private TextView miniStripButton(LinearLayout host, String text, int color, View.OnClickListener action) {
         TextView btn = new TextView(this);
         btn.setText(text);
-        btn.setTextSize(10f);
-        btn.setTypeface(null, 1);
+        btn.setTextSize(9.5f);
+        btn.setTypeface(null, Typeface.BOLD);
         btn.setTextColor(color);
         btn.setPadding(dp(5), dp(2), dp(5), dp(2));
         btn.setBackground(background(0xff171c26, 2, 0xff2b3444));
@@ -668,34 +926,385 @@ public class OverlayService extends Service {
         }
     }
 
-    private void stylePill(String text, int bg, int fg, int stroke) {
-        if (text == null || text.isEmpty()) {
-            stripStatusPill.setVisibility(View.GONE);
-            return;
+    private View buildEnemyChip(BattleCaptureState.EnemyCount ec, int countColor, int strokeColor, int iconSizeDp) {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(2), dp(1), dp(5), dp(1));
+        chip.setBackground(background(0xff131a25, 2, strokeColor));
+
+        Bitmap icon = EnemyPortraitAtlas.getIcon(this, ec.enemyId);
+        if (icon != null) {
+            ImageView iv = new ImageView(this);
+            iv.setImageBitmap(icon);
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(iconSizeDp), dp(iconSizeDp));
+            ilp.rightMargin = dp(4);
+            chip.addView(iv, ilp);
         }
-        stripStatusPill.setVisibility(View.VISIBLE);
-        stripStatusPill.setText(text);
-        stripStatusPill.setTextColor(fg);
-        stripStatusPill.setBackground(background(bg, 2, stroke));
+
+        TextView label = new TextView(this);
+        label.setTextSize(9.5f);
+        label.setSingleLine(true);
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        String shortName = ec.name != null && ec.name.length() > 7 ? ec.name.substring(0, 7) : (ec.name != null ? ec.name : "");
+        appendColored(sb, shortName, 0xffe2e8f0);
+        appendColored(sb, " ×" + ec.count, countColor);
+        label.setText(sb);
+        chip.addView(label);
+
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+        clp.rightMargin = dp(4);
+        chip.setLayoutParams(clp);
+        return chip;
     }
 
-    private void setFocusStrip(boolean visible, int bgColor, int accentColor, String key, String value, String prog, int progColor) {
-        if (!visible || ((key == null || key.isEmpty()) && (value == null || value.isEmpty()))) {
-            stripFocusRow.setVisibility(View.GONE);
-            return;
-        }
-        stripFocusRow.setVisibility(View.VISIBLE);
-        stripFocusRow.setBackgroundColor(bgColor);
-        stripFocusAccent.setBackgroundColor(accentColor);
-        stripFocusKey.setText(key);
-        stripFocusKey.setTextColor(accentColor);
-        stripFocusVal.setText(value);
-        if (prog != null && !prog.isEmpty()) {
-            stripFocusProg.setVisibility(View.VISIBLE);
-            stripFocusProg.setText(prog);
-            stripFocusProg.setTextColor(progColor);
+    private void renderGuideBody(
+        BattleCaptureState.TelemetrySnapshot snap, boolean hasComp, boolean vpnRunning,
+        boolean isUpgrade, boolean hasBanWarn, int curRound
+    ) {
+        guideEnemyChips.removeAllViews();
+        boolean hasEnemyIcons = snap != null && vpnRunning && snap.forecastEnemies != null && !snap.forecastEnemies.isEmpty();
+
+        String progRight = !pendingProgress.isEmpty()
+            ? pendingProgress
+            : (snap != null && snap.selfHp >= 0 ? ("♥" + snap.selfHp) : "");
+        int progCol = progRight.contains("齐牌") ? 0xff34d399 : (progRight.startsWith("♥") && snap != null && snap.selfHp <= 5 ? 0xffff7875 : 0xffffe600);
+
+        if (!hasComp && !vpnRunning) {
+            guideFocusRow.setVisibility(View.GONE);
+            guideBodyView.setText("打开「确认本局信息」点「扫盟约」（或双击悬浮球）推荐阵容；或在主页开启「本机抓包」自动同步禁选、出怪与漏兜。");
+        } else if (hasEnemyIcons) {
+            guideFocusRow.setVisibility(View.VISIBLE);
+            guideFocusRow.setBackgroundColor(0x1800e5ff);
+            guideFocusAccent.setBackgroundColor(0xff00e5ff);
+            String fcLabel = snap.forecastRound > curRound
+                ? String.format(Locale.US, "下波 R%02d", snap.forecastRound)
+                : String.format(Locale.US, "本波 R%02d", snap.forecastRound);
+            guideFocusKey.setText(fcLabel);
+            guideFocusKey.setTextColor(0xff00e5ff);
+            guideEnemyScroll.setVisibility(View.VISIBLE);
+            guideFocusFallbackVal.setVisibility(View.GONE);
+
+            int maxItems = Math.min(6, snap.forecastEnemies.size());
+            for (int i = 0; i < maxItems; i++) {
+                guideEnemyChips.addView(buildEnemyChip(snap.forecastEnemies.get(i), 0xffffe600, 0xff28384e, 16));
+            }
+            if (!progRight.isEmpty()) {
+                guideFocusProg.setVisibility(View.VISIBLE);
+                guideFocusProg.setText(progRight);
+                guideFocusProg.setTextColor(progCol);
+            } else {
+                guideFocusProg.setVisibility(View.GONE);
+            }
+
+            StringBuilder body = new StringBuilder();
+            if (!pendingGrabHint.isEmpty()) body.append("抓：").append(pendingGrabHint).append(" ｜ ");
+            if (!pendingDetail.isEmpty()) body.append(pendingDetail);
+            else if (snap.banCount >= 0 && !hasComp) body.append("已自动同步 ").append(snap.banCount).append(" 项禁选，点「展开」一键选阵。");
+            else body.append("实时抓包同步中，可点顶栏「漏兜」查看 4 人漏怪与协防图表。");
+            guideBodyView.setText(body.toString());
+        } else if (hasBanWarn) {
+            guideFocusRow.setVisibility(View.VISIBLE);
+            guideFocusRow.setBackgroundColor(0x1af59e0b);
+            guideFocusAccent.setBackgroundColor(0xfffbbf24);
+            guideFocusKey.setText("受限替换");
+            guideFocusKey.setTextColor(0xfffbbf24);
+            guideEnemyScroll.setVisibility(View.GONE);
+            guideFocusFallbackVal.setVisibility(View.VISIBLE);
+            guideFocusFallbackVal.setText(pendingGrabHint.isEmpty() ? pendingBanWarning : (pendingBanWarning + " → 缺：" + pendingGrabHint));
+            guideFocusProg.setVisibility(progRight.isEmpty() ? View.GONE : View.VISIBLE);
+            guideFocusProg.setText(progRight);
+            guideFocusProg.setTextColor(progCol);
+            guideBodyView.setText(!pendingDetail.isEmpty() ? pendingDetail : "当前阵容存在受限盟约，请核对替换组件或切换备选路线。");
         } else {
-            stripFocusProg.setVisibility(View.GONE);
+            boolean showFocus = !pendingGrabHint.isEmpty() || !progRight.isEmpty();
+            guideFocusRow.setVisibility(showFocus ? View.VISIBLE : View.GONE);
+            guideFocusRow.setBackgroundColor(0x14ffffff);
+            guideFocusAccent.setBackgroundColor(0xff00e5ff);
+            guideFocusKey.setText(isUpgrade ? "追核" : "抓牌");
+            guideFocusKey.setTextColor(0xff00e5ff);
+            guideEnemyScroll.setVisibility(View.GONE);
+            guideFocusFallbackVal.setVisibility(View.VISIBLE);
+            guideFocusFallbackVal.setText(!pendingGrabHint.isEmpty() ? pendingGrabHint : "本阶段核心已齐 · 追精锐");
+            guideFocusProg.setVisibility(progRight.isEmpty() ? View.GONE : View.VISIBLE);
+            guideFocusProg.setText(progRight);
+            guideFocusProg.setTextColor(progCol);
+            guideBodyView.setText(!pendingDetail.isEmpty()
+                ? pendingDetail
+                : (vpnRunning ? "已连接本机抓包，进战斗后自动显示下波出怪图标与 4 人漏兜。" : "点 ◀ ▶ 切回合，或点顶栏「漏兜」看 4 人漏怪/兜底图表。"));
+        }
+        guideBodyView.setMaxLines(stripBodyCompact ? 1 : 3);
+    }
+
+    private void renderLeakBody(BattleCaptureState.LeakSnapshot leakSnap, boolean vpnRunning) {
+        leakGrid.removeAllViews();
+        int maxLoad = 1;
+        for (BattleCaptureState.SeatLeakRow row : leakSnap.seats) {
+            int load = row.leaked + row.assisted;
+            if (load > maxLoad) maxLoad = load;
+        }
+
+        for (int i = 0; i < leakSnap.seats.size(); i++) {
+            BattleCaptureState.SeatLeakRow row = leakSnap.seats.get(i);
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(5), dp(4), dp(5), dp(4));
+            int cardBg = row.isSelf ? 0x1affe600 : (row.escaped > 0 ? 0x1aff4d4f : 0xff131a24);
+            int cardBorder = row.isSelf ? 0x99ffe600 : (row.escaped > 0 ? 0x88ff4d4f : 0xff273244);
+            card.setBackground(background(cardBg, 3, cardBorder));
+
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1f);
+            if (i > 0) cardLp.leftMargin = dp(4);
+
+            // Card Top: [我] Name   ♥HP
+            LinearLayout head = new LinearLayout(this);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+
+            if (row.isSelf) {
+                TextView me = new TextView(this);
+                me.setText("我");
+                me.setTextSize(8f);
+                me.setTypeface(null, Typeface.BOLD);
+                me.setTextColor(0xff0b0d11);
+                me.setPadding(dp(2), 0, dp(2), 0);
+                me.setBackground(background(0xffffe600, 1, 0xffffe600));
+                LinearLayout.LayoutParams meLp = new LinearLayout.LayoutParams(-2, -2);
+                meLp.rightMargin = dp(3);
+                head.addView(me, meLp);
+            }
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(row.name);
+            nameTv.setTextSize(9.5f);
+            nameTv.setTypeface(null, row.isSelf ? Typeface.BOLD : Typeface.NORMAL);
+            nameTv.setTextColor(row.isSelf ? 0xfffff8b0 : 0xffe2e8f0);
+            nameTv.setSingleLine(true);
+            nameTv.setEllipsize(TextUtils.TruncateAt.END);
+            head.addView(nameTv, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            TextView hpTv = new TextView(this);
+            hpTv.setText(row.hp >= 0 ? ("♥" + row.hp) : "—");
+            hpTv.setTextSize(9f);
+            hpTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            hpTv.setTextColor(row.hp >= 0 && row.hp <= 5 ? 0xffff7875 : (row.hp >= 15 ? 0xff34d399 : 0xff94a3b8));
+            hpTv.setSingleLine(true);
+            head.addView(hpTv);
+            card.addView(head);
+
+            // Card Middle: 3-color segmented bar [稳守 Green | 兜底 Cyan | 逃跑 Red]
+            LinearLayout barTrack = new LinearLayout(this);
+            barTrack.setOrientation(LinearLayout.HORIZONTAL);
+            barTrack.setBackground(background(0xff0b0f16, 2, 0xff1f2a3a));
+            barTrack.setPadding(dp(1), dp(1), dp(1), dp(1));
+            LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, dp(8));
+            barLp.topMargin = dp(4);
+            barLp.bottomMargin = dp(4);
+
+            float greenW = row.leaked == 0 ? Math.max(2f, (float) maxLoad - row.assisted * 0.4f) : 0f;
+            float cyanW = (float) (row.covered + row.assisted);
+            float redW = (float) row.escaped;
+            if (greenW <= 0f && cyanW <= 0f && redW <= 0f) greenW = 1f;
+
+            addBarSegment(barTrack, greenW, 0xff10b981);
+            addBarSegment(barTrack, cyanW, 0xff00e5ff);
+            addBarSegment(barTrack, redW, 0xffff4d4f);
+            card.addView(barTrack, barLp);
+
+            // Card Bottom: Crisp monospace numbers
+            TextView stats = new TextView(this);
+            stats.setTextSize(9f);
+            stats.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            stats.setSingleLine(true);
+            stats.setEllipsize(TextUtils.TruncateAt.END);
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            if (row.leaked == 0 && row.assisted == 0) {
+                appendColored(sb, "漏0 · 稳守", 0xff34d399);
+            } else if (row.leaked == 0) {
+                appendColored(sb, "漏0 ", 0xff34d399);
+                appendColored(sb, "兜+" + row.assisted, 0xff00e5ff);
+            } else if (row.escaped == 0) {
+                appendColored(sb, "漏" + row.leaked + " ", 0xfffbbf24);
+                appendColored(sb, "全兜✓", 0xff00e5ff);
+                if (row.assisted > 0) appendColored(sb, " +" + row.assisted, 0xff67e8f9);
+            } else {
+                appendColored(sb, "漏" + row.leaked + " ", 0xfffbbf24);
+                appendColored(sb, "逃" + row.escaped, 0xffff6b6b);
+                if (row.covered > 0) appendColored(sb, " 兜" + row.covered, 0xff00e5ff);
+            }
+            stats.setText(sb);
+            card.addView(stats);
+
+            leakGrid.addView(card, cardLp);
+        }
+
+        // Bottom leaked enemy real-icon strip
+        leakEnemyChips.removeAllViews();
+        leakFooterTag.setText(leakSnap.round == 0
+            ? String.format(Locale.US, "累计高漏(%d)", leakSnap.totalLeaks)
+            : String.format(Locale.US, "R%02d 漏怪(%d)", leakSnap.round, leakSnap.totalLeaks));
+        if (leakSnap.enemies != null && !leakSnap.enemies.isEmpty()) {
+            int maxKinds = Math.min(6, leakSnap.enemies.size());
+            for (int i = 0; i < maxKinds; i++) {
+                leakEnemyChips.addView(buildEnemyChip(leakSnap.enemies.get(i), 0xffff7875, 0x77ff4d4f, 15));
+            }
+        } else {
+            TextView empty = new TextView(this);
+            empty.setText(vpnRunning ? "本段零漏怪记录" : "开启主页「本机抓包」自动统计 4 人漏兜");
+            empty.setTextSize(9.5f);
+            empty.setTextColor(0xff94a3b8);
+            empty.setSingleLine(true);
+            leakEnemyChips.addView(empty);
+        }
+    }
+
+    private void addBarSegment(LinearLayout track, float weight, int color) {
+        if (weight <= 0f) return;
+        View seg = new View(this);
+        seg.setBackgroundColor(color);
+        track.addView(seg, new LinearLayout.LayoutParams(0, -1, weight));
+    }
+
+    private void renderDpsBody(BattleCaptureState.BossSnapshot boss) {
+        // Boss HP progress bar
+        float hpWeight = boss.hpPct >= 0 ? Math.max(0f, Math.min(100f, (float) boss.hpPct)) : 0f;
+        bossHpFill.setVisibility(hpWeight > 0f ? View.VISIBLE : View.GONE);
+        bossHpFill.setLayoutParams(new LinearLayout.LayoutParams(0, -1, Math.max(0.01f, hpWeight)));
+        bossHpRest.setLayoutParams(new LinearLayout.LayoutParams(0, -1, Math.max(0.01f, 100f - hpWeight)));
+
+        if (boss.hpPct >= 0) {
+            bossHpLeftText.setText(String.format(Locale.US, "BOSS HP %d%% · 余 %s", boss.hpPct, fmtWan(boss.bossHp)));
+        } else if (boss.bossHp >= 0) {
+            bossHpLeftText.setText("BOSS 余 " + fmtWan(boss.bossHp));
+        } else {
+            bossHpLeftText.setText("BOSS 决战 · 等待血量同步");
+        }
+
+        if (boss.teamDamage > 0) {
+            bossHpRightText.setText(String.format(Locale.US, "全队 %s · %s/s · %s",
+                fmtWan(boss.teamDamage), fmtComma(boss.teamDps), fmtMmSs(boss.elapsedSec)));
+        } else {
+            bossHpRightText.setText("00:00");
+        }
+
+        // MMO 4 horizontal ranking rows (#1 -> #4)
+        bossRankList.removeAllViews();
+        int topDmg = 1;
+        for (BattleCaptureState.BossPlayerRow p : boss.players) {
+            if (p.damage > topDmg) topDmg = p.damage;
+        }
+
+        int[][] barPalettes = {
+            { 0xff0e5c70, 0xff0891b2 }, // cyan
+            { 0xff4c1d95, 0xff7c3aed }, // violet
+            { 0xff1e3a5f, 0xff2563eb }, // blue
+            { 0xff273244, 0xff475569 }, // slate
+        };
+
+        int peerColorIdx = 0;
+        for (int i = 0; i < boss.players.size(); i++) {
+            BattleCaptureState.BossPlayerRow p = boss.players.get(i);
+            FrameLayout row = new FrameLayout(this);
+            row.setBackground(background(0xff11161f, 2, p.isSelf ? 0x99ffe600 : 0xff232d3d));
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, dp(21));
+            if (i > 0) rowLp.topMargin = dp(3);
+
+            // Proportional gradient fill (#1 = 100%)
+            if (p.damage > 0) {
+                float pct = Math.max(4f, Math.min(100f, p.damage * 100f / topDmg));
+                LinearLayout bgTrack = new LinearLayout(this);
+                bgTrack.setOrientation(LinearLayout.HORIZONTAL);
+                View fill = new View(this);
+                int startC, endC;
+                if (p.isSelf) {
+                    startC = 0xff7c6506;
+                    endC = 0xffd4b106;
+                } else {
+                    int[] pal = barPalettes[Math.min(peerColorIdx++, barPalettes.length - 1)];
+                    startC = pal[0];
+                    endC = pal[1];
+                }
+                fill.setBackground(gradientBar(startC, endC, 2));
+                fill.setAlpha(0.72f);
+                bgTrack.addView(fill, new LinearLayout.LayoutParams(0, -1, pct));
+                if (pct < 100f) {
+                    bgTrack.addView(new View(this), new LinearLayout.LayoutParams(0, -1, 100f - pct));
+                }
+                row.addView(bgTrack, new FrameLayout.LayoutParams(-1, -1));
+            } else if (!p.isSelf) {
+                peerColorIdx++;
+            }
+
+            // Foreground metrics row: #rank [我] Name    Total  DPS/s  Share%
+            LinearLayout fg = new LinearLayout(this);
+            fg.setOrientation(LinearLayout.HORIZONTAL);
+            fg.setGravity(Gravity.CENTER_VERTICAL);
+            fg.setPadding(dp(6), 0, dp(6), 0);
+
+            TextView rankTv = new TextView(this);
+            rankTv.setText("#" + p.rank);
+            rankTv.setTextSize(9.5f);
+            rankTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            rankTv.setTextColor(p.rank == 1 ? 0xffffe600 : (p.isSelf ? 0xfffef08a : 0xff94a3b8));
+            rankTv.setMinWidth(dp(20));
+            fg.addView(rankTv);
+
+            if (p.isSelf) {
+                TextView me = new TextView(this);
+                me.setText("我");
+                me.setTextSize(8f);
+                me.setTypeface(null, Typeface.BOLD);
+                me.setTextColor(0xff0b0d11);
+                me.setPadding(dp(3), 0, dp(3), 0);
+                me.setBackground(background(0xffffe600, 1, 0xffffe600));
+                LinearLayout.LayoutParams meLp = new LinearLayout.LayoutParams(-2, -2);
+                meLp.rightMargin = dp(4);
+                fg.addView(me, meLp);
+            }
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(p.name);
+            nameTv.setTextSize(10f);
+            nameTv.setTypeface(null, Typeface.BOLD);
+            nameTv.setTextColor(0xffffffff);
+            nameTv.setSingleLine(true);
+            nameTv.setEllipsize(TextUtils.TruncateAt.END);
+            fg.addView(nameTv, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            TextView dmgTv = new TextView(this);
+            dmgTv.setText(p.damage > 0 ? fmtWan(p.damage) : "—");
+            dmgTv.setTextSize(10f);
+            dmgTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            dmgTv.setTextColor(0xffffffff);
+            dmgTv.setGravity(Gravity.END);
+            dmgTv.setMinWidth(dp(38));
+            fg.addView(dmgTv);
+
+            TextView dpsTv = new TextView(this);
+            dpsTv.setText(p.dps > 0 ? (fmtComma(p.dps) + "/s") : "0/s");
+            dpsTv.setTextSize(9.5f);
+            dpsTv.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+            dpsTv.setTextColor(p.isSelf ? 0xfffef08a : 0xffbae6fd);
+            dpsTv.setGravity(Gravity.END);
+            dpsTv.setMinWidth(dp(48));
+            LinearLayout.LayoutParams dpsLp = new LinearLayout.LayoutParams(-2, -2);
+            dpsLp.leftMargin = dp(5);
+            fg.addView(dpsTv, dpsLp);
+
+            TextView shareTv = new TextView(this);
+            shareTv.setText(String.format(Locale.US, "%.1f%%", p.sharePct));
+            shareTv.setTextSize(9.5f);
+            shareTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            shareTv.setTextColor(0xffe2e8f0);
+            shareTv.setGravity(Gravity.END);
+            shareTv.setMinWidth(dp(34));
+            LinearLayout.LayoutParams shLp = new LinearLayout.LayoutParams(-2, -2);
+            shLp.leftMargin = dp(4);
+            fg.addView(shareTv, shLp);
+
+            row.addView(fg, new FrameLayout.LayoutParams(-1, -1));
+            bossRankList.addView(row, rowLp);
         }
     }
 
@@ -705,88 +1314,115 @@ public class OverlayService extends Service {
         }
         if (strip == null) return;
 
+        BattleCaptureState.TelemetrySnapshot snap = liveTelemetry;
+        boolean vpnRunning = snap != null && snap.vpnRunning;
         boolean hasComp = !pendingHeadline.isEmpty();
-        boolean isBoss = (pendingRound >= 14) || "boss".equals(livePhase);
-        boolean isUpgrade = hasComp && !isBoss && pendingTier >= 2 && pendingPrevTier > 0 && pendingTier > pendingPrevTier;
+        int curRound = effectiveCurrentRound();
+        boolean isBossContext = (pendingRound >= 14)
+            || (snap != null && ("boss".equals(snap.phase) || snap.currentRound >= 14 || snap.boss.teamDamage > 0 || snap.boss.bossHp >= 0));
+        boolean isUpgrade = hasComp && !isBossContext && pendingTier >= 2 && pendingPrevTier > 0 && pendingTier > pendingPrevTier;
         boolean hasBanWarn = hasComp && !pendingBanWarning.isEmpty();
-        boolean hasLiveLeak = liveVpnRunning && liveLeakAlert && !liveLeakText.isEmpty();
-        boolean hasLiveSpawn = liveVpnRunning && !liveForecastText.isEmpty();
 
-        // 1. 控件可见性（待机未选方案时露出「扫盟约」，选方案后露出「兜底」）
-        stripPrevBtn.setVisibility((!stripLocked && hasComp) ? View.VISIBLE : View.GONE);
-        stripNextBtn.setVisibility((!stripLocked && hasComp) ? View.VISIBLE : View.GONE);
-        stripScanBtn.setVisibility((!stripLocked && !hasComp) ? View.VISIBLE : View.GONE);
-        stripFallbackBtn.setVisibility((!stripLocked && hasComp) ? View.VISIBLE : View.GONE);
-
-        if (stripFallbackMode) {
-            stripFallbackBtn.setText("回常规");
-            stripFallbackBtn.setTextColor(0xff0b0d11);
-            stripFallbackBtn.setBackground(background(0xffff7a00, 2, 0xffff7a00));
+        // Boss 阶段自动切 [DPS]（每回合仅自动触发一次，不覆盖用户手动切换）
+        if (isBossContext) {
+            if (autoSwitchedBossRound != curRound) {
+                autoSwitchedBossRound = curRound;
+                stripTab = "dps";
+            }
         } else {
-            stripFallbackBtn.setText("兜底");
-            stripFallbackBtn.setTextColor(0xffff9f43);
-            stripFallbackBtn.setBackground(background(0xff261608, 2, 0xff6b3b14));
+            autoSwitchedBossRound = 0;
+            if ("dps".equals(stripTab)) stripTab = "guide";
         }
 
-        // 2. 决定视觉主题（优先级：手动兜底 / 实时漏怪 > Boss终局 > Ban受限 > 升本节奏 > 常规 > 待机）
+        // 若处于漏兜单回合但尚未初始化回合号，跟随当前回合
+        if (leakSelectedRound < 1 || leakSelectedRound > 15) leakSelectedRound = curRound;
+
+        // 1. 顶部模式胶囊与控件可见性
+        boolean inLeak = "leak".equals(stripTab);
+        boolean inDps = "dps".equals(stripTab);
+        boolean inGuide = !inLeak && !inDps;
+
+        boolean showStepper = !stripLocked && ((inGuide && hasComp) || inLeak);
+        stripPrevBtn.setVisibility(showStepper ? View.VISIBLE : View.GONE);
+        stripNextBtn.setVisibility(showStepper ? View.VISIBLE : View.GONE);
+        stripScanBtn.setVisibility((!stripLocked && inGuide && !hasComp && !vpnRunning) ? View.VISIBLE : View.GONE);
+        stripLeakScopeBox.setVisibility((!stripLocked && inLeak) ? View.VISIBLE : View.GONE);
+
+        stripTabDpsBtn.setVisibility(isBossContext ? View.VISIBLE : View.GONE);
+        int activeLeakCount = snap != null ? snap.currentRoundLeak.totalLeaks : 0;
+        stripTabLeakBtn.setText(activeLeakCount > 0 ? ("漏兜·" + activeLeakCount) : "漏兜");
+
+        styleCapsuleChip(stripTabDpsBtn, inDps, 0xffff4d4f, 0xffffffff, 0xfffca5a5);
+        styleCapsuleChip(stripTabGuideBtn, inGuide, 0xffffe600, 0xff0b0d11, 0xffcbd5e1);
+        styleCapsuleChip(stripTabLeakBtn, inLeak, activeLeakCount > 0 ? 0xffff7a00 : 0xff00e5ff, 0xff0b0d11,
+            activeLeakCount > 0 ? 0xfffdba74 : 0xff67e8f9);
+        styleCapsuleChip(stripScopeCumBtn, leakCumulative, 0xff00e5ff, 0xff0b0d11, 0xff94a3b8);
+        styleCapsuleChip(stripScopeRoundBtn, !leakCumulative, 0xffff7a00, 0xff0b0d11, 0xff94a3b8);
+
+        // 2. 主题色与顶栏徽标/标题
+        BattleCaptureState.LeakSnapshot activeLeakSnap = inLeak
+            ? BattleCaptureState.buildLeakSnapshot(leakCumulative ? 0 : leakSelectedRound)
+            : null;
+        BattleCaptureState.BossSnapshot activeBossSnap = inDps
+            ? (snap != null ? snap.boss : BattleCaptureState.buildBossSnapshot())
+            : null;
+
         int borderCol = 0xffffe600;
         int fillCol = stripLocked ? 0xbb0b0d11 : 0xf20b0d11;
         int badgeBg = 0xffffe600;
         int badgeFg = 0xff0b0d11;
         String badgeText;
-        String pillText = "";
-        int pillBg = 0x2200e5ff, pillFg = 0xff67e8f9, pillStroke = 0x6600e5ff;
+        String titleText;
 
-        if (!hasComp && !liveVpnRunning) {
+        stripBossHeaderIcon.setVisibility(View.GONE);
+
+        if (inDps && activeBossSnap != null) {
+            borderCol = 0xffff4d4f;
+            fillCol = stripLocked ? 0xc2180a0d : 0xf5180a0d;
+            badgeBg = 0xffff4d4f;
+            badgeFg = 0xffffffff;
+            badgeText = String.format(Locale.US, "R%02d·BOSS", curRound);
+            titleText = activeBossSnap.bossName;
+            Bitmap bossBmp = EnemyPortraitAtlas.getIcon(this, activeBossSnap.bossEnemyId);
+            if (bossBmp != null) {
+                stripBossHeaderIcon.setImageBitmap(bossBmp);
+                stripBossHeaderIcon.setVisibility(View.VISIBLE);
+            }
+        } else if (inLeak && activeLeakSnap != null) {
+            boolean warnOrange = !leakCumulative || activeLeakSnap.totalEscaped > 0;
+            borderCol = warnOrange ? 0xffff7a00 : 0xff00e5ff;
+            fillCol = stripLocked ? (warnOrange ? 0xc0180f08 : 0xbb0b1319) : (warnOrange ? 0xf4180f08 : 0xf20b1319);
+            badgeBg = warnOrange ? 0xffff7a00 : 0xff00e5ff;
+            badgeFg = 0xff0b0d11;
+            badgeText = leakCumulative
+                ? String.format(Locale.US, "R1-%02d", curRound)
+                : String.format(Locale.US, "R%02d", leakSelectedRound);
+            titleText = leakCumulative
+                ? String.format(Locale.US, "累计 漏%d · 兜%d%s", activeLeakSnap.totalLeaks, activeLeakSnap.totalAssisted,
+                    activeLeakSnap.totalEscaped > 0 ? (" · 逃" + activeLeakSnap.totalEscaped) : "")
+                : String.format(Locale.US, "单回合 漏%d · 兜%d%s", activeLeakSnap.totalLeaks, activeLeakSnap.totalAssisted,
+                    activeLeakSnap.totalEscaped > 0 ? (" · 逃" + activeLeakSnap.totalEscaped) : "");
+        } else if (!hasComp && !vpnRunning) {
             borderCol = 0xff64748b;
             badgeBg = 0xff334155;
             badgeFg = 0xffe2e8f0;
             badgeText = "PRTS";
-            pillText = "待选方案";
-            pillBg = 0x2294a3b8; pillFg = 0xffcbd5e1; pillStroke = 0x5594a3b8;
-        } else if (stripFallbackMode || hasLiveLeak) {
-            borderCol = 0xffff7a00;
-            fillCol = stripLocked ? 0xc0180f08 : 0xf5180f08;
-            badgeBg = 0xffff7a00;
-            badgeFg = 0xff0b0d11;
-            badgeText = pendingRound > 0 ? String.format("R%02d·兜底", pendingRound) : "漏怪兜底";
-            pillText = hasLiveLeak ? "实时漏怪" : "应急止损";
-            pillBg = 0x33ff7a00; pillFg = 0xfffdba74; pillStroke = 0x88ff7a00;
-        } else if (isBoss) {
-            borderCol = 0xffff4d4f;
-            fillCol = stripLocked ? 0xc0180a0d : 0xf5180a0d;
-            badgeBg = 0xffff4d4f;
-            badgeFg = 0xffffffff;
-            badgeText = pendingRound > 0 ? String.format("R%02d·BOSS", pendingRound) : "BOSS";
-            pillText = "决战终局";
-            pillBg = 0x33ff4d4f; pillFg = 0xfffca5a5; pillStroke = 0x88ff4d4f;
+            titleText = "等待选择本局阵容";
         } else if (hasBanWarn) {
             borderCol = 0xfff59e0b;
             badgeBg = 0xfff59e0b;
             badgeFg = 0xff0b0d11;
-            badgeText = pendingRound > 0
-                ? (pendingTier > 0 ? String.format("R%02d·%d本", pendingRound, pendingTier) : String.format("R%02d", pendingRound))
-                : "受限";
-            pillText = "⚠ " + pendingBanWarning;
-            pillBg = 0x2af59e0b; pillFg = 0xfffcd34d; pillStroke = 0x77f59e0b;
+            badgeText = pendingTier > 0 ? String.format(Locale.US, "R%02d·%d本", curRound, pendingTier) : String.format(Locale.US, "R%02d", curRound);
+            titleText = pendingHeadline;
         } else if (isUpgrade) {
             borderCol = 0xff00e5ff;
             badgeBg = 0xff00e5ff;
             badgeFg = 0xff0b0d11;
-            badgeText = String.format("R%02d·↑升%d本", pendingRound, pendingTier);
-            pillText = "⚡升本点";
-            pillBg = 0x2600e5ff; pillFg = 0xff67e8f9; pillStroke = 0x7700e5ff;
+            badgeText = String.format(Locale.US, "R%02d·↑升%d本", curRound, pendingTier);
+            titleText = pendingHeadline;
         } else {
-            badgeText = pendingRound > 0
-                ? (pendingTier > 0 ? String.format("R%02d·%d本", pendingRound, pendingTier) : String.format("R%02d", pendingRound))
-                : "PRTS";
-            if (liveVpnRunning) {
-                if (!hasComp && liveBanCount >= 0) {
-                    pillText = "✓ 已自动同步 " + liveBanCount + " Ban";
-                } else {
-                    pillText = liveSelfHp >= 0 ? ("抓包 · HP " + liveSelfHp) : "抓包中";
-                }
-            }
+            badgeText = pendingTier > 0 ? String.format(Locale.US, "R%02d·%d本", curRound, pendingTier) : String.format(Locale.US, "R%02d", curRound);
+            titleText = hasComp ? pendingHeadline : (snap != null && snap.banCount >= 0 ? "已同步禁选 · 点展开选阵" : "本机实时抓包运行中");
         }
 
         if (stripLocked) {
@@ -796,88 +1432,21 @@ public class OverlayService extends Service {
         stripRoundBadge.setText(badgeText);
         stripRoundBadge.setTextColor(badgeFg);
         stripRoundBadge.setBackground(background(badgeBg, 2, badgeBg));
+        stripTitleView.setText(stripLocked ? (titleText + " · 穿透") : titleText);
 
-        String title = hasComp ? pendingHeadline : (liveVpnRunning ? (liveBanCount >= 0 ? "已抓本局禁选 · 点展开选阵" : "本机抓包运行中") : "等待选择本局阵容");
-        stripTitleView.setText(stripLocked ? (title + " · 已穿透") : title);
-        stylePill(pillText, pillBg, pillFg, pillStroke);
+        // 3. 切换并渲染当前激活主体视图
+        guideContainer.setVisibility(inGuide ? View.VISIBLE : View.GONE);
+        leakContainer.setVisibility(inLeak ? View.VISIBLE : View.GONE);
+        dpsContainer.setVisibility(inDps ? View.VISIBLE : View.GONE);
 
-        // 3. 中栏焦点条与底栏正文（2~3 行完整显示，绝不强行截成 1 行）
-        String progRight = !pendingProgress.isEmpty() ? pendingProgress : (liveSelfHp >= 0 ? ("HP " + liveSelfHp) : "");
-        int progCol = progRight.contains("齐牌") ? 0xff34d399 : 0xffffe600;
-
-        if (!hasComp && !liveVpnRunning) {
-            setFocusStrip(false, 0, 0, "", "", "", 0);
-            stripBodyView.setText("打开游戏「确认本局信息」后点「扫盟约」（或双击悬浮球），读全 26 项自动推荐最优路线；也可点主页开启「本机实时抓包」自动同步。");
-        } else if (stripFallbackMode) {
-            String stopKey = hasLiveLeak ? "漏怪兜底" : "应急止损";
-            String stopVal = hasLiveLeak
-                ? liveLeakText
-                : "优先抓快活(砾)拦漏 / 高挡重装或奶盾 · 场上对子先合精锐";
-            setFocusStrip(true, 0x1cff7a00, 0xfffb923c, stopKey, stopVal, progRight, progCol);
-            String advice = !pendingFallbackAdvice.isEmpty()
-                ? pendingFallbackAdvice
-                : "①停升本把钱D完提即时战力 ②散件装备立即全穿上不留备战席 ③主核卡死时转副核保血稳前四（再点「回常规」恢复）";
-            stripBodyView.setText(advice);
-        } else if (hasLiveLeak) {
-            setFocusStrip(true, 0x1cff7a00, 0xfffb923c, "漏怪兜底", liveLeakText, liveSelfHp >= 0 ? ("HP " + liveSelfHp) : progRight, 0xfffdba74);
-            StringBuilder body = new StringBuilder();
-            if (hasLiveSpawn) {
-                body.append("下回合(R").append(liveForecastRound).append(")：").append(liveForecastText);
-                if (!pendingDetail.isEmpty()) body.append("\n").append(pendingDetail);
-            } else if (!pendingDetail.isEmpty()) {
-                body.append(pendingDetail);
-            } else {
-                body.append("本回合已出现漏怪，可点右上角「兜底」查看本阵容应急止损方案。");
-            }
-            stripBodyView.setText(body.toString());
-        } else if (isBoss) {
-            String bossVal;
-            if (liveVpnRunning && (liveBossHp > 0 || liveBossDamage > 0)) {
-                StringBuilder bs = new StringBuilder();
-                if (liveBossHp > 0) bs.append("Boss血 ").append(liveBossHp);
-                if (liveBossDamage > 0) {
-                    if (bs.length() > 0) bs.append(" · ");
-                    bs.append("总伤 ").append(liveBossDamage);
-                }
-                if (!pendingLoadoutHint.isEmpty()) bs.append("｜").append(pendingLoadoutHint);
-                bossVal = bs.toString();
-            } else if (!pendingLoadoutHint.isEmpty()) {
-                bossVal = pendingLoadoutHint;
-            } else {
-                bossVal = "核装全穿 · 留快活防突袭漏怪 · 余钱全 D 追精锐";
-            }
-            setFocusStrip(true, 0x1cff4d4f, 0xffff7875, "决战核装", bossVal, progRight, progCol);
-            stripBodyView.setText(!pendingDetail.isEmpty() ? pendingDetail : "Boss 终局决战：按站位图对准主轴开启主 C 爆发，备战席留快活防漏。");
-        } else if (hasLiveSpawn) {
-            String fcLabel = (liveForecastRound > pendingRound)
-                ? ("下回合 R" + String.format("%02d", liveForecastRound))
-                : ("本回合 R" + String.format("%02d", liveForecastRound));
-            setFocusStrip(true, 0x1a00e5ff, 0xff00e5ff, fcLabel, liveForecastText, progRight, progCol);
-            StringBuilder body = new StringBuilder();
-            if (!pendingGrabHint.isEmpty()) body.append("抓：").append(pendingGrabHint).append(" ｜ ");
-            if (!pendingDetail.isEmpty()) body.append(pendingDetail);
-            else body.append("实时抓包已同步，进战斗后自动更新漏怪与协防兜底数。");
-            stripBodyView.setText(body.toString());
-        } else if (hasBanWarn) {
-            String val = "精准".equals(pendingBanWarning) || !pendingGrabHint.isEmpty()
-                ? (pendingBanWarning + " → 缺：" + (pendingGrabHint.isEmpty() ? "看阵容页" : pendingGrabHint))
-                : pendingBanWarning;
-            setFocusStrip(true, 0x1af59e0b, 0xfffbbf24, "受限替换", val, progRight, progCol);
-            stripBodyView.setText(!pendingDetail.isEmpty() ? pendingDetail : "当前阵容存在受限盟约，请优先核对替换组件与备选路线。");
-        } else {
-            boolean showFocus = !pendingGrabHint.isEmpty() || !progRight.isEmpty();
-            setFocusStrip(
-                showFocus, 0x14ffffff, isUpgrade ? 0xff00e5ff : 0xff00e5ff,
-                isUpgrade ? "追核" : "抓牌",
-                !pendingGrabHint.isEmpty() ? pendingGrabHint : "本阶段核心已齐 · 追精锐",
-                progRight, progCol
-            );
-            stripBodyView.setText(!pendingDetail.isEmpty()
-                ? pendingDetail
-                : "可点 ◀ ▶ 切回合、点「兜底」看应急止损或点「穿透」锁定防误触");
+        if (inGuide) {
+            renderGuideBody(snap, hasComp, vpnRunning, isUpgrade, hasBanWarn, curRound);
+        } else if (inLeak && activeLeakSnap != null) {
+            renderLeakBody(activeLeakSnap, vpnRunning);
+        } else if (inDps && activeBossSnap != null) {
+            renderDpsBody(activeBossSnap);
         }
 
-        stripBodyView.setMaxLines(stripBodyCompact ? 1 : 4);
         if (stripMode && strip.isAttachedToWindow()) {
             try {
                 manager.updateViewLayout(strip, stripParams);
@@ -915,7 +1484,7 @@ public class OverlayService extends Service {
         stripParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
             | (locked ? WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE : 0);
-        stripParams.alpha = locked ? 0.80f : 0.96f;
+        stripParams.alpha = locked ? 0.82f : 0.96f;
         stripActions.setVisibility(locked ? View.GONE : View.VISIBLE);
         refreshStripAndBallContent();
         try {
@@ -936,7 +1505,6 @@ public class OverlayService extends Service {
         panel.setBackground(background(0xff0b0d11, 6, 0xff252d3a));
         panel.setPadding(dp(1), dp(1), dp(1), dp(1));
         panel.setElevation(dp(10));
-        // 核心修复：默认 FLAG_NOT_FOCUSABLE，展开面板时底层游戏绝不失焦、窗外点击 100% 直达游戏！
         panelParams = params(1, 1, false, true);
         panelParams.alpha = ALPHA_LEVELS[alphaIndex];
         sizePanel();
@@ -1033,8 +1601,8 @@ public class OverlayService extends Service {
     }
 
     private void clamp(WindowManager.LayoutParams params) {
-        int w = params.width > 0 ? params.width : dp(320);
-        int h = params.height > 0 ? params.height : (params == stripParams && strip != null && strip.getHeight() > 0 ? strip.getHeight() : dp(84));
+        int w = params.width > 0 ? params.width : dp(340);
+        int h = params.height > 0 ? params.height : (params == stripParams && strip != null && strip.getHeight() > 0 ? strip.getHeight() : dp(104));
         params.x = Math.max(0, Math.min(params.x, Math.max(0, usableWidth - w)));
         params.y = Math.max(0, Math.min(params.y, Math.max(0, usableHeight - h)));
     }
@@ -1058,7 +1626,6 @@ public class OverlayService extends Service {
         }
         sizePanel();
         if (firstAttach || !expanded) {
-            // 横屏默认靠右侧贴边展开，留出左侧与中央主战场
             panelParams.x = ballParams != null && ballParams.x < usableWidth / 3 ? dp(6) : Math.max(dp(6), usableWidth - panelParams.width - dp(6));
             panelParams.y = dp(6);
             clamp(panelParams);

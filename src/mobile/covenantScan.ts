@@ -12,7 +12,7 @@ export interface CovenantScan {
   missingCovenants: string[];
 }
 declare global {
-  interface Window { PRTSScan?: { start(): void; stop(): void; reset(): void; getState(): string } }
+  interface Window { PRTSScan?: { start(): void; stop(): void; reset(): void; getState(): string; isProjectionReady?(): boolean } }
 }
 
 export function parseCovenantScan(raw: string): CovenantScan | null {

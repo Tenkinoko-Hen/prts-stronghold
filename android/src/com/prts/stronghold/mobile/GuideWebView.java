@@ -4,18 +4,21 @@ package com.prts.stronghold.mobile;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
-import android.net.Uri;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import org.json.JSONArray;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 final class GuideWebView {
@@ -29,7 +32,7 @@ final class GuideWebView {
     @SuppressLint("SetJavaScriptEnabled")
     static WebView create(Context context, boolean overlay) {
         WebView view = new WebView(context);
-        view.setBackgroundColor(0xff0c141b);
+        view.setBackgroundColor(0xff0b0d11);
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -47,6 +50,7 @@ final class GuideWebView {
         view.addJavascriptInterface(new ReportFiles.Bridge(context), "PRTSFiles");
         if (context.getResources().getBoolean(R.bool.covenant_scan_enabled)) {
             view.addJavascriptInterface(new ScanBridge(context.getApplicationContext()), "PRTSScan");
+            view.addJavascriptInterface(new ShopBridge(context.getApplicationContext()), "PRTSShop");
         }
         view.addJavascriptInterface(new RoundBridge(context.getApplicationContext()), "PRTSRound");
         view.addJavascriptInterface(new LanSyncBridge(context.getApplicationContext()), "PRTSLan");
@@ -76,29 +80,38 @@ final class GuideWebView {
     private static final class ScanBridge {
         private final Context context;
         private final Handler main = new Handler(Looper.getMainLooper());
-        ScanBridge(Context context) { this.context=context; }
+        ScanBridge(Context context) { this.context = context; }
         @JavascriptInterface public String getState() { return CovenantScanState.json(); }
+        @JavascriptInterface public boolean isProjectionReady() { return CovenantScanService.hasActiveProjection(); }
         @JavascriptInterface public void start() {
             main.post(() -> {
                 if (CovenantScanState.permissionPending() || CovenantScanState.scanning()) return;
-                CovenantScanService.stopActive();
                 RoundScanState.stop("已切换到盟约识别");
                 if (!CovenantScanState.begin()) return;
+                String id = CovenantScanState.currentId();
+                // 已有同局授权时直接复用，不再二次弹窗
+                if (CovenantScanService.switchToCovenant(id)) return;
                 OverlayService.hideForScan();
-                try { context.startActivity(new Intent(context,CapturePermissionActivity.class).putExtra("scanId",CovenantScanState.currentId()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)); }
-                catch (RuntimeException error) { CovenantScanState.set("error","无法打开截屏授权，请从应用内重新启动识别"); OverlayService.showAfterScan(); }
+                try {
+                    context.startActivity(new Intent(context, CapturePermissionActivity.class)
+                        .putExtra("scanId", id)
+                        .putExtra("mode", "covenant")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS));
+                } catch (RuntimeException error) {
+                    CovenantScanState.set("error", "无法打开截屏授权，请从应用内重新启动识别");
+                    OverlayService.showAfterScan();
+                }
             });
         }
         @JavascriptInterface public void stop() {
-            if (CovenantScanState.permissionPending()) CovenantScanState.set("cancelled","已取消本次识别");
-            main.post(() -> {
-                context.stopService(new Intent(context,CovenantScanService.class));
-            });
+            if (CovenantScanState.permissionPending()) CovenantScanState.set("cancelled", "已取消本次识别");
+            main.post(CovenantScanService::stopActive);
         }
         @JavascriptInterface public void reset() {
             CovenantScanState.reset();
             RoundScanState.reset();
-            main.post(() -> context.stopService(new Intent(context,CovenantScanService.class)));
+            ShopScanState.reset();
+            main.post(() -> context.stopService(new Intent(context, CovenantScanService.class)));
         }
     }
 
@@ -108,34 +121,101 @@ final class GuideWebView {
         RoundBridge(Context context) { this.context = context; }
         @JavascriptInterface public String getState() { return RoundScanState.json(); }
         @JavascriptInterface public String getPreview() { return RoundScanState.preview(); }
+        @JavascriptInterface public boolean isProjectionReady() { return CovenantScanService.hasActiveProjection(); }
         @JavascriptInterface public void start() {
             main.post(() -> {
                 if (RoundScanState.is("permission") || RoundScanState.is("capturing") || RoundScanState.is("calibrating") || RoundScanState.is("scanning")) return;
-                CovenantScanService.stopActive();
                 if (CovenantScanState.permissionPending()) CovenantScanState.set("cancelled", "已切换到回合同步");
                 String id = RoundScanState.begin();
+                // 复用开局盟约已授权的 MediaProjection，零二次弹窗！
+                if (CovenantScanService.switchToRound(id)) return;
                 OverlayService.hideForRound();
-                try { context.startActivity(new Intent(context, CapturePermissionActivity.class).putExtra("scanId", id).putExtra("roundMode", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)); }
-                catch (RuntimeException error) { RoundScanState.stop("无法打开截屏授权，请重试"); OverlayService.showAfterScan(); }
+                try {
+                    context.startActivity(new Intent(context, CapturePermissionActivity.class)
+                        .putExtra("scanId", id)
+                        .putExtra("mode", "round")
+                        .putExtra("roundMode", true)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS));
+                } catch (RuntimeException error) {
+                    RoundScanState.stop("无法打开截屏授权，请重试");
+                    OverlayService.showAfterScan();
+                }
             });
         }
         @JavascriptInterface public void setRegion(double left, double top, double right, double bottom) {
-            main.post(() -> { if (RoundScanState.select(left, top, right, bottom)) OverlayService.hideForRound(); });
+            main.post(() -> {
+                if (RoundScanState.select(left, top, right, bottom)) {
+                    // 若面板不遮挡框选区则不必收起面板，保留用户顺畅查阅体验
+                    if (OverlayService.overlapsNormalizedRect(RoundScanState.region())) {
+                        OverlayService.hideForRound();
+                    }
+                }
+            });
         }
         @JavascriptInterface public void pause() { RoundScanState.pause(); }
         @JavascriptInterface public void resume() { RoundScanState.resume(); }
         @JavascriptInterface public void stop() {
             RoundScanState.stop("回合同步已停止");
-            main.post(() -> { if (CovenantScanService.isRoundMode()) CovenantScanService.stopActive(); });
+            main.post(CovenantScanService::stopRoundKeepProjection);
+        }
+    }
+
+    private static final class ShopBridge {
+        private final Context context;
+        private final Handler main = new Handler(Looper.getMainLooper());
+        ShopBridge(Context context) { this.context = context; }
+        @JavascriptInterface public String getState() { return ShopScanState.json(); }
+        @JavascriptInterface public boolean isProjectionReady() { return CovenantScanService.hasActiveProjection(); }
+        @JavascriptInterface public void reset() { ShopScanState.reset(); }
+        @JavascriptInterface public void scan(String catalogJson, String targetsJson) {
+            List<String> catalog = parseStringArray(catalogJson, 220);
+            List<String> targets = parseStringArray(targetsJson, 60);
+            main.post(() -> {
+                String id = ShopScanState.begin(catalog, targets);
+                boolean hideBriefly = OverlayService.isExpanded();
+                if (CovenantScanService.switchToShop(id, hideBriefly)) return;
+                if (hideBriefly) OverlayService.hideForScan();
+                try {
+                    context.startActivity(new Intent(context, CapturePermissionActivity.class)
+                        .putExtra("scanId", id)
+                        .putExtra("mode", "shop")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS));
+                } catch (RuntimeException error) {
+                    ShopScanState.fail("无法打开截屏授权，请重试");
+                    OverlayService.showAfterScan();
+                }
+            });
+        }
+
+        private static List<String> parseStringArray(String raw, int max) {
+            List<String> out = new ArrayList<>();
+            if (raw == null || raw.isEmpty()) return out;
+            try {
+                JSONArray arr = new JSONArray(raw);
+                for (int i = 0; i < Math.min(arr.length(), max); i++) {
+                    String s = arr.optString(i, "").trim();
+                    if (!s.isEmpty()) out.add(s);
+                }
+            } catch (Exception ignored) {}
+            return out;
         }
     }
 
     private static final class OverlayBridge {
         @JavascriptInterface public void updateStrip(int round, String headline, String detail) {
-            OverlayService.updateStripFromBridge(round, headline, detail);
+            OverlayService.updateStripFromBridge(round, 0, headline, "", detail);
+        }
+        @JavascriptInterface public void updateStripFull(int round, int tier, String headline, String grabHint, String detail) {
+            OverlayService.updateStripFromBridge(round, tier, headline, grabHint, detail);
         }
         @JavascriptInterface public void enterStrip(boolean locked) {
             OverlayService.enterStripFromBridge(locked);
+        }
+        @JavascriptInterface public void setFocusable(boolean focusable) {
+            OverlayService.setPanelFocusableFromBridge(focusable);
+        }
+        @JavascriptInterface public void stopScreenShare() {
+            CovenantScanService.stopActive();
         }
     }
 

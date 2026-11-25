@@ -6,6 +6,7 @@ import { calculateStackingProjection } from '../utils/tacticalLogic';
 import { BossRoutes } from '../components/BossRoutes';
 import { AegirReferenceButton, AegirReferenceGallery } from '../components/AegirReferenceGallery';
 import { MobileDpsEstimator } from './MobileDpsEstimator';
+import { MobileOddsTool } from './MobileOddsTool';
 
 export function MobileReference({ onOpenImage }: { onOpenImage: (url: string, title: string) => void }) {
   const [tab, setTab] = useState('原图');
@@ -28,7 +29,8 @@ export function MobileReference({ onOpenImage }: { onOpenImage: (url: string, ti
 
   return <div className={`m-reference ${tab === 'Boss资料' || tab === '阿戈尔站位' ? 'is-tactical-reference' : ''}`}>
     <div className="m-section-heading"><div><span className="m-eyebrow">REFERENCE / 随时查阅</span><h1>资料手册</h1></div></div>
-    <div className="m-chips">{['原图', '阿戈尔站位', 'Boss资料', '站位', '盟约', '转职', '叠层', '折损推演'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => { setTab(label); setQuery(''); }}>{label}</button>)}</div>
+    <div className="m-chips">{['原图', '搜牌概率', '阿戈尔站位', 'Boss资料', '站位', '盟约', '转职', '叠层', '折损推演'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => { setTab(label); setQuery(''); }}>{label}</button>)}</div>
+    {tab === '搜牌概率' && <MobileOddsTool />}
     {tab === 'Boss资料' && <BossRoutes onOpenImage={onOpenImage} />}
     {tab === '阿戈尔站位' && <AegirReferenceGallery />}
     {tab === '折损推演' && <MobileDpsEstimator />}

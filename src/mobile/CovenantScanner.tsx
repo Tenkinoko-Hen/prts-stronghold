@@ -24,7 +24,7 @@ export function useCovenantScanner(appliedId: string | undefined, onApply: (scan
       const result = read();
       if (result?.status === 'ready' && result.id && result.id !== appliedId) onApply(result);
     };
-    poll(); const timer = window.setInterval(poll, 700);
+    poll(); const timer = window.setInterval(poll, 320);
     return () => window.clearInterval(timer);
   }, [native, read, appliedId, onApply]);
   const control = (action: 'start' | 'stop') => {
@@ -35,15 +35,30 @@ export function useCovenantScanner(appliedId: string | undefined, onApply: (scan
     const current = read();
     if (current?.id === id && current.status === 'incomplete') onApply(current);
   };
-  return { scan, error, control, applyPartial, available: Boolean(native) };
+  return {
+    scan,
+    error,
+    control,
+    applyPartial,
+    available: Boolean(native),
+    projectionReady: Boolean(native?.isProjectionReady?.()),
+  };
 }
 
 export function CovenantScanner({ appliedId, scanner }: { appliedId?: string; scanner: ReturnType<typeof useCovenantScanner> }) {
-  const { scan, error, control, applyPartial, available } = scanner;
+  const { scan, error, control, applyPartial, available, projectionReady } = scanner;
   const running = scan?.status === 'scanning' || scan?.status === 'permission';
   return <section className="m-card m-scan-card">
-    <div className="m-scan-toolbar"><span>{running ? `识别中 · ${scan?.seenCovenants.length || 0}/26` : appliedId ? '本局盟约' : '打开游戏盟约总览'}</span><button className={appliedId ? 'm-secondary' : 'm-primary'} disabled={!available || running} onClick={() => control('start')}><ScanLine size={16} /> {running ? '正在识别' : appliedId ? '重新识别' : '识别盟约'}</button>
-    {running && <button className="m-secondary" onClick={() => control('stop')}><Square size={16} /> 停止</button>}</div>
+    <div className="m-scan-toolbar">
+      <span>
+        {running ? `识别中 · ${scan?.seenCovenants.length || 0}/26` : appliedId ? '本局盟约' : '打开游戏盟约总览'}
+        {projectionReady && !running && <em className="m-proj-badge">本局已授权</em>}
+      </span>
+      <div className="m-scan-actions">
+        <button className={appliedId ? 'm-secondary' : 'm-primary'} disabled={!available || running} onClick={() => control('start')}><ScanLine size={15} /> {running ? '识别中' : appliedId ? '重扫' : '识别盟约'}</button>
+        {running && <button className="m-secondary" onClick={() => control('stop')}><Square size={14} /> 停止</button>}
+      </div>
+    </div>
     {error && <p className="m-warning" role="alert">{error}</p>}
     {scan && scan.status !== 'idle' && scan.id !== appliedId && <div role="status" aria-live="polite">
       <p className="m-highlight">{scan.message}</p>

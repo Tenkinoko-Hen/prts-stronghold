@@ -41,7 +41,10 @@ declare global {
     };
     PRTSOverlay?: {
       updateStrip(round: number, headline: string, detail: string): void;
+      updateStripFull?(round: number, tier: number, headline: string, grabHint: string, detail: string): void;
       enterStrip(locked: boolean): void;
+      setFocusable?(focusable: boolean): void;
+      stopScreenShare?(): void;
     };
     PRTSDisplay?: {
       setSecondScreenMode(enabled: boolean): void;

@@ -16,6 +16,7 @@ final class RoundScanState {
         set("permission", "请允许本次屏幕共享，然后框选游戏回合数字"); return id;
     }
     static synchronized boolean matches(String token) { return !id.isEmpty() && id.equals(token); }
+    static synchronized String currentId() { return id; }
     static synchronized boolean is(String value) { return status.equals(value); }
     static synchronized void set(String value, String detail) { status = value; message = detail; }
     static synchronized String preview() { return preview; }

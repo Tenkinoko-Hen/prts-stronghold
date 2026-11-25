@@ -11,6 +11,7 @@ declare global {
   interface Window { PRTSRound?: {
     start(): void; stop(): void; pause(): void; resume(): void;
     getState(): string; getPreview(): string; setRegion(left: number, top: number, right: number, bottom: number): void;
+    isProjectionReady?(): boolean;
   } }
 }
 
@@ -57,11 +58,11 @@ export function RoundSync({ round, progress, onRound }: { round: number; progres
     <button className="m-auto-round" data-pending={pending !== null} aria-label="回合自动同步设置" title="回合自动同步设置" onClick={() => setMenu(true)}><ScanLine size={14} /><span>{pending ? `识别 R${pending}` : scan?.status === 'paused' ? '同步已暂停' : scan?.status === 'scanning' ? '自动回合' : '回合同步'}</span></button>
     {menu && !preview && <div className="m-modal-backdrop" onClick={() => setMenu(false)}><section className="m-confirm" role="dialog" aria-modal="true" aria-label="回合自动同步" onClick={e => e.stopPropagation()}>
       <button className="m-icon-button m-close" aria-label="关闭同步设置" onClick={() => setMenu(false)}><X size={18} /></button><h2>回合自动同步</h2>
-      <p>在游戏对局中开启，框选只含回合数字的小区域。收起助手时每两秒检查一次，连续三次一致才更新；展开攻略时暂停采集，避免读到助手文字。</p>
-      <p className="m-muted">{scan?.message || '需要重新允许系统屏幕共享，随时可停止。'}</p>
+      <p>在游戏对局中开启，框选只含回合数字的小区域。每 0.9 秒低耗检测一次，连续三次一致即同步；侧边抽屉不遮挡回合区时展开也能实时跟进。</p>
+      <p className="m-muted">{scan?.message || (native?.isProjectionReady?.() ? '已复用开局盟约授权，无需二次弹窗，直接框选即可开启。' : '需要允许一次系统屏幕共享，同局内可复用给商店速查。')}</p>
       {pending && <button className="m-primary m-wide" onClick={() => { onRound(pending); setPending(null); setMenu(false); }}>确认同步到 R{pending}</button>}
-      {enabled ? <div className="m-two-buttons"><button className="m-secondary" onClick={close}>停止共享</button>{scan.status === 'paused' && <button className="m-primary" onClick={() => { native?.resume(); setMenu(false); }}>继续自动跟进</button>}</div>
-        : <button className="m-primary m-wide" disabled={!native} onClick={() => { setRegion(null); native?.start(); setMenu(false); }}>开启并框选回合</button>}
+      {enabled ? <div className="m-two-buttons"><button className="m-secondary" onClick={close}>停止同步</button>{scan.status === 'paused' && <button className="m-primary" onClick={() => { native?.resume(); setMenu(false); }}>继续自动跟进</button>}</div>
+        : <button className="m-primary m-wide" disabled={!native} onClick={() => { setRegion(null); native?.start(); setMenu(false); }}>{native?.isProjectionReady?.() ? '免授权直接框选回合' : '开启并框选回合'}</button>}
       {!native && <small>自动截屏仅在 Android 安装版可用。</small>}
     </section></div>}
     {preview && <div className="m-modal-backdrop m-calibration"><section className="m-confirm" role="dialog" aria-modal="true" aria-label="框选游戏回合数字"><header><strong>框住游戏回合数字，避开计时和金币</strong><button className="m-icon-button" aria-label="取消回合识别" onClick={close}><X size={18} /></button></header>

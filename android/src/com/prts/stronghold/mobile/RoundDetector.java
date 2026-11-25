@@ -33,7 +33,8 @@ final class RoundDetector {
         if (value == 0) { reset(); return 0; }
         if (candidate != value) { candidate = value; votes = 1; since = now; return 0; }
         votes++;
-        return votes >= 3 && now - since >= 3500 ? value : 0;
+        // 连续 3 帧一致且跨度 >= 1.6s（900ms 采样下约 1.8~2.2s 即可响应，仍保持防抖）
+        return votes >= 3 && now - since >= 1600 ? value : 0;
     }
 
     void reset() { candidate = 0; votes = 0; since = 0; }

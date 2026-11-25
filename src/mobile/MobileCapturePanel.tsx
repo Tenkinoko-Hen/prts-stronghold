@@ -39,8 +39,67 @@ export interface MobileCaptureLeak {
   totalLeaks: number;
   assistKills: number;
   uncoveredLeaks: number;
+  cumLeaks?: number;
+  cumAssisted?: number;
+  cumEscaped?: number;
   summary: string;
   enemies: MobileCaptureEnemy[];
+}
+
+export interface MobileCaptureSeat {
+  seat: number;
+  name: string;
+  isSelf: boolean;
+  hp: number;
+  shopLevel: number;
+  leaked: number;
+  assisted: number;
+  covered: number;
+  escaped: number;
+}
+
+export interface MobileCaptureRoundSummary {
+  round: number;
+  totalLeaks: number;
+  totalAssisted: number;
+  totalEscaped: number;
+  seats: Array<{ seat: number; leaked: number; assisted: number; covered: number; escaped: number }>;
+  enemies: MobileCaptureEnemy[];
+}
+
+export interface MobileCaptureBoss {
+  enemyId: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  hpPct: number;
+  teamDamage: number;
+  teamDps: number;
+  elapsedSec: number;
+  players: Array<{
+    rank: number;
+    seat: number;
+    name: string;
+    isSelf: boolean;
+    damage: number;
+    dps: number;
+    sharePct: number;
+  }>;
+}
+
+export interface MobileCaptureLogEntry {
+  seq: number;
+  ts: number;
+  round: number;
+  kind: 'match' | 'assist' | 'escape' | 'leak' | 'tier' | 'boss' | string;
+  actorSeat: number;
+  actorName: string;
+  targetSeat: number;
+  targetName: string;
+  enemyId: string;
+  enemyName: string;
+  count: number;
+  detail: string;
 }
 
 export interface MobileCaptureWave {
@@ -68,6 +127,11 @@ export interface MobileCaptureState {
   forecastText: string;
   allWaves?: MobileCaptureWave[];
   shopLevels?: Record<string, number>;
+  seats?: MobileCaptureSeat[];
+  rounds?: MobileCaptureRoundSummary[];
+  boss?: MobileCaptureBoss;
+  logSeq?: number;
+  logs?: MobileCaptureLogEntry[];
   leak: MobileCaptureLeak;
   updatedAt: number;
 }
@@ -91,11 +155,15 @@ export function useMobileCaptureSync(
   const bridge = window.PRTSCapture;
   const [capture, setCapture] = useState<MobileCaptureState | null>(null);
   const lastSyncKey = useRef('');
+  const lastStateFingerprint = useRef('');
 
   const poll = useCallback(() => {
     if (!bridge) return;
     try {
-      const next = JSON.parse(bridge.getState()) as MobileCaptureState;
+      const raw = bridge.getState();
+      if (raw === lastStateFingerprint.current) return;
+      lastStateFingerprint.current = raw;
+      const next = JSON.parse(raw) as MobileCaptureState;
       setCapture(next);
       if (onAutoSync && next.running && (next.bansConfirmed || next.bannedCovenants?.length > 0 || next.round > 0)) {
         const key = `${next.matchSerial}|${next.bansConfirmed ? 1 : 0}|${next.round}|${(next.bannedCovenants || []).join(',')}`;
@@ -117,7 +185,7 @@ export function useMobileCaptureSync(
   useEffect(() => {
     if (!bridge) return;
     poll();
-    const timer = window.setInterval(poll, 900);
+    const timer = window.setInterval(poll, 350);
     return () => window.clearInterval(timer);
   }, [bridge, poll]);
 

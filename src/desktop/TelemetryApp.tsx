@@ -242,7 +242,7 @@ export default function TelemetryApp({
 
   const statusTone = replay
     ? 'replay'
-    : npcapInstalled === false
+    : npcapInstalled === false || restarting
       ? 'warn'
       : liveView
         ? 'live'
@@ -254,11 +254,13 @@ export default function TelemetryApp({
     ? '回放'
     : npcapInstalled === false
       ? '未装 Npcap'
-      : liveView
-        ? `${clientSource === 'mumu' ? 'MuMu · ' : ''}${liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中'}`
-        : clientSource === 'mumu'
-          ? (['waiting', 'connecting', 'listening'].includes(status) ? 'MuMu · 待进局' : `MuMu · ${SHORT_STATUS[status]}`)
-          : SHORT_STATUS[status];
+      : restarting
+        ? '自动重连中…'
+        : liveView
+          ? `${clientSource === 'mumu' ? 'MuMu · ' : ''}${liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中'}`
+          : clientSource === 'mumu'
+            ? (['waiting', 'connecting', 'listening'].includes(status) ? 'MuMu · 待进局' : `MuMu · ${SHORT_STATUS[status]}`)
+            : SHORT_STATUS[status];
 
   const openRecord = (recordKey: string | null) => {
     setOpenedKey(recordKey);

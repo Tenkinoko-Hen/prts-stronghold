@@ -130,7 +130,7 @@ export function LiteCockpitView({
     ?? Object.values(report?.lineups ?? {}).find(l => l.shopLevel)?.shopLevel
     ?? 1;
 
-  // 1. Seat summaries for the top 4-seat strip
+  // 1. Seat summaries for the top 4-seat strip (dual-track 兜 / 漏 bars, aligned with HUD & Mobile)
   const seatCards = useMemo(() => {
     if (!report) return [];
     const seats = solo ? ([1] as const) : REPORT_SEATS;
@@ -140,15 +140,24 @@ export function LiteCockpitView({
       const elim = report.eliminated[s];
       let leaks = 0;
       let assists = 0;
+      let escaped = 0;
       for (const r of report.rounds) {
         if (elim !== undefined && r.number > elim) continue;
         const [lk, as] = roundMetrics(r, s, report.self);
-        leaks += lk?.value ?? 0;
+        const rLeak = lk?.value ?? 0;
+        const rEsc = Math.min(rLeak, r.uncoveredLeaks[s] ?? 0);
+        leaks += rLeak;
+        escaped += rEsc;
         assists += as?.value ?? 0;
       }
-      return { seat: s, lineup, hp, elim, leaks, assists };
+      const covered = Math.max(0, leaks - escaped);
+      return { seat: s, lineup, hp, elim, leaks, covered, escaped, assists };
     });
   }, [report, solo]);
+  const maxSeatMetric = useMemo(
+    () => Math.max(1, ...seatCards.map(c => Math.max(c.leaks, c.assists))),
+    [seatCards],
+  );
 
   // 2. Current & next wave spawn preview
   const waveInfo = useMemo(() => {
@@ -370,12 +379,15 @@ export function LiteCockpitView({
 
   return (
     <div className="lite-cockpit">
-      {/* Row 1: 4-Seat Telemetry Ribbon */}
+      {/* Row 1: 4-Seat Telemetry Ribbon (Dual-Track 兜 / 漏 Bars + HP + Shop Tier) */}
       <section className="lite-seats-strip" data-solo={solo} aria-label="四席实时态势">
-        {seatCards.map(({ seat: s, lineup, hp, elim, leaks, assists }) => {
+        {seatCards.map(({ seat: s, lineup, hp, elim, leaks, covered, escaped, assists }) => {
           const isSelf = report.self === s;
           const isFocus = focusSeat === s;
           const eliminated = elim !== undefined;
+          const assistPct = (assists / maxSeatMetric) * 100;
+          const coveredPct = (covered / maxSeatMetric) * 100;
+          const escapedPct = (escaped / maxSeatMetric) * 100;
           return (
             <button
               key={s}
@@ -394,29 +406,41 @@ export function LiteCockpitView({
                     <><Skull size={11} />淘汰 R{elim}</>
                   ) : (
                     <>
-                      {lineup?.shopLevel ? `${lineup.shopLevel}本` : '—'}
-                      {lineup?.strategist ? ` · ${lineup.strategist}` : ''}
+                      <span className="lite-hp">
+                        <Heart size={10} /><b>{hp ?? '—'}</b>
+                      </span>
+                      <span className="lite-tier-chip">{lineup?.shopLevel ? `${lineup.shopLevel}本` : '—'}</span>
                     </>
                   )}
                 </span>
               </div>
-              <div className="lite-seat-metrics">
-                {eliminated ? (
+              {eliminated ? (
+                <div className="lite-seat-metrics">
                   <span className="lite-seat-recycled">持卡已回流共享池</span>
-                ) : (
-                  <>
-                    <span className="lite-hp">
-                      <Heart size={11} /><b>{hp ?? '—'}</b>
+                </div>
+              ) : (
+                <div className="lite-seat-bars">
+                  <div className="lite-seat-bar-row">
+                    <span className="lite-bar-tag" data-active={assists > 0 ? 'assist' : undefined}>兜</span>
+                    <span className="lite-bar-track">
+                      {assistPct > 0 && <i className="is-assist" style={{ width: `${assistPct}%` }} />}
                     </span>
-                    <span className="lite-metric-pair">
-                      漏 <b data-warn={leaks > 0}>{leaks}</b>
+                    <b className="lite-bar-val" data-tone={assists > 0 ? 'assist' : undefined}>
+                      {assists > 0 ? `+${assists}` : '0'}
+                    </b>
+                  </div>
+                  <div className="lite-seat-bar-row">
+                    <span className="lite-bar-tag" data-active={escaped > 0 ? 'escape' : leaks > 0 ? 'leak' : undefined}>漏</span>
+                    <span className="lite-bar-track">
+                      {coveredPct > 0 && <i className="is-covered" style={{ width: `${coveredPct}%` }} />}
+                      {escapedPct > 0 && <i className="is-escaped" style={{ width: `${escapedPct}%` }} />}
                     </span>
-                    <span className="lite-metric-pair">
-                      协 <b data-good={assists > 0}>+{assists}</b>
-                    </span>
-                  </>
-                )}
-              </div>
+                    <b className="lite-bar-val" data-tone={escaped > 0 ? 'escape' : leaks > 0 ? 'leak' : undefined}>
+                      {leaks === 0 ? '0' : escaped > 0 ? `${leaks} 逃${escaped}` : `${leaks}`}
+                    </b>
+                  </div>
+                </div>
+              )}
             </button>
           );
         })}

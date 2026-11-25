@@ -159,13 +159,15 @@ public class MainActivity extends Activity {
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
 
+        boolean isLite = getPackageName().contains("telemetry") || !getResources().getBoolean(R.bool.covenant_scan_enabled);
+        int accentBg = isLite ? 0xff22d3ee : 0xffffe600;
         // PRTS × Endfield 工业风头部
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView chip = label("PRTS", 12f, 0xff0b0d11, true);
+        TextView chip = label(isLite ? "LITE" : "PRTS", 12f, 0xff0b0d11, true);
         chip.setPadding(dp(8), dp(3), dp(8), dp(3));
-        chip.setBackground(box(0xffffe600, 2, 0xffffe600));
+        chip.setBackground(box(accentBg, 2, accentBg));
         headerRow.addView(chip);
         TextView title = label("  " + getString(R.string.product_title), 21f, 0xfff1f5f9, true);
         if (getResources().getBoolean(R.bool.show_home_icon)) {
@@ -195,18 +197,23 @@ public class MainActivity extends Activity {
         permissionBadge = label("", 13f, 0xff34d399, true);
         statusCard.addView(permissionBadge);
         TextView gestureGuide = label(
-            "悬浮球手势：单击展开侧边抽屉 · 双击一键扫盟约 · 长按切顶部战术迷你条\n"
-            + "不抢游戏焦点：展开抽屉时窗外点击直达游戏，同局共享授权免二次弹窗",
+            isLite
+                ? "悬浮球手势：单击弹出实时 Logs 战报抽屉 · 长按切顶部纯战报 HUD（4人双轨 + 流水 + Boss DPS）\n不抢游戏焦点：异常或切网 5ms 自动切回游戏直连，零断线风险"
+                : "悬浮球手势：单击展开侧边抽屉 · 双击一键扫盟约 · 长按切顶部战术迷你条\n不抢游戏焦点：展开抽屉时窗外点击直达游戏，同局共享授权免二次弹窗",
             12.5f, 0xff94a3b8, false
         );
         gestureGuide.setLineSpacing(dp(3), 1f);
         gestureGuide.setPadding(0, dp(6), 0, 0);
         statusCard.addView(gestureGuide);
 
-        // 主 CTA：工业黄
-        actionButton(body, "开启悬浮助手 · 进入游戏", 0xffffe600, 0xffffe600, 0xff0b0d11, 50, v -> startOverlay());
+        // 主 CTA：全量版工业黄 / 战报仪电光青
+        actionButton(body, isLite ? "开启悬浮战报仪 · 进入游戏" : "开启悬浮助手 · 进入游戏", accentBg, accentBg, 0xff0b0d11, 50, v -> startOverlay());
         // 本机免 Root 实时抓包开关（可选）
-        vpnToggleBtn = actionButton(body, "开启本机实时抓包（出怪预告 / 漏怪兜底）", 0xff0d232b, 0xff00e5ff, 0xff67e8f9, 46, v -> toggleVpnCapture());
+        vpnToggleBtn = actionButton(
+            body,
+            isLite ? "开启本机实时抓包（实时 Logs / 4人漏兜 / Boss DPS）" : "开启本机实时抓包（出怪预告 / 漏怪兜底）",
+            0xff0d232b, 0xff00e5ff, 0xff67e8f9, 46, v -> toggleVpnCapture()
+        );
         // 次要 CTA：应用内查阅 + 无线副屏
         actionButton(body, getString(R.string.home_open_button) + " / 无线副屏", 0xff171c26, 0xff334155, 0xfff1f5f9, 46, v -> {
             OverlayService.stopActive();

@@ -41,6 +41,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -99,6 +101,12 @@ public class OverlayService extends Service {
     private TextView stripTabDpsBtn;
     private TextView stripTabGuideBtn;
     private TextView stripTabLeakBtn;
+    private TextView stripTabLogsBtn;
+    private TextView stripTabWavesBtn;
+
+    // Body E: 实时 Logs 流水（卫戍战报仪 Lite 专属毫秒级去重事件流）
+    private LinearLayout logsContainer;
+    private LinearLayout logsList;
 
     // Body A: 跟打（出怪图标 + 攻略正文）
     private LinearLayout guideContainer;
@@ -470,9 +478,17 @@ public class OverlayService extends Service {
         });
     }
 
+    private boolean isLiteTelemetryMode() {
+        try {
+            return getPackageName().contains("telemetry") || !getResources().getBoolean(R.bool.covenant_scan_enabled);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     private void triggerQuickCovenantScan() {
-        if (!getResources().getBoolean(R.bool.covenant_scan_enabled)) {
-            expand();
+        if (isLiteTelemetryMode()) {
+            enterStrip(false);
             return;
         }
         if (CovenantScanState.permissionPending() || CovenantScanState.scanning()) return;
@@ -651,9 +667,19 @@ public class OverlayService extends Service {
             if (cur >= 1 && cur <= 15 && leakCumulative) leakSelectedRound = cur;
             refreshStripAndBallContent();
         });
+        stripTabLogsBtn = capsuleChip("流水", v -> {
+            stripTab = "logs";
+            refreshStripAndBallContent();
+        });
+        stripTabWavesBtn = capsuleChip("波次", v -> {
+            stripTab = "waves";
+            refreshStripAndBallContent();
+        });
         stripModeCapsule.addView(stripTabDpsBtn);
         stripModeCapsule.addView(stripTabGuideBtn);
         stripModeCapsule.addView(stripTabLeakBtn);
+        stripModeCapsule.addView(stripTabLogsBtn);
+        stripModeCapsule.addView(stripTabWavesBtn);
         LinearLayout.LayoutParams capLp = new LinearLayout.LayoutParams(-2, -2);
         capLp.leftMargin = dp(3);
         stripActions.addView(stripModeCapsule, capLp);
@@ -861,6 +887,17 @@ public class OverlayService extends Service {
         wsLp.topMargin = dp(4);
         wavesContainer.addView(wavesScroll, wsLp);
         strip.addView(wavesContainer);
+
+        // ===== Body E: 实时 Logs 流水（Lite 战报仪毫秒级去重事件流）=====
+        logsContainer = new LinearLayout(this);
+        logsContainer.setOrientation(LinearLayout.VERTICAL);
+        logsContainer.setVisibility(View.GONE);
+        logsList = new LinearLayout(this);
+        logsList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams logsLp = new LinearLayout.LayoutParams(-1, -2);
+        logsLp.topMargin = dp(4);
+        logsContainer.addView(logsList, logsLp);
+        strip.addView(logsContainer);
 
         stripParams = params(preferredStripWidth(), WindowManager.LayoutParams.WRAP_CONTENT, false, true);
         positionStripDefault();
@@ -1302,6 +1339,125 @@ public class OverlayService extends Service {
         track.addView(seg, new LinearLayout.LayoutParams(0, -1, weight));
     }
 
+    private void renderLogsBody(BattleCaptureState.TelemetrySnapshot snap, boolean vpnRunning) {
+        logsList.removeAllViews();
+        List<BattleCaptureState.EventLogEntry> logs = snap != null ? snap.recentLogs : null;
+        if (logs == null || logs.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText(vpnRunning ? "本机抓包已就绪，进入战斗后自动推送毫秒级 Logs 流水…" : "请开启本机抓包，战斗中实时回显漏怪、兜底与升本流水");
+            empty.setTextSize(10f);
+            empty.setTextColor(0xff94a3b8);
+            empty.setPadding(dp(4), dp(6), dp(4), dp(6));
+            logsList.addView(empty);
+            return;
+        }
+        SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss", Locale.US);
+        int limit = Math.min(6, logs.size());
+        for (int i = 0; i < limit; i++) {
+            BattleCaptureState.EventLogEntry entry = logs.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(5), dp(3), dp(5), dp(3));
+
+            int rowBg = 0xff0d141f;
+            int badgeBg = 0xff1e3a5f;
+            int badgeFg = 0xff7dd3fc;
+            int borderCol = 0xff223044;
+            String tagText = "事件";
+            if ("escape".equals(entry.kind)) {
+                rowBg = 0x22ff4d4f;
+                badgeBg = 0xffff4d4f;
+                badgeFg = 0xffffffff;
+                borderCol = 0x88ff4d4f;
+                tagText = "逃逸";
+            } else if ("assist".equals(entry.kind)) {
+                rowBg = 0x1c00e5ff;
+                badgeBg = 0xff00e5ff;
+                badgeFg = 0xff061018;
+                borderCol = 0x6600e5ff;
+                tagText = "帮兜";
+            } else if ("leak".equals(entry.kind)) {
+                rowBg = 0x1cf59e0b;
+                badgeBg = 0xfff59e0b;
+                badgeFg = 0xff0b0d11;
+                borderCol = 0x66f59e0b;
+                tagText = "漏怪";
+            } else if ("tier".equals(entry.kind)) {
+                tagText = "升本";
+            } else if ("boss".equals(entry.kind)) {
+                rowBg = 0x22ff4d4f;
+                badgeBg = 0xffb91c1c;
+                badgeFg = 0xffffffff;
+                borderCol = 0x88ff4d4f;
+                tagText = "首领";
+            } else if ("match".equals(entry.kind)) {
+                badgeBg = 0xff22d3ee;
+                badgeFg = 0xff061018;
+                tagText = "开局";
+            }
+            row.setBackground(background(rowBg, 2, borderCol));
+            LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-1, -2);
+            if (i > 0) rLp.topMargin = dp(3);
+
+            TextView tsTv = new TextView(this);
+            tsTv.setText(String.format(Locale.US, "R%02d %s", Math.max(1, entry.round), fmt.format(new Date(entry.tsMs))));
+            tsTv.setTextSize(8.5f);
+            tsTv.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+            tsTv.setTextColor(0xff64748b);
+            tsTv.setSingleLine(true);
+            LinearLayout.LayoutParams tsLp = new LinearLayout.LayoutParams(-2, -2);
+            tsLp.rightMargin = dp(4);
+            row.addView(tsTv, tsLp);
+
+            TextView badge = new TextView(this);
+            badge.setText(tagText);
+            badge.setTextSize(8.5f);
+            badge.setTypeface(null, Typeface.BOLD);
+            badge.setTextColor(badgeFg);
+            badge.setPadding(dp(4), dp(1), dp(4), dp(1));
+            badge.setBackground(background(badgeBg, 2, badgeBg));
+            LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-2, -2);
+            bLp.rightMargin = dp(5);
+            row.addView(badge, bLp);
+
+            if (entry.enemyId != null && !entry.enemyId.isEmpty()) {
+                Bitmap bmp = EnemyPortraitAtlas.getIcon(this, entry.enemyId);
+                if (bmp != null) {
+                    ImageView iv = new ImageView(this);
+                    iv.setImageBitmap(bmp);
+                    iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(dp(14), dp(14));
+                    ivLp.rightMargin = dp(4);
+                    row.addView(iv, ivLp);
+                }
+            }
+
+            TextView msg = new TextView(this);
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            if ("assist".equals(entry.kind)) {
+                appendColored(sb, entry.actorName, 0xff67e8f9);
+                appendColored(sb, " 帮兜 ", 0xff94a3b8);
+                if (!entry.targetName.isEmpty()) appendColored(sb, entry.targetName + " ", 0xffe2e8f0);
+                if (!entry.enemyName.isEmpty()) appendColored(sb, entry.enemyName, 0xfffef08a);
+            } else if ("escape".equals(entry.kind) || "leak".equals(entry.kind)) {
+                appendColored(sb, entry.actorName + " ", "escape".equals(entry.kind) ? 0xffff8080 : 0xfffbbf24);
+                appendColored(sb, !entry.enemyName.isEmpty() ? entry.enemyName : entry.detail, 0xffe2e8f0);
+            } else if ("tier".equals(entry.kind)) {
+                appendColored(sb, entry.actorName + " ", 0xffe2e8f0);
+                appendColored(sb, entry.detail, 0xff7dd3fc);
+            } else {
+                appendColored(sb, !entry.enemyName.isEmpty() ? (entry.detail + " · " + entry.enemyName) : entry.detail, 0xffe2e8f0);
+            }
+            msg.setText(sb);
+            msg.setTextSize(9.5f);
+            msg.setSingleLine(true);
+            msg.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(msg, new LinearLayout.LayoutParams(0, -2, 1f));
+            logsList.addView(row, rLp);
+        }
+    }
+
     private void renderAllWavesBody(BattleCaptureState.TelemetrySnapshot snap, int curRound) {
         wavesList.removeAllViews();
         List<BattleCaptureState.RoundWave> waves = snap != null ? snap.allWaves : null;
@@ -1527,6 +1683,7 @@ public class OverlayService extends Service {
         boolean isUpgrade = hasComp && !isBossContext && pendingTier >= 2 && pendingPrevTier > 0 && pendingTier > pendingPrevTier;
         boolean hasBanWarn = hasComp && !pendingBanWarning.isEmpty();
 
+        boolean liteMode = isLiteTelemetryMode();
         // Boss 阶段自动切 [DPS]（每回合仅自动触发一次，不覆盖用户手动切换）
         if (isBossContext) {
             if (autoSwitchedBossRound != curRound) {
@@ -1535,7 +1692,10 @@ public class OverlayService extends Service {
             }
         } else {
             autoSwitchedBossRound = 0;
-            if ("dps".equals(stripTab)) stripTab = "guide";
+            if ("dps".equals(stripTab)) stripTab = liteMode ? "leak" : "guide";
+        }
+        if (liteMode && "guide".equals(stripTab)) {
+            stripTab = "leak";
         }
 
         // 若处于漏兜单回合但尚未初始化回合号，跟随当前回合
@@ -1543,46 +1703,60 @@ public class OverlayService extends Service {
 
         // 1. 顶部模式胶囊与控件可见性
         boolean inLeak = "leak".equals(stripTab);
+        boolean inLogs = "logs".equals(stripTab);
         boolean inDps = "dps".equals(stripTab);
         boolean inWaves = "waves".equals(stripTab);
-        boolean inGuide = !inLeak && !inDps && !inWaves;
+        boolean inGuide = !liteMode && !inLeak && !inLogs && !inDps && !inWaves;
 
         boolean showStepper = !stripLocked && ((inGuide && hasComp) || inLeak);
         stripPrevBtn.setVisibility(showStepper ? View.VISIBLE : View.GONE);
         stripNextBtn.setVisibility(showStepper ? View.VISIBLE : View.GONE);
-        stripScanBtn.setVisibility((!stripLocked && inGuide && !hasComp && !vpnRunning) ? View.VISIBLE : View.GONE);
+        stripScanBtn.setVisibility((!liteMode && !stripLocked && inGuide && !hasComp && !vpnRunning) ? View.VISIBLE : View.GONE);
         stripLeakScopeBox.setVisibility((!stripLocked && inLeak) ? View.VISIBLE : View.GONE);
 
         stripTabDpsBtn.setVisibility(isBossContext ? View.VISIBLE : View.GONE);
+        stripTabGuideBtn.setVisibility(liteMode ? View.GONE : View.VISIBLE);
+        stripTabLogsBtn.setVisibility(liteMode ? View.VISIBLE : View.GONE);
+        stripTabWavesBtn.setVisibility(liteMode ? View.VISIBLE : View.GONE);
+
         int activeLeakCount = snap != null ? snap.currentRoundLeak.totalLeaks : 0;
         stripTabLeakBtn.setText(activeLeakCount > 0 ? ("漏兜·" + activeLeakCount) : "漏兜");
         stripTabGuideBtn.setText(inWaves ? "返回" : "跟打");
 
         styleCapsuleChip(stripTabDpsBtn, inDps, 0xffff4d4f, 0xffffffff, 0xfffca5a5);
         styleCapsuleChip(stripTabGuideBtn, inGuide || inWaves, inWaves ? 0xff00e5ff : 0xffffe600, 0xff0b0d11, 0xffcbd5e1);
-        styleCapsuleChip(stripTabLeakBtn, inLeak, activeLeakCount > 0 ? 0xffff7a00 : 0xff00e5ff, 0xff0b0d11,
+        styleCapsuleChip(stripTabLeakBtn, inLeak, activeLeakCount > 0 ? 0xffff7a00 : (liteMode ? 0xff22d3ee : 0xff00e5ff), 0xff0b0d11,
             activeLeakCount > 0 ? 0xfffdba74 : 0xff67e8f9);
+        styleCapsuleChip(stripTabLogsBtn, inLogs, 0xff22d3ee, 0xff061018, 0xffcbd5e1);
+        styleCapsuleChip(stripTabWavesBtn, inWaves, 0xff22d3ee, 0xff061018, 0xffcbd5e1);
         styleCapsuleChip(stripScopeCumBtn, leakCumulative, 0xff00e5ff, 0xff0b0d11, 0xff94a3b8);
         styleCapsuleChip(stripScopeRoundBtn, !leakCumulative, 0xffff7a00, 0xff0b0d11, 0xff94a3b8);
 
         // 2. 主题色与顶栏徽标/标题
-        BattleCaptureState.LeakSnapshot activeLeakSnap = inLeak
-            ? BattleCaptureState.buildLeakSnapshot(leakCumulative ? 0 : leakSelectedRound)
+        BattleCaptureState.LeakSnapshot activeLeakSnap = (inLeak || inLogs)
+            ? BattleCaptureState.buildLeakSnapshot((inLogs || leakCumulative) ? 0 : leakSelectedRound)
             : null;
         BattleCaptureState.BossSnapshot activeBossSnap = inDps
             ? (snap != null ? snap.boss : BattleCaptureState.buildBossSnapshot())
             : null;
 
-        int borderCol = 0xffffe600;
+        int borderCol = liteMode ? 0xff22d3ee : 0xffffe600;
         int fillCol = stripLocked ? 0xbb0b0d11 : 0xf20b0d11;
-        int badgeBg = 0xffffe600;
+        int badgeBg = liteMode ? 0xff22d3ee : 0xffffe600;
         int badgeFg = 0xff0b0d11;
         String badgeText;
         String titleText;
 
         stripBossHeaderIcon.setVisibility(View.GONE);
 
-        if (inWaves) {
+        if (inLogs) {
+            borderCol = 0xff22d3ee;
+            fillCol = stripLocked ? 0xbb081018 : 0xf4081018;
+            badgeBg = 0xff22d3ee;
+            badgeFg = 0xff061018;
+            badgeText = String.format(Locale.US, "R%02d·LOGS", curRound);
+            titleText = "实时战报流水";
+        } else if (inWaves) {
             int waveCount = snap != null && snap.allWaves != null ? snap.allWaves.size() : 0;
             borderCol = 0xff00e5ff;
             fillCol = stripLocked ? 0xbb0b1319 : 0xf40b1319;
@@ -1646,7 +1820,7 @@ public class OverlayService extends Service {
         stripRoundBadge.setText(badgeText);
         stripRoundBadge.setTextColor(badgeFg);
         stripRoundBadge.setBackground(background(badgeBg, 2, badgeBg));
-        if (inLeak && activeLeakSnap != null) {
+        if ((inLeak || inLogs) && activeLeakSnap != null) {
             stripTitleView.setVisibility(View.GONE);
             stripLeakPills.setVisibility(View.VISIBLE);
             boolean hasLeaks = activeLeakSnap.totalLeaks > 0;
@@ -1674,11 +1848,14 @@ public class OverlayService extends Service {
         leakContainer.setVisibility(inLeak ? View.VISIBLE : View.GONE);
         dpsContainer.setVisibility(inDps ? View.VISIBLE : View.GONE);
         wavesContainer.setVisibility(inWaves ? View.VISIBLE : View.GONE);
+        logsContainer.setVisibility(inLogs ? View.VISIBLE : View.GONE);
 
         if (inGuide) {
             renderGuideBody(snap, hasComp, vpnRunning, isUpgrade, hasBanWarn, curRound);
         } else if (inLeak && activeLeakSnap != null) {
             renderLeakBody(activeLeakSnap, vpnRunning);
+        } else if (inLogs) {
+            renderLogsBody(snap, vpnRunning);
         } else if (inDps && activeBossSnap != null) {
             renderDpsBody(activeBossSnap);
         } else if (inWaves) {

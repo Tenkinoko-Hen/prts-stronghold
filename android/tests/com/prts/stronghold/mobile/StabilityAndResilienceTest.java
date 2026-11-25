@@ -270,10 +270,68 @@ public final class StabilityAndResilienceTest {
         }
     }
 
+    private static void testEventLogDeduplicationAndRingBound() throws Exception {
+        StrongholdEnemyCatalog.registerForTest("enemy_1006_shield_2", "重装防御组长");
+        BattleCaptureState.resetMatch();
+
+        // 1. Live help_kill (367) + settle help_finish (313) for SAME instanceId -> MUST produce exactly 1 assist log!
+        StrongholdWireDecoder.Event phaseR4 = new StrongholdWireDecoder.Event("phase");
+        phaseR4.messageId = 300;
+        phaseR4.stageSeed = 88801;
+        phaseR4.round = 4;
+        phaseR4.phase = "assist";
+        phaseR4.players.put(1, "Doctor");
+        phaseR4.players.put(2, "Amiya");
+        BattleCaptureState.accept(phaseR4);
+
+        StrongholdWireDecoder.Event liveKill = new StrongholdWireDecoder.Event("help_kill");
+        liveKill.helpKills.add(new StrongholdWireDecoder.HelpKill(701, false, 2, 1, "enemy_1006_shield_2"));
+        BattleCaptureState.accept(liveKill);
+
+        StrongholdWireDecoder.Event settle = new StrongholdWireDecoder.Event("help_finish");
+        settle.round = 4;
+        settle.helpKills.add(new StrongholdWireDecoder.HelpKill(701, false, 2, 1, "enemy_1006_shield_2")); // duplicate of liveKill
+        settle.escapedEnemies.add(new StrongholdWireDecoder.EscapedEnemy(1, 702, false, "enemy_1006_shield_2", false));
+        BattleCaptureState.accept(settle);
+
+        // Shop tier progression: 3本 repeated twice -> only 1 tier log, then 4本 -> 2nd tier log
+        StrongholdWireDecoder.Event prep3a = new StrongholdWireDecoder.Event("preparation");
+        prep3a.round = 4;
+        prep3a.shopLevelBySeat.put(2, 3);
+        BattleCaptureState.accept(prep3a);
+        BattleCaptureState.accept(prep3a); // duplicate 3本
+        StrongholdWireDecoder.Event prep4 = new StrongholdWireDecoder.Event("preparation");
+        prep4.round = 5;
+        prep4.shopLevelBySeat.put(2, 4);
+        BattleCaptureState.accept(prep4);
+
+        List<BattleCaptureState.EventLogEntry> logs = BattleCaptureState.getRecentLogs(50);
+        int assistLogs = 0, escapeLogs = 0, tierLogs = 0;
+        for (BattleCaptureState.EventLogEntry e : logs) {
+            if ("assist".equals(e.kind)) assistLogs++;
+            if ("escape".equals(e.kind)) escapeLogs++;
+            if ("tier".equals(e.kind)) tierLogs++;
+        }
+        check(assistLogs == 1, "live 367 + settle 313 deduplicated to exactly 1 assist log, got " + assistLogs);
+        check(escapeLogs == 1, "exactly 1 escape log recorded, got " + escapeLogs);
+        check(tierLogs == 2, "shop tier 3->3->4 logged exactly 2 tier-up events, got " + tierLogs);
+
+        // 2. Burst 320 unique assist kills -> bounded cleanly to <= 240 ring cap with strictly descending recent seq
+        for (int i = 0; i < 320; i++) {
+            StrongholdWireDecoder.Event burst = new StrongholdWireDecoder.Event("help_kill");
+            burst.helpKills.add(new StrongholdWireDecoder.HelpKill(5000 + i, false, 2, 1, "enemy_1006_shield_2"));
+            BattleCaptureState.accept(burst);
+        }
+        List<BattleCaptureState.EventLogEntry> capped = BattleCaptureState.getRecentLogs(400);
+        check(capped.size() == 240, "ring buffer bounded at 240 entries, got " + capped.size());
+        check(capped.get(0).seq > capped.get(capped.size() - 1).seq, "recent logs ordered newest-first");
+    }
+
     public static void main(String[] args) throws Exception {
         testPacketCodecFuzzing();
         testWireDecoderSelfHealingAndTruncatedFrames();
         testBattleCaptureStateExtremeValuesAndRollover();
+        testEventLogDeduplicationAndRingBound();
         System.out.println("StabilityAndResilience: " + checks + " checks passed");
     }
 }

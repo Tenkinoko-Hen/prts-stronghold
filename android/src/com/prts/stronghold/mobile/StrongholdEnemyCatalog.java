@@ -16,7 +16,12 @@ final class StrongholdEnemyCatalog {
     private static final Map<String, String> ENEMY_NAMES = new HashMap<>();
     private static final Map<Integer, String> TOKEN_ENEMY_IDS = new HashMap<>();
     private static final Map<String, String> BOND_TO_COVENANT = new HashMap<>();
+    private static final Map<String, Integer> COVENANT_THRESHOLDS = new HashMap<>();
+    private static final Map<Integer, String> CHESS_IDENT_TO_CHESS_ID = new HashMap<>();
+    private static final Map<Integer, String> CHESS_IDENT_TO_CHAR_ID = new HashMap<>();
+    private static final Map<Integer, String> TRAP_IDENT_TO_BOND = new HashMap<>();
     private static volatile boolean loaded = false;
+    private static volatile boolean catalogLoaded = false;
 
     static {
         // 核心盟约（10）
@@ -47,21 +52,117 @@ final class StrongholdEnemyCatalog {
         BOND_TO_COVENANT.put("steadShip", "坚守");
         BOND_TO_COVENANT.put("deputShip", "助力");
         BOND_TO_COVENANT.put("miraShip", "奇迹");
+
+        // 最低激活阈值（核心盟约多为 3 触发，炎与主流附加盟约为 2，独行为 1）
+        COVENANT_THRESHOLDS.put("独行", 1);
+        COVENANT_THRESHOLDS.put("炎", 2);
+        COVENANT_THRESHOLDS.put("萨尔贡", 3);
+        COVENANT_THRESHOLDS.put("阿戈尔", 3);
+        COVENANT_THRESHOLDS.put("叙拉古", 3);
+        COVENANT_THRESHOLDS.put("卡西米尔", 3);
+        COVENANT_THRESHOLDS.put("维多利亚", 3);
+        COVENANT_THRESHOLDS.put("谢拉格", 3);
+        COVENANT_THRESHOLDS.put("乌萨斯", 3);
+        COVENANT_THRESHOLDS.put("伊比利亚", 3);
+        COVENANT_THRESHOLDS.put("莱塔尼亚", 3);
     }
 
     private StrongholdEnemyCatalog() {}
 
     static synchronized void ensureLoaded(Context context) {
-        if (loaded || context == null) return;
-        try (InputStream in = context.getAssets().open("enemy_power.json")) {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            loadFromJson(new String(out.toByteArray(), StandardCharsets.UTF_8));
-        } catch (Exception ignored) {
-            // 无资产时安全降级为原始 enemyId
+        if (context == null) return;
+        if (!loaded) {
+            try (InputStream in = context.getAssets().open("enemy_power.json")) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                loadFromJson(new String(out.toByteArray(), StandardCharsets.UTF_8));
+            } catch (Exception ignored) {
+                // 无资产时安全降级为原始 enemyId
+            }
         }
+        if (!catalogLoaded) {
+            try (InputStream in = context.getAssets().open("stronghold_catalog.json")) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                loadStrongholdCatalogJson(new String(out.toByteArray(), StandardCharsets.UTF_8));
+            } catch (Exception ignored) {
+                // 无资产时安全降级
+            }
+        }
+    }
+
+    static synchronized void loadStrongholdCatalogJson(String rawJson) {
+        if (rawJson == null || rawJson.isEmpty()) return;
+        try {
+            JSONObject root = new JSONObject(rawJson);
+            JSONObject chessMap = root.optJSONObject("chess_by_id");
+            if (chessMap != null) {
+                Iterator<String> keys = chessMap.keys();
+                while (keys.hasNext()) {
+                    String k = keys.next();
+                    try {
+                        int ident = Integer.parseInt(k);
+                        JSONObject item = chessMap.optJSONObject(k);
+                        if (item != null) {
+                            String chessId = item.optString("chess_id", "").trim();
+                            String charId = item.optString("char_id", "").trim();
+                            if (!chessId.isEmpty()) CHESS_IDENT_TO_CHESS_ID.put(ident, chessId);
+                            if (!charId.isEmpty()) CHESS_IDENT_TO_CHAR_ID.put(ident, charId);
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            JSONObject trapMap = root.optJSONObject("trap_by_id");
+            if (trapMap != null) {
+                Iterator<String> keys = trapMap.keys();
+                while (keys.hasNext()) {
+                    String k = keys.next();
+                    try {
+                        int ident = Integer.parseInt(k);
+                        JSONObject item = trapMap.optJSONObject(k);
+                        if (item != null) {
+                            String bondId = item.optString("give_bond_id", "").trim();
+                            if (!bondId.isEmpty()) TRAP_IDENT_TO_BOND.put(ident, bondId);
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            catalogLoaded = true;
+        } catch (Exception ignored) {}
+    }
+
+    static synchronized void registerCatalogForTest(int chessIdent, String chessId, String charId) {
+        if (chessId != null && !chessId.isEmpty()) CHESS_IDENT_TO_CHESS_ID.put(chessIdent, chessId);
+        if (charId != null && !charId.isEmpty()) CHESS_IDENT_TO_CHAR_ID.put(chessIdent, charId);
+    }
+
+    static synchronized void registerEquipBondForTest(int trapIdent, String giveBondId) {
+        if (giveBondId != null && !giveBondId.isEmpty()) TRAP_IDENT_TO_BOND.put(trapIdent, giveBondId);
+    }
+
+    static String chessIdForIdent(int chessIdent) {
+        String s = CHESS_IDENT_TO_CHESS_ID.get(chessIdent);
+        return s != null ? s : "";
+    }
+
+    static String charIdForIdent(int chessIdent) {
+        String s = CHESS_IDENT_TO_CHAR_ID.get(chessIdent);
+        return s != null ? s : "";
+    }
+
+    static String equipGiveBond(int trapIdent) {
+        String s = TRAP_IDENT_TO_BOND.get(trapIdent);
+        return s != null ? s : "";
+    }
+
+    static int covenantThreshold(String covenantName) {
+        if (covenantName == null) return 2;
+        Integer t = COVENANT_THRESHOLDS.get(covenantName);
+        return t != null ? t : 2;
     }
 
     static synchronized void loadFromJson(String rawJson) {

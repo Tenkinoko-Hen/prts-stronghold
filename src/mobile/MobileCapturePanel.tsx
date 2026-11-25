@@ -46,6 +46,13 @@ export interface MobileCaptureLeak {
   enemies: MobileCaptureEnemy[];
 }
 
+export interface MobileCaptureBond {
+  name: string;
+  count: number;
+  threshold: number;
+  active: boolean;
+}
+
 export interface MobileCaptureSeat {
   seat: number;
   name: string;
@@ -56,6 +63,7 @@ export interface MobileCaptureSeat {
   assisted: number;
   covered: number;
   escaped: number;
+  bonds?: MobileCaptureBond[];
 }
 
 export interface MobileCaptureRoundSummary {
@@ -125,6 +133,7 @@ export interface MobileCaptureState {
   forecastRound: number;
   forecastEnemies: MobileCaptureEnemy[];
   forecastText: string;
+  nextTwoWaves?: MobileCaptureWave[];
   allWaves?: MobileCaptureWave[];
   shopLevels?: Record<string, number>;
   seats?: MobileCaptureSeat[];

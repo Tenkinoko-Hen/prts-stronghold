@@ -125,9 +125,10 @@ public class OverlayService extends Service {
     private ScrollView wavesScroll;
     private LinearLayout wavesList;
 
-    // Body B: 漏兜（4 人彩色柱图 + 漏怪实机图标）
+    // Body B: 漏兜（4 人双轨 + 已激活盟约 + 未来两波怪潮预计 + 漏怪实机图标）
     private LinearLayout leakContainer;
     private LinearLayout leakGrid;
+    private LinearLayout leakNextWavesBox;
     private LinearLayout leakFooterRow;
     private TextView leakFooterTag;
     private LinearLayout leakEnemyChips;
@@ -535,6 +536,12 @@ public class OverlayService extends Service {
 
     private int preferredStripWidth() {
         boolean landscape = usableWidth > usableHeight;
+        if (isLiteTelemetryMode()) {
+            if (landscape) {
+                return Math.min(dp(360), Math.max(dp(304), usableWidth - dp(180)));
+            }
+            return Math.min(dp(324), Math.max(dp(268), usableWidth - dp(24)));
+        }
         if (landscape) {
             return Math.min(dp(476), Math.max(dp(344), usableWidth - dp(120)));
         }
@@ -671,7 +678,7 @@ public class OverlayService extends Service {
             stripTab = "logs";
             refreshStripAndBallContent();
         });
-        stripTabWavesBtn = capsuleChip("波次", v -> {
+        stripTabWavesBtn = capsuleChip("出怪", v -> {
             stripTab = "waves";
             refreshStripAndBallContent();
         });
@@ -787,6 +794,13 @@ public class OverlayService extends Service {
         LinearLayout.LayoutParams gridLp = new LinearLayout.LayoutParams(-1, -2);
         gridLp.topMargin = dp(4);
         leakContainer.addView(leakGrid, gridLp);
+
+        leakNextWavesBox = new LinearLayout(this);
+        leakNextWavesBox.setOrientation(LinearLayout.VERTICAL);
+        leakNextWavesBox.setVisibility(View.GONE);
+        LinearLayout.LayoutParams nwLp = new LinearLayout.LayoutParams(-1, -2);
+        nwLp.topMargin = dp(4);
+        leakContainer.addView(leakNextWavesBox, nwLp);
 
         leakFooterRow = new LinearLayout(this);
         leakFooterRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1159,25 +1173,44 @@ public class OverlayService extends Service {
         guideBodyView.setMaxLines(stripBodyCompact ? 1 : 3);
     }
 
-    private void renderLeakBody(BattleCaptureState.LeakSnapshot leakSnap, boolean vpnRunning) {
+    private void renderLeakBody(BattleCaptureState.LeakSnapshot leakSnap, BattleCaptureState.TelemetrySnapshot snap, boolean vpnRunning) {
         leakGrid.removeAllViews();
+        boolean liteMode = isLiteTelemetryMode();
         int maxMetric = 1;
         for (BattleCaptureState.SeatLeakRow row : leakSnap.seats) {
             if (row.leaked > maxMetric) maxMetric = row.leaked;
             if (row.assisted > maxMetric) maxMetric = row.assisted;
         }
 
+        // Lite 360dp 窄版 HUD 采用 2x2 紧凑双排；全量宽版沿用 4 列横排
+        leakGrid.setOrientation(liteMode ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        LinearLayout currentRow = null;
+
         for (int i = 0; i < leakSnap.seats.size(); i++) {
             BattleCaptureState.SeatLeakRow row = leakSnap.seats.get(i);
+            if (liteMode && i % 2 == 0) {
+                currentRow = new LinearLayout(this);
+                currentRow.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-1, -2);
+                if (i > 0) rLp.topMargin = dp(4);
+                leakGrid.addView(currentRow, rLp);
+            }
+
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(5), dp(4), dp(5), dp(4));
-            int cardBg = row.isSelf ? 0x1affe600 : (row.escaped > 0 ? 0x1aff4d4f : 0xff131a24);
-            int cardBorder = row.isSelf ? 0x99ffe600 : (row.escaped > 0 ? 0x88ff4d4f : 0xff273244);
+            int selfBg = liteMode ? 0x1a22d3ee : 0x1affe600;
+            int selfBorder = liteMode ? 0x9922d3ee : 0x99ffe600;
+            int cardBg = row.isSelf ? selfBg : (row.escaped > 0 ? 0x1aff4d4f : 0xff131a24);
+            int cardBorder = row.isSelf ? selfBorder : (row.escaped > 0 ? 0x88ff4d4f : 0xff273244);
             card.setBackground(background(cardBg, 3, cardBorder));
 
             LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1f);
-            if (i > 0) cardLp.leftMargin = dp(4);
+            if (liteMode) {
+                if (i % 2 == 1) cardLp.leftMargin = dp(4);
+            } else if (i > 0) {
+                cardLp.leftMargin = dp(4);
+            }
 
             // Card Top: [我] Name   ♥HP 本数
             LinearLayout head = new LinearLayout(this);
@@ -1191,7 +1224,8 @@ public class OverlayService extends Service {
                 me.setTypeface(null, Typeface.BOLD);
                 me.setTextColor(0xff0b0d11);
                 me.setPadding(dp(2), 0, dp(2), 0);
-                me.setBackground(background(0xffffe600, 1, 0xffffe600));
+                int meCol = liteMode ? 0xff22d3ee : 0xffffe600;
+                me.setBackground(background(meCol, 1, meCol));
                 LinearLayout.LayoutParams meLp = new LinearLayout.LayoutParams(-2, -2);
                 meLp.rightMargin = dp(3);
                 head.addView(me, meLp);
@@ -1201,7 +1235,7 @@ public class OverlayService extends Service {
             nameTv.setText(row.name);
             nameTv.setTextSize(9.5f);
             nameTv.setTypeface(null, row.isSelf ? Typeface.BOLD : Typeface.NORMAL);
-            nameTv.setTextColor(row.isSelf ? 0xfffff8b0 : 0xffe2e8f0);
+            nameTv.setTextColor(row.isSelf ? (liteMode ? 0xff67e8f9 : 0xfffff8b0) : 0xffe2e8f0);
             nameTv.setSingleLine(true);
             nameTv.setEllipsize(TextUtils.TruncateAt.END);
             head.addView(nameTv, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1223,6 +1257,31 @@ public class OverlayService extends Service {
             hpTv.setSingleLine(true);
             head.addView(hpTv);
             card.addView(head);
+
+            // Active Covenants Line (已激活盟约人数，含转职加成，自动过滤未触发项)
+            if (row.bonds != null && !row.bonds.isEmpty()) {
+                SpannableStringBuilder bondSb = new SpannableStringBuilder();
+                int shown = 0;
+                for (BattleCaptureState.BondStatus bs : row.bonds) {
+                    if (!bs.active && bs.count < 2) continue;
+                    if (shown > 0) appendColored(bondSb, " · ", 0xff475569);
+                    String shortName = bs.name.length() > 3 ? bs.name.substring(0, 2) : bs.name;
+                    appendColored(bondSb, shortName + bs.count, bs.active ? 0xff67e8f9 : 0xff94a3b8);
+                    shown++;
+                    if (shown >= (liteMode ? 3 : 2)) break;
+                }
+                if (shown > 0) {
+                    TextView bondTv = new TextView(this);
+                    bondTv.setText(bondSb);
+                    bondTv.setTextSize(8.5f);
+                    bondTv.setTypeface(null, Typeface.BOLD);
+                    bondTv.setSingleLine(true);
+                    bondTv.setEllipsize(TextUtils.TruncateAt.END);
+                    LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-1, -2);
+                    bLp.topMargin = dp(2);
+                    card.addView(bondTv, bLp);
+                }
+            }
 
             // Track 1: 兜 (帮队友兜底，纯青色直条)
             SpannableStringBuilder assistNum = new SpannableStringBuilder();
@@ -1259,7 +1318,57 @@ public class OverlayService extends Service {
                 leakNum
             ));
 
-            leakGrid.addView(card, cardLp);
+            if (liteMode && currentRow != null) {
+                currentRow.addView(card, cardLp);
+            } else {
+                leakGrid.addView(card, cardLp);
+            }
+        }
+
+        // Lite 360dp 窄版 HUD：下方紧接「未来两波怪潮预计（下波 + 再下波实机图标）」
+        leakNextWavesBox.removeAllViews();
+        if (liteMode && snap != null && snap.nextTwoWaves != null && !snap.nextTwoWaves.isEmpty()) {
+            leakNextWavesBox.setVisibility(View.VISIBLE);
+            for (int wIdx = 0; wIdx < Math.min(2, snap.nextTwoWaves.size()); wIdx++) {
+                BattleCaptureState.RoundWave w = snap.nextTwoWaves.get(wIdx);
+                boolean isBossWave = w.round >= 14;
+                LinearLayout wRow = new LinearLayout(this);
+                wRow.setOrientation(LinearLayout.HORIZONTAL);
+                wRow.setGravity(Gravity.CENTER_VERTICAL);
+                wRow.setPadding(dp(5), dp(3), dp(5), dp(3));
+                int wBg = isBossWave ? 0x22ff4d4f : (wIdx == 0 ? 0x1a22d3ee : 0xff0d1520);
+                int wBorder = isBossWave ? 0x88ff4d4f : (wIdx == 0 ? 0x6622d3ee : 0xff223044);
+                wRow.setBackground(background(wBg, 2, wBorder));
+                LinearLayout.LayoutParams wrLp = new LinearLayout.LayoutParams(-1, -2);
+                if (wIdx > 0) wrLp.topMargin = dp(3);
+
+                TextView tag = new TextView(this);
+                tag.setText(String.format(Locale.US, "%s R%02d", wIdx == 0 ? "下波" : "预", w.round));
+                tag.setTextSize(8.5f);
+                tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                tag.setTextColor(isBossWave ? 0xffffffff : (wIdx == 0 ? 0xff061018 : 0xff7dd3fc));
+                tag.setPadding(dp(4), dp(1), dp(4), dp(1));
+                int tagBg = isBossWave ? 0xffff4d4f : (wIdx == 0 ? 0xff22d3ee : 0xff1e3a5f);
+                tag.setBackground(background(tagBg, 2, tagBg));
+                LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-2, -2);
+                tLp.rightMargin = dp(5);
+                wRow.addView(tag, tLp);
+
+                HorizontalScrollView hsv = new HorizontalScrollView(this);
+                hsv.setHorizontalScrollBarEnabled(false);
+                hsv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                LinearLayout chips = new LinearLayout(this);
+                chips.setOrientation(LinearLayout.HORIZONTAL);
+                chips.setGravity(Gravity.CENTER_VERTICAL);
+                for (int j = 0; j < Math.min(6, w.enemies.size()); j++) {
+                    chips.addView(buildEnemyChip(w.enemies.get(j), isBossWave ? 0xfffca5a5 : 0xfffde047, 0xff243347, 14));
+                }
+                hsv.addView(chips, new FrameLayout.LayoutParams(-2, -2));
+                wRow.addView(hsv, new LinearLayout.LayoutParams(0, -2, 1f));
+                leakNextWavesBox.addView(wRow, wrLp);
+            }
+        } else {
+            leakNextWavesBox.setVisibility(View.GONE);
         }
 
         // Bottom leaked enemy real-icon strip
@@ -1694,7 +1803,7 @@ public class OverlayService extends Service {
             autoSwitchedBossRound = 0;
             if ("dps".equals(stripTab)) stripTab = liteMode ? "leak" : "guide";
         }
-        if (liteMode && "guide".equals(stripTab)) {
+        if (liteMode && ("guide".equals(stripTab) || "logs".equals(stripTab))) {
             stripTab = "leak";
         }
 
@@ -1703,10 +1812,10 @@ public class OverlayService extends Service {
 
         // 1. 顶部模式胶囊与控件可见性
         boolean inLeak = "leak".equals(stripTab);
-        boolean inLogs = "logs".equals(stripTab);
+        boolean inLogs = false;
         boolean inDps = "dps".equals(stripTab);
         boolean inWaves = "waves".equals(stripTab);
-        boolean inGuide = !liteMode && !inLeak && !inLogs && !inDps && !inWaves;
+        boolean inGuide = !liteMode && !inLeak && !inDps && !inWaves;
 
         boolean showStepper = !stripLocked && ((inGuide && hasComp) || inLeak);
         stripPrevBtn.setVisibility(showStepper ? View.VISIBLE : View.GONE);
@@ -1716,7 +1825,7 @@ public class OverlayService extends Service {
 
         stripTabDpsBtn.setVisibility(isBossContext ? View.VISIBLE : View.GONE);
         stripTabGuideBtn.setVisibility(liteMode ? View.GONE : View.VISIBLE);
-        stripTabLogsBtn.setVisibility(liteMode ? View.VISIBLE : View.GONE);
+        stripTabLogsBtn.setVisibility(View.GONE);
         stripTabWavesBtn.setVisibility(liteMode ? View.VISIBLE : View.GONE);
 
         int activeLeakCount = snap != null ? snap.currentRoundLeak.totalLeaks : 0;
@@ -1853,7 +1962,7 @@ public class OverlayService extends Service {
         if (inGuide) {
             renderGuideBody(snap, hasComp, vpnRunning, isUpgrade, hasBanWarn, curRound);
         } else if (inLeak && activeLeakSnap != null) {
-            renderLeakBody(activeLeakSnap, vpnRunning);
+            renderLeakBody(activeLeakSnap, snap, vpnRunning);
         } else if (inLogs) {
             renderLogsBody(snap, vpnRunning);
         } else if (inDps && activeBossSnap != null) {

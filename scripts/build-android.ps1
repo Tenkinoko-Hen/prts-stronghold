@@ -118,6 +118,10 @@ try {
         if ((Test-Path -LiteralPath $enemyCatalogPath) -and !$archive.GetEntry('assets/enemy_power.json')) {
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $enemyCatalogPath, 'assets/enemy_power.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
         }
+        $strongholdCatalogPath = Join-Path $projectRoot 'electron\prts_battle_core\stronghold_catalog.json'
+        if ((Test-Path -LiteralPath $strongholdCatalogPath) -and !$archive.GetEntry('assets/stronghold_catalog.json')) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $strongholdCatalogPath, 'assets/stronghold_catalog.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
         $enemyAtlasWebp = Join-Path $projectRoot 'src\desktop\enemyPortraits.webp'
         $enemyAtlasJson = Join-Path $projectRoot 'src\desktop\enemyPortraits.json'
         if ((Test-Path -LiteralPath $enemyAtlasWebp) -and !$archive.GetEntry('assets/enemy_portraits.webp')) {

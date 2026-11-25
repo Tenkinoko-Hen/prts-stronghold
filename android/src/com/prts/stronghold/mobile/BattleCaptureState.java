@@ -41,6 +41,19 @@ final class BattleCaptureState {
         }
     }
 
+    static final class BondStatus {
+        final String name;
+        final int count;
+        final int threshold;
+        final boolean active;
+        BondStatus(String name, int count, int threshold) {
+            this.name = name;
+            this.count = count;
+            this.threshold = threshold;
+            this.active = count >= threshold;
+        }
+    }
+
     static final class SeatLeakRow {
         final int seat;
         final String name;
@@ -51,7 +64,8 @@ final class BattleCaptureState {
         final int assisted;  // 帮队友兜底击杀数
         final int covered;   // 本人漏怪中被队友兜住数
         final int escaped;   // 本人漏怪中最终未兜住逃跑数
-        SeatLeakRow(int seat, String name, boolean isSelf, int hp, int shopLevel, int leaked, int assisted, int covered, int escaped) {
+        final List<BondStatus> bonds;
+        SeatLeakRow(int seat, String name, boolean isSelf, int hp, int shopLevel, int leaked, int assisted, int covered, int escaped, List<BondStatus> bonds) {
             this.seat = seat;
             this.name = name;
             this.isSelf = isSelf;
@@ -61,6 +75,7 @@ final class BattleCaptureState {
             this.assisted = assisted;
             this.covered = covered;
             this.escaped = escaped;
+            this.bonds = bonds != null ? bonds : Collections.<BondStatus>emptyList();
         }
     }
 
@@ -165,6 +180,7 @@ final class BattleCaptureState {
         final int banCount;
         final int forecastRound;
         final List<EnemyCount> forecastEnemies;
+        final List<RoundWave> nextTwoWaves;
         final List<RoundWave> allWaves;
         final boolean activeRoundHasLeaks;
         final LeakSnapshot cumulativeLeak;
@@ -173,7 +189,7 @@ final class BattleCaptureState {
         final List<EventLogEntry> recentLogs;
         TelemetrySnapshot(
             boolean vpnRunning, int currentRound, String phase, int selfSeat, int selfHp, int banCount,
-            int forecastRound, List<EnemyCount> forecastEnemies, List<RoundWave> allWaves, boolean activeRoundHasLeaks,
+            int forecastRound, List<EnemyCount> forecastEnemies, List<RoundWave> nextTwoWaves, List<RoundWave> allWaves, boolean activeRoundHasLeaks,
             LeakSnapshot cumulativeLeak, LeakSnapshot currentRoundLeak, BossSnapshot boss,
             List<EventLogEntry> recentLogs
         ) {
@@ -185,6 +201,7 @@ final class BattleCaptureState {
             this.banCount = banCount;
             this.forecastRound = forecastRound;
             this.forecastEnemies = forecastEnemies;
+            this.nextTwoWaves = nextTwoWaves != null ? nextTwoWaves : Collections.<RoundWave>emptyList();
             this.allWaves = allWaves;
             this.activeRoundHasLeaks = activeRoundHasLeaks;
             this.cumulativeLeak = cumulativeLeak;
@@ -227,6 +244,8 @@ final class BattleCaptureState {
     private static final Map<Integer, Integer> hpBySeat = new HashMap<>();
     private static final Map<Integer, Integer> shopLevelBySeat = new HashMap<>();
     private static final Map<Integer, Integer> bossDamageBySeat = new HashMap<>();
+    private static final Map<Integer, Map<String, List<String>>> squadBondsBySeat = new HashMap<>();
+    private static final Map<Integer, List<BondStatus>> activeBondsBySeat = new HashMap<>();
     private static final List<String> bannedCovenants = new ArrayList<>();
     private static boolean bansConfirmed = false;
     private static final int MAX_LOG_ENTRIES = 240;
@@ -298,6 +317,8 @@ final class BattleCaptureState {
         hpBySeat.clear();
         shopLevelBySeat.clear();
         bossDamageBySeat.clear();
+        squadBondsBySeat.clear();
+        activeBondsBySeat.clear();
         bannedCovenants.clear();
         bansConfirmed = false;
         spawnPlanByRound.clear();
@@ -343,6 +364,8 @@ final class BattleCaptureState {
                 hpBySeat.clear();
                 shopLevelBySeat.clear();
                 bossDamageBySeat.clear();
+                squadBondsBySeat.clear();
+                activeBondsBySeat.clear();
                 bannedCovenants.clear();
                 bansConfirmed = false;
                 spawnPlanByRound.clear();
@@ -362,6 +385,11 @@ final class BattleCaptureState {
             for (Map.Entry<Integer, String> p : ev.players.entrySet()) {
                 if (p.getKey() >= 1 && p.getKey() <= 4 && p.getValue() != null && !p.getValue().trim().isEmpty()) {
                     playerNames.put(p.getKey(), p.getValue().trim());
+                }
+            }
+            for (Map.Entry<Integer, Map<String, List<String>>> sb : ev.squadBondsBySeat.entrySet()) {
+                if (sb.getKey() >= 1 && sb.getKey() <= 4 && sb.getValue() != null && !sb.getValue().isEmpty()) {
+                    squadBondsBySeat.put(sb.getKey(), sb.getValue());
                 }
             }
 
@@ -546,6 +574,65 @@ final class BattleCaptureState {
                 }
             }
         }
+        updateSeatBonds(ev);
+    }
+
+    private static void updateSeatBonds(StrongholdWireDecoder.Event ev) {
+        if (ev.deployedChessBySeat.isEmpty() && ev.equipIdentsBySeat.isEmpty()) return;
+        for (int s = 1; s <= 4; s++) {
+            List<Integer> deployed = ev.deployedChessBySeat.get(s);
+            List<Integer> equips = ev.equipIdentsBySeat.get(s);
+            if (deployed == null && equips == null) continue;
+            Map<String, List<String>> squadMap = squadBondsBySeat.get(s);
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            if (deployed != null && squadMap != null && !squadMap.isEmpty()) {
+                Set<String> seenUnits = new HashSet<>();
+                for (Integer ident : deployed) {
+                    if (ident == null) continue;
+                    String charId = StrongholdEnemyCatalog.charIdForIdent(ident);
+                    String chessId = StrongholdEnemyCatalog.chessIdForIdent(ident);
+                    String dedupKey = !charId.isEmpty() ? charId : (!chessId.isEmpty() ? chessId : ("#" + ident));
+                    if (!seenUnits.add(dedupKey)) continue;
+                    List<String> unitBonds = !chessId.isEmpty() ? squadMap.get(chessId) : null;
+                    if (unitBonds == null && !charId.isEmpty()) unitBonds = squadMap.get(charId);
+                    if (unitBonds != null) {
+                        for (String bId : unitBonds) {
+                            String cn = StrongholdEnemyCatalog.covenantName(bId);
+                            if (cn != null) {
+                                Integer prev = counts.get(cn);
+                                counts.put(cn, prev == null ? 1 : prev + 1);
+                            }
+                        }
+                    }
+                }
+            }
+            if (equips != null) {
+                for (Integer eqIdent : equips) {
+                    if (eqIdent == null) continue;
+                    String giveBond = StrongholdEnemyCatalog.equipGiveBond(eqIdent);
+                    if (!giveBond.isEmpty()) {
+                        String cn = StrongholdEnemyCatalog.covenantName(giveBond);
+                        if (cn != null) {
+                            Integer prev = counts.get(cn);
+                            counts.put(cn, prev == null ? 1 : prev + 1);
+                        }
+                    }
+                }
+            }
+            List<BondStatus> list = new ArrayList<>();
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                int c = entry.getValue();
+                if (c <= 0) continue;
+                int th = StrongholdEnemyCatalog.covenantThreshold(entry.getKey());
+                list.add(new BondStatus(entry.getKey(), c, th));
+            }
+            Collections.sort(list, (a, b) -> {
+                if (a.active != b.active) return a.active ? -1 : 1;
+                int cmp = Integer.compare(b.count, a.count);
+                return cmp != 0 ? cmp : a.name.compareTo(b.name);
+            });
+            activeBondsBySeat.put(s, list);
+        }
     }
 
     private static void updateRuntimeMaps(StrongholdWireDecoder.Event ev, long now) {
@@ -643,6 +730,30 @@ final class BattleCaptureState {
         return sb.toString();
     }
 
+    static synchronized List<RoundWave> buildNextTwoWaves() {
+        List<RoundWave> all = buildAllWaves();
+        if (all.isEmpty()) return Collections.emptyList();
+        int anchor = pickForecastRound();
+        if (anchor <= 0) anchor = Math.max(1, currentRound);
+        List<RoundWave> nextTwo = new ArrayList<>(2);
+        for (RoundWave w : all) {
+            if (w.round >= anchor) {
+                nextTwo.add(w);
+                if (nextTwo.size() >= 2) break;
+            }
+        }
+        if (nextTwo.isEmpty() && !all.isEmpty()) {
+            int start = Math.max(0, all.size() - 2);
+            for (int i = start; i < all.size(); i++) nextTwo.add(all.get(i));
+        }
+        return nextTwo;
+    }
+
+    static synchronized List<BondStatus> getSeatBonds(int seat) {
+        List<BondStatus> list = activeBondsBySeat.get(seat);
+        return list != null ? new ArrayList<>(list) : Collections.<BondStatus>emptyList();
+    }
+
     static synchronized List<RoundWave> buildAllWaves() {
         if (spawnPlanByRound.isEmpty()) return Collections.emptyList();
         List<Integer> rounds = new ArrayList<>(spawnPlanByRound.keySet());
@@ -714,7 +825,7 @@ final class BattleCaptureState {
             sumLeak += leaked[s];
             sumAssist += assisted[s];
             sumEsc += escaped[s];
-            rows.add(new SeatLeakRow(s, seatLabel(s), s == effectiveSelf, seatHp(s), seatShopLevel(s), leaked[s], assisted[s], covered[s], escaped[s]));
+            rows.add(new SeatLeakRow(s, seatLabel(s), s == effectiveSelf, seatHp(s), seatShopLevel(s), leaked[s], assisted[s], covered[s], escaped[s], getSeatBonds(s)));
         }
         List<EnemyCount> enemies = new ArrayList<>();
         for (Map.Entry<String, Integer> e : enemyCounts.entrySet()) {
@@ -773,6 +884,7 @@ final class BattleCaptureState {
     static synchronized TelemetrySnapshot buildTelemetrySnapshot() {
         int fcRound = pickForecastRound();
         List<EnemyCount> fcList = fcRound > 0 ? getSpawnList(fcRound) : Collections.<EnemyCount>emptyList();
+        List<RoundWave> nextTwo = buildNextTwoWaves();
         List<RoundWave> allWaves = buildAllWaves();
         int curR = currentRound > 0 ? currentRound : 1;
         LeakSnapshot curLeak = buildLeakSnapshot(curR);
@@ -781,7 +893,7 @@ final class BattleCaptureState {
         int myHp = selfSeat >= 1 && selfSeat <= 4 ? seatHp(selfSeat) : seatHp(1);
         return new TelemetrySnapshot(
             running, currentRound, phase, selfSeat, myHp, bansConfirmed ? bannedCovenants.size() : -1,
-            fcRound, fcList, allWaves, activeHasLeaks, cumLeak, curLeak, buildBossSnapshot(),
+            fcRound, fcList, nextTwo, allWaves, activeHasLeaks, cumLeak, curLeak, buildBossSnapshot(),
             getRecentLogs(12)
         );
     }
@@ -818,6 +930,15 @@ final class BattleCaptureState {
             }
             obj.put("forecastEnemies", fcArr);
             obj.put("forecastText", snap.forecastRound > 0 ? formatSpawnSummary(snap.forecastRound, 5) : "");
+            JSONArray nextTwoArr = new JSONArray();
+            for (RoundWave w : snap.nextTwoWaves) {
+                JSONArray we = new JSONArray();
+                for (EnemyCount ec : w.enemies) {
+                    we.put(new JSONObject().put("id", ec.enemyId).put("name", ec.name).put("count", ec.count));
+                }
+                nextTwoArr.put(new JSONObject().put("round", w.round).put("enemies", we));
+            }
+            obj.put("nextTwoWaves", nextTwoArr);
             JSONArray wavesArr = new JSONArray();
             for (RoundWave w : snap.allWaves) {
                 JSONArray we = new JSONArray();
@@ -833,9 +954,17 @@ final class BattleCaptureState {
             }
             obj.put("shopLevels", tiers);
 
-            // 4 席累计双轨态势（供安卓 Lite 战报仪实时双栏界面直读）
+            // 4 席累计双轨态势 + 实时已激活盟约（供安卓 Lite 战报仪直读）
             JSONArray seatsArr = new JSONArray();
             for (SeatLeakRow sr : snap.cumulativeLeak.seats) {
+                JSONArray bArr = new JSONArray();
+                for (BondStatus bs : sr.bonds) {
+                    bArr.put(new JSONObject()
+                        .put("name", bs.name)
+                        .put("count", bs.count)
+                        .put("threshold", bs.threshold)
+                        .put("active", bs.active));
+                }
                 seatsArr.put(new JSONObject()
                     .put("seat", sr.seat)
                     .put("name", sr.name)
@@ -845,7 +974,8 @@ final class BattleCaptureState {
                     .put("leaked", sr.leaked)
                     .put("assisted", sr.assisted)
                     .put("covered", sr.covered)
-                    .put("escaped", sr.escaped));
+                    .put("escaped", sr.escaped)
+                    .put("bonds", bArr));
             }
             obj.put("seats", seatsArr);
 

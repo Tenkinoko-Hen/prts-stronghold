@@ -301,6 +301,109 @@ public final class VpnCodecAndWireTest {
         check(allWaves.size() == 1 && allWaves.get(0).round == 5 && allWaves.get(0).enemies.size() == 2,
             "buildAllWaves returns sorted waves with icons");
 
+        // 5b. 校验 4 人已激活盟约人数（含干员羁绊 + 转职装备）与未来两波怪潮预计（nextTwoWaves）
+        StrongholdEnemyCatalog.registerCatalogForTest(101, "chess_char_3_01_a", "char_4047_pianst");
+        StrongholdEnemyCatalog.registerCatalogForTest(102, "chess_char_5_01_a", "char_1035_wisdel");
+        StrongholdEnemyCatalog.registerEquipBondForTest(310, "yanShip"); // 炎国短刀 +1 炎
+        BattleCaptureState.resetMatch();
+
+        // Frame 300 with seat 2 squad having 2 units with yanShip + preciShip
+        ByteArrayOutputStream b300Bonds = new ByteArrayOutputStream();
+        DataOutputStream d300Bonds = new DataOutputStream(b300Bonds);
+        writeStr(d300Bonds, "mode_multi_hard");
+        writeStr(d300Bonds, "stage_01");
+        writeStr(d300Bonds, "boss_1");
+        writeStr(d300Bonds, "");
+        d300Bonds.writeInt(246810);
+        d300Bonds.writeByte(1);
+        d300Bonds.writeShort(0); // bans
+        d300Bonds.writeShort(2); // 2 players
+        for (int s = 1; s <= 2; s++) {
+            writeStr(d300Bonds, "acc_" + s);
+            d300Bonds.writeByte(s);
+            if (s == 2) {
+                d300Bonds.writeShort(2); // 2 squad slots
+                writeStr(d300Bonds, "chess_char_3_01_a"); writeStr(d300Bonds, "char_4047_pianst");
+                for (int k = 0; k < 4; k++) writeStr(d300Bonds, "");
+                d300Bonds.write(new byte[3]);
+                d300Bonds.writeShort(2); writeStr(d300Bonds, "yanShip"); writeStr(d300Bonds, "preciShip");
+                d300Bonds.writeByte(0);
+                writeStr(d300Bonds, "chess_char_5_01_a"); writeStr(d300Bonds, "char_1035_wisdel");
+                for (int k = 0; k < 4; k++) writeStr(d300Bonds, "");
+                d300Bonds.write(new byte[3]);
+                d300Bonds.writeShort(1); writeStr(d300Bonds, "preciShip");
+                d300Bonds.writeByte(0);
+            } else {
+                d300Bonds.writeShort(0);
+            }
+            writeStr(d300Bonds, "");
+            writeStr(d300Bonds, "P" + s);
+            for (int i = 0; i < 5; i++) writeStr(d300Bonds, "");
+            d300Bonds.write(new byte[5]);
+            writeStr(d300Bonds, "");
+            d300Bonds.writeByte(0);
+            writeStr(d300Bonds, "");
+            d300Bonds.writeShort(0);
+        }
+        d300Bonds.write(buildMinimalSceneBody(3, 4, 25, "enemy_1006_shield_2", 3, 5, null, 0, null));
+        d300Bonds.writeShort(0);
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, wrapFrame(300, b300Bonds.toByteArray()), 0, wrapFrame(300, b300Bonds.toByteArray()).length)) {
+            BattleCaptureState.accept(e);
+        }
+        // Frame 303 adds R5 + R6 + R7 waves -> nextTwoWaves should return [R5, R6]
+        ByteArrayOutputStream b303Multi = new ByteArrayOutputStream();
+        DataOutputStream d303Multi = new DataOutputStream(b303Multi);
+        d303Multi.writeShort(3);
+        d303Multi.writeByte(1); writeStr(d303Multi, "enemy_1006_shield_2"); d303Multi.writeByte(0); d303Multi.writeByte(3); d303Multi.writeByte(5);
+        d303Multi.writeByte(1); writeStr(d303Multi, "enemy_1005_yokai_2"); d303Multi.writeByte(0); d303Multi.writeByte(4); d303Multi.writeByte(6);
+        d303Multi.writeByte(1); writeStr(d303Multi, "enemy_1006_shield_2"); d303Multi.writeByte(0); d303Multi.writeByte(5); d303Multi.writeByte(7);
+        byte[] f303Multi = wrapFrame(303, b303Multi.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_UP, f303Multi, 0, f303Multi.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.RoundWave> next2 = BattleCaptureState.buildNextTwoWaves();
+        check(next2.size() == 2 && next2.get(0).round == 5 && next2.get(1).round == 6,
+            "nextTwoWaves returns R5 and R6 when at R4");
+
+        // Frame 306 for seat 2 with 2 deployed pieces (101, 102) + 1 yanShip equip (310) -> 炎2(active) & 精准2(active)
+        ByteArrayOutputStream b306Bonds = new ByteArrayOutputStream();
+        DataOutputStream d306Bonds = new DataOutputStream(b306Bonds);
+        d306Bonds.writeByte(2); // seat 2
+        d306Bonds.writeShort(28);
+        d306Bonds.writeByte(4);
+        d306Bonds.writeByte(4); // 4本
+        d306Bonds.write(new byte[6]);
+        d306Bonds.writeShort(0); // goods
+        d306Bonds.writeByte(1); // seq
+        d306Bonds.writeShort(2); // 2 pieces
+        d306Bonds.writeInt(9001); d306Bonds.writeShort(0); d306Bonds.writeShort(101); d306Bonds.write(new byte[3]);
+        d306Bonds.writeInt(9002); d306Bonds.writeShort(0); d306Bonds.writeShort(102); d306Bonds.write(new byte[3]);
+        d306Bonds.writeShort(1); // 1 equip (310 -> yanShip)
+        d306Bonds.writeInt(8001); d306Bonds.writeShort(310);
+        d306Bonds.writeShort(0); // traps
+        d306Bonds.writeShort(2); // 2 deployed positions
+        d306Bonds.writeInt(9001); d306Bonds.write(new byte[6]);
+        d306Bonds.writeInt(9002); d306Bonds.write(new byte[6]);
+        d306Bonds.writeShort(0); // bonds
+        d306Bonds.writeShort(0); d306Bonds.writeByte(0); // sp_prepare + 1
+        d306Bonds.writeShort(0); // enemies
+        d306Bonds.writeShort(0); d306Bonds.writeByte(0); d306Bonds.writeShort(0);
+        d306Bonds.writeShort(0); // special_effects
+        writeStr(d306Bonds, "");
+        d306Bonds.write(new byte[13]);
+        byte[] f306Bonds = wrapFrame(306, b306Bonds.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Bonds, 0, f306Bonds.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> seat2Bonds = BattleCaptureState.getSeatBonds(2);
+        check(seat2Bonds.size() == 2, "seat 2 decoded 2 active covenants (炎2 + 精准2), got " + seat2Bonds.size());
+        boolean foundYan2 = false, foundPreci2 = false;
+        for (BattleCaptureState.BondStatus bs : seat2Bonds) {
+            if ("炎".equals(bs.name) && bs.count == 2 && bs.active) foundYan2 = true;
+            if ("精准".equals(bs.name) && bs.count == 2 && bs.active) foundPreci2 = true;
+        }
+        check(foundYan2 && foundPreci2, "seat 2 active covenants exact including transfer equip (+1 炎)");
+
         // 6. 校验开局 300 帧即使场景截断也能抢救 banned_bonds（避免 1/3 确认信息界面丢 Ban）
         ByteArrayOutputStream b300Partial = new ByteArrayOutputStream();
         DataOutputStream d300Partial = new DataOutputStream(b300Partial);

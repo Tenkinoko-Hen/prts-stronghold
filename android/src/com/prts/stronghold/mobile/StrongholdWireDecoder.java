@@ -123,6 +123,9 @@ final class StrongholdWireDecoder {
         final Map<Integer, Integer> hpBySeat = new HashMap<>();
         final Map<Integer, Integer> shopLevelBySeat = new HashMap<>();
         final Map<Integer, Integer> bossDamageBySeat = new HashMap<>();
+        final Map<Integer, Map<String, List<String>>> squadBondsBySeat = new HashMap<>();
+        final Map<Integer, List<Integer>> deployedChessBySeat = new HashMap<>();
+        final Map<Integer, List<Integer>> equipIdentsBySeat = new HashMap<>();
         final List<SpawnPreview> spawnPreviews = new ArrayList<>();
         final List<EscapedEnemy> escapedEnemies = new ArrayList<>();
         boolean hasEscapedSection = false;
@@ -339,13 +342,27 @@ final class StrongholdWireDecoder {
                     throw new WireException("invalid player seat");
                 }
                 int slotCnt = r.count();
+                Map<String, List<String>> seatBonds = new HashMap<>();
                 for (int j = 0; j < slotCnt; j++) {
-                    // _SQUAD_SLOT: 6 strings, 3 bytes, list(str), 1 bool
-                    for (int k = 0; k < 6; k++) r.skipStr();
+                    // _SQUAD_SLOT: chess_id, char_id, 4 strings, 3 bytes, list(str bonds), 1 bool
+                    String chessId = r.str();
+                    String charId = r.str();
+                    for (int k = 0; k < 4; k++) r.skipStr();
                     r.skip(3);
                     int bCnt = r.count();
-                    for (int b = 0; b < bCnt; b++) r.skipStr();
+                    List<String> bList = bCnt > 0 ? new ArrayList<String>(bCnt) : null;
+                    for (int b = 0; b < bCnt; b++) {
+                        String bid = r.str();
+                        if (bList != null && !bid.isEmpty()) bList.add(bid);
+                    }
                     r.skip(1);
+                    if (bList != null && !bList.isEmpty()) {
+                        if (!chessId.isEmpty()) seatBonds.put(chessId, bList);
+                        if (!charId.isEmpty()) seatBonds.put(charId, bList);
+                    }
+                }
+                if (!seatBonds.isEmpty()) {
+                    partial.squadBondsBySeat.put(uid, seatBonds);
                 }
                 r.skipStr();
                 String nickname = r.str();
@@ -381,6 +398,7 @@ final class StrongholdWireDecoder {
             scene.bannedBonds.addAll(partial.bannedBonds);
             scene.bannedUnitBonds.addAll(partial.bannedUnitBonds);
             scene.players.putAll(partial.players);
+            scene.squadBondsBySeat.putAll(partial.squadBondsBySeat);
             return scene;
         } catch (WireException ex) {
             ex.partialEvent = partial;
@@ -523,7 +541,7 @@ final class StrongholdWireDecoder {
             if (level >= 1 && level <= 6) ev.shopLevelBySeat.put(ev.seat, level);
             if (ev.hp >= 0) ev.hpBySeat.put(ev.seat, ev.hp);
         }
-        skipPreparationBodyAfterLevel(r);
+        parsePreparationBodyAfterLevel(r, ev.seat, ev);
         return ev;
     }
 
@@ -536,23 +554,50 @@ final class StrongholdWireDecoder {
             if (level >= 1 && level <= 6) ev.shopLevelBySeat.put(seat, level);
             if (hp >= 0 && !ev.hpBySeat.containsKey(seat)) ev.hpBySeat.put(seat, hp);
         }
-        skipPreparationBodyAfterLevel(r);
+        parsePreparationBodyAfterLevel(r, seat, ev);
     }
 
-    private static void skipPreparationBodyAfterLevel(Reader r) throws WireException {
+    private static void parsePreparationBodyAfterLevel(Reader r, int seat, Event ev) throws WireException {
         r.skip(6); // remaining 6 of 7 bytes after shop level
         r.skipFixedList(5); // goods
         r.skip(1); // sequence
-        // pieces
+        // pieces: inst(i32) + ints + chessIdent(u16) + 3 bytes
         int pCnt = r.count();
+        Map<Integer, Integer> pieceByInst = pCnt > 0 ? new HashMap<Integer, Integer>(pCnt * 2) : null;
         for (int i = 0; i < pCnt; i++) {
-            r.skip(4);
+            int inst = r.i32();
             r.skipIntsAndCount();
-            r.skip(5);
+            int chessIdent = r.u16();
+            r.skip(3);
+            if (pieceByInst != null) pieceByInst.put(inst, chessIdent);
         }
-        r.skipFixedList(6); // equips
-        r.skipFixedList(6); // traps
-        r.skipFixedList(10); // positions
+        // equips & traps: inst(i32) + ident(u16)
+        List<Integer> equips = new ArrayList<>();
+        int eqCnt = r.count();
+        for (int i = 0; i < eqCnt; i++) {
+            r.skip(4);
+            equips.add(r.u16());
+        }
+        int trCnt = r.count();
+        for (int i = 0; i < trCnt; i++) {
+            r.skip(4);
+            equips.add(r.u16());
+        }
+        // positions: inst(i32) + position(i32) + 2 bytes -> deployed pieces
+        int posCnt = r.count();
+        List<Integer> deployed = new ArrayList<>();
+        for (int i = 0; i < posCnt; i++) {
+            int inst = r.i32();
+            r.skip(6);
+            if (pieceByInst != null) {
+                Integer cid = pieceByInst.get(inst);
+                if (cid != null) deployed.add(cid);
+            }
+        }
+        if (seat >= 1 && seat <= 4 && (!deployed.isEmpty() || !equips.isEmpty() || pCnt > 0)) {
+            ev.deployedChessBySeat.put(seat, deployed);
+            ev.equipIdentsBySeat.put(seat, equips);
+        }
         r.skipFixedList(7); // bonds
         // _PREPARATION_BEFORE_ENEMIES[-2:] = (('list', (('list', _SP_PREPARE_SLOT), 'str')), 1)
         int outer = r.count();

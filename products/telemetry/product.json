@@ -45,11 +45,11 @@
     "apkTemplate": "卫戍战报仪-Android-${version}.apk",
     "releaseSubdir": "telemetry-${version}",
     "signing": {
-      "mode": "pkcs12",
-      "dir": "PRTSReportReview\\signing",
-      "file": "review.p12",
-      "clixml": "review.clixml",
-      "alias": "review"
+      "mode": "jks",
+      "dir": "PRTSTelemetry\\signing",
+      "file": "prts-telemetry.jks",
+      "passwordFile": "password.txt",
+      "alias": "telemetry"
     }
   },
   "publicAssetDirs": {

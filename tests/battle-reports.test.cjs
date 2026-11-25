@@ -450,26 +450,33 @@ test('worker supervisor auto-restarts on startup timeout and crash, then recover
     },
   });
 
+  const waitFor = async (predicate, timeoutMs = 500) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate() && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 15));
+    }
+  };
+
   try {
     // 1. Child #1 hangs during startup -> startupTimeoutMs triggers auto-restart #1
     br.start();
     assert.equal(children.length, 1);
-    await new Promise(r => setTimeout(r, 65));
+    await waitFor(() => children.length >= 2);
     assert.equal(children[0].killed, true, 'hung child #1 should be terminated');
     assert.equal(children.length, 2, 'supervisor should spawn child #2');
     assert.ok(published.some(s => s.restarting === true && s.autoRestartCount === 1));
 
     // 2. Child #2 logs a stderr error and crashes -> triggers auto-restart #2
     children[1].stderr.write('RuntimeError: raw socket bind failed\n');
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 15));
     children[1].emit('close', 1);
-    await new Promise(r => setTimeout(r, 45));
+    await waitFor(() => children.length >= 3);
     assert.equal(children.length, 3, 'supervisor should spawn child #3');
     assert.ok(published.some(s => s.restarting === true && s.autoRestartCount === 2));
 
     // 3. Child #3 also crashes -> exhausts maxAutoRestarts (2) -> enters failed with clear Chinese prompt
     children[2].stderr.write('WinError 10013 socket conflict\n');
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 15));
     children[2].emit('close', 1);
     const failedState = published.at(-1);
     assert.equal(failedState.status, 'failed');
@@ -486,7 +493,7 @@ test('worker supervisor auto-restarts on startup timeout and crash, then recover
     assert.equal(restarted.failureReason, '');
 
     children[3].stdout.write(JSON.stringify({ kind: 'status', status: 'listening' }) + '\n');
-    await new Promise(r => setTimeout(r, 55));
+    await waitFor(() => published.at(-1)?.status === 'listening' && published.at(-1)?.autoRestartCount === 0);
     const healthy = published.at(-1);
     assert.equal(healthy.status, 'listening');
     assert.equal(healthy.autoRestartCount, 0);

@@ -96,13 +96,16 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25（完成 **PRTS Stronghold Lite 资深玩家战报仪** PC 端 UI 落地并移除历史来源标注；`v2.0.0` 双端正式包已发布至 GitHub Releases `v2.0.0`）
+- **最后更新**：2026-11-25（完成 **PRTS Stronghold Lite v2.0.1** 纯 PC 轻量版 GitHub Release 发布，并同步主线全端文案且覆盖更新 `v2.0.0` 双端 GitHub Release 资产）
 - **同步基线提交**：见 `git log -n 5 --oneline`
-- **最近一次正式发布版本（`v2.0.0`）**：
-  - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.3 MiB / 240,483,805 字节，SHA-256: `3afecf46…b532542`，已内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
-  - Android 攻略随行包：`PRTS-Stronghold-2.0.0-Android.apk`（142.1 MiB / 149,025,407 字节，VersionCode `21`，SHA-256: `d417ba79…de8cc871`，v2/v3 签名校验通过；已修复 Android 11–15 冷启动在 `setContentView` 前调用 `getInsetsController()` 导致的闪退）
+- **最近一次正式发布版本**：
+  - **主线完整版（`v2.0.0` · Latest）**：
+    - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.42 MiB / 240,560,974 字节，SHA-256: `ff2d64b4…08a2b3e8`，已内置最新 `PRTS-Worker` 与去 AI 化文案）
+    - Android 攻略随行包：`PRTS-Stronghold-2.0.0-Android.apk`（142.12 MiB / 149,025,407 字节，VersionCode `21`，SHA-256: `e1debc68…57d4f005c`，v2/v3 签名校验通过）
+  - **纯 PC 轻量版（`lite-v2.0.1`）**：
+    - Windows 便携包：`PRTS-Stronghold-Lite-Windows-x64-2.0.1.exe`（126.54 MiB / 132,685,303 字节，SHA-256: `971e8f64…cdcd21b6a`，剥离全部攻略、Boss 路线图与手机副屏，保留实时总览、牌库概率、伤害/Boss 统计、460px 侧边栏与桌面悬浮窗）
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
-  - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker。
+  - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker；本机已安装并登录 `gh` CLI（大文件上传如遇代理重置可配合 `curl --http1.1 --limit-rate 3M`）。
 - **近期已完成里程碑**：
   - **PRTS Stronghold Lite（资深玩家战报仪）PC 端完整 UI 落地**（`products/telemetry/` 升级，166/166 测试全绿，双产品构建通过）：
     - 彻底剥离阵容/站位攻略与 `boss-routes` 路线图（仅保留 `avatars` + `fonts`），视觉切换为低疲劳 PRTS 遥测青 `#22D3EE` + 哑光钢蓝 `#3698CC` 深黑仪器风。

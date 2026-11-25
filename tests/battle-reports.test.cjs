@@ -18,7 +18,9 @@ const {
   evaluateOcrLines,
   extractCovenantBoxesFromLine,
   isArknightsWindowName,
+  isMumuEmulatorWindowName,
   looksLikeCovenantScreen,
+  pickGameCaptureWindow,
 } = require('../electron/covenant-ocr.cjs');
 const { installLanSync, isPrivateLanIp, verifyPin } = require('../electron/lan-sync.cjs');
 const { computeMumuDrawerBounds, computeMumuHudBounds } = require('../electron/mumu-layout.cjs');
@@ -328,10 +330,29 @@ test('mumu-layout computes outside-right, inside-right 28%, screen-right fallbac
   assert.ok(hud.x >= 100 && hud.x + hud.width <= 1920);
   assert.ok(hud.y >= 40 && hud.y + hud.height <= 1040);
 
-  // 5. Window title recognition handles MuMu + Arknights variants
+  // 5. Window title recognition handles Arknights & MuMu 12 instance titles
   assert.equal(isArknightsWindowName('明日方舟'), true);
   assert.equal(isArknightsWindowName('MuMu模拟器12 - 明日方舟'), true);
   assert.equal(isArknightsWindowName('明日方舟 - MuMu模拟器'), true);
   assert.equal(isArknightsWindowName('MuMu Player 12 - Arknights'), true);
   assert.equal(isArknightsWindowName('MuMu模拟器12'), false);
+  assert.equal(isMumuEmulatorWindowName('MuMu安卓设备-1'), true);
+  assert.equal(isMumuEmulatorWindowName('MuMu模拟器12'), true);
+  assert.equal(isMumuEmulatorWindowName('MuMu多开器'), false);
+  assert.equal(isMumuEmulatorWindowName('MuMu游戏中心'), false);
+  assert.equal(
+    pickGameCaptureWindow([
+      { id: 'window:1:0', name: 'PRTS Stronghold' },
+      { id: 'window:2:0', name: 'MuMu多开器' },
+      { id: 'window:3:0', name: 'MuMu安卓设备-1' },
+    ], '1')?.name,
+    'MuMu安卓设备-1',
+  );
+  assert.equal(
+    pickGameCaptureWindow([
+      { id: 'window:3:0', name: 'MuMu安卓设备-1' },
+      { id: 'window:4:0', name: '明日方舟' },
+    ], '1')?.name,
+    '明日方舟',
+  );
 });

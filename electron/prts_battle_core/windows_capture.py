@@ -20,18 +20,38 @@ Connection = tuple[Endpoint, Endpoint]
 _CONNECTION_INTERVAL = 0.08
 _MAX_DEFERRED = 64
 _DWMWA_EXTENDED_FRAME_BOUNDS = 9
-_MUMU_CONTROL_PORTS = frozenset({5037, 5555, 7555})
+_MUMU_CONTROL_PORTS = frozenset({5037, 7555})
+_WEB_PORTS = frozenset({80, 443})
+_STRONGHOLD_DEFER_IDS = frozenset({1, 2, 300, 302, 303, 306, 310, 311, 313, 341, 344, 348, 366, 367})
+_MUMU_HUB_TITLE_KEYWORDS = (
+    "多开器",
+    "游戏中心",
+    "应用中心",
+    "模拟器中心",
+    "multi-instance",
+    "multi instance",
+    "app center",
+)
 
 PC_PROCESS_NAMES = frozenset({"arknights.exe"})
-MUMU_PROCESS_NAMES = frozenset({
-    "mumuplayer.exe",
-    "mumunxmain.exe",
+# Emulator player processes that host an actual Android display window.
+MUMU_WINDOW_PROCESS_NAMES = frozenset({
     "mumunxdevice.exe",
+    "mumuplayer.exe",
+    "nemuplayer.exe",
+})
+# Processes that prove an actual MuMu Android emulator instance is running
+# (excludes launcher-only MuMuNxMain.exe and idle background services).
+MUMU_INSTANCE_PROCESS_NAMES = MUMU_WINDOW_PROCESS_NAMES | frozenset({
     "mumuvmmheadless.exe",
+    "nemuheadless.exe",
+})
+# All MuMu emulator / hypervisor processes that may own guest NAT TCP sockets.
+MUMU_PROCESS_NAMES = MUMU_INSTANCE_PROCESS_NAMES | frozenset({
+    "mumunxmain.exe",
     "mumuvmmservice.exe",
     "mumuvmmsvc.exe",
-    "nemuplayer.exe",
-    "nemuheadless.exe",
+    "mumunxsvc.exe",
 })
 
 
@@ -91,8 +111,52 @@ def game_pids() -> set[int]:
     return {pid for pid, exe in list_process_map().items() if exe in PC_PROCESS_NAMES}
 
 
+def _is_arknights_title(title: str) -> bool:
+    folded = title.casefold()
+    return "明日方舟" in title or "arknights" in folded
+
+
+def _is_mumu_hub_title(title: str) -> bool:
+    folded = title.casefold()
+    return any(keyword in title or keyword in folded for keyword in _MUMU_HUB_TITLE_KEYWORDS)
+
+
+def _select_best_mumu_window(candidates: list[tuple[str, str, int, int, int, int]]) -> dict | None:
+    """Pick the best MuMu emulator window from (exe, title, x, y, width, height) in Z-order.
+
+    MuMu Player 12 (v4/v5 `MuMuNxDevice.exe`) renders app tabs internally in Qt while keeping
+    the Win32 top-level title as the instance name (e.g. `MuMu安卓设备-1`). Prefer explicit
+    Arknights/明日方舟 titles when present, and otherwise dock to the largest visible emulator
+    instance window (excluding launcher/hub windows).
+    """
+    best_rank: tuple[int, int] | None = None
+    best_window: dict | None = None
+    for exe, raw_title, x, y, width, height in candidates:
+        exe_key = exe.casefold()
+        title = raw_title.strip()
+        if not title or width < 300 or height < 200:
+            continue
+        if _is_arknights_title(title) and exe_key in MUMU_PROCESS_NAMES:
+            tier = 2
+        elif exe_key in MUMU_WINDOW_PROCESS_NAMES and not _is_mumu_hub_title(title):
+            tier = 1
+        else:
+            continue
+        rank = (tier, int(width) * int(height))
+        if best_rank is None or rank > best_rank:
+            best_rank = rank
+            best_window = {
+                "title": title,
+                "x": int(x),
+                "y": int(y),
+                "width": int(width),
+                "height": int(height),
+            }
+    return best_window
+
+
 def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
-    mumu_pids = {pid for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
+    mumu_pids = {pid: exe.casefold() for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
     if not mumu_pids or not hasattr(ct, "windll"):
         return None
     user32 = ct.windll.user32
@@ -116,15 +180,15 @@ def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
         dwmapi.DwmGetWindowAttribute.argtypes = [wt.HWND, wt.DWORD, ct.c_void_p, wt.DWORD]
         dwmapi.DwmGetWindowAttribute.restype = ct.c_long
 
-    best: tuple[int, dict] | None = None
+    candidates: list[tuple[str, str, int, int, int, int]] = []
 
     def callback(hwnd: int, _lparam: int) -> bool:
-        nonlocal best
         if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
             return True
         pid = wt.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ct.byref(pid))
-        if pid.value not in mumu_pids:
+        exe = mumu_pids.get(pid.value)
+        if exe is None:
             return True
         length = user32.GetWindowTextLengthW(hwnd)
         if length <= 0:
@@ -132,7 +196,7 @@ def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
         buf = ct.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buf, length + 1)
         title = buf.value.strip()
-        if "明日方舟" not in title and "arknights" not in title.casefold():
+        if not title:
             return True
         rect = wt.RECT()
         got_rect = False
@@ -149,19 +213,14 @@ def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
         height = int(rect.bottom - rect.top)
         if width < 300 or height < 200:
             return True
-        area = width * height
-        if best is None or area > best[0]:
-            best = (area, {
-                "title": title,
-                "x": int(rect.left),
-                "y": int(rect.top),
-                "width": width,
-                "height": height,
-            })
+        candidates.append((exe, title, int(rect.left), int(rect.top), width, height))
         return True
 
     user32.EnumWindows(enum_proc(callback), 0)
-    return best[1] if best is not None else None
+    return _select_best_mumu_window(candidates)
+
+
+find_mumu_window = find_mumu_arknights_window
 
 
 def resolve_capture_target(
@@ -173,14 +232,41 @@ def resolve_capture_target(
     pc_pids = {pid for pid, exe in process_map.items() if exe.casefold() in PC_PROCESS_NAMES}
     if pc_pids:
         return ("pc", pc_pids, None)
+    mumu_instance_pids = {
+        pid for pid, exe in process_map.items()
+        if exe.casefold() in MUMU_INSTANCE_PROCESS_NAMES
+    }
     mumu_pids = {pid for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
-    if mumu_pids and (mumu_window is not None or has_mumu_traffic):
+    if mumu_pids and (mumu_instance_pids or mumu_window is not None or has_mumu_traffic):
         return ("mumu", mumu_pids, mumu_window)
     return ("none", set(), None)
 
 
 def _is_mumu_control_port(port: int) -> bool:
-    return port in _MUMU_CONTROL_PORTS or 16384 <= port <= 16500
+    return port in _MUMU_CONTROL_PORTS or 5555 <= port <= 5585 or 16384 <= port <= 16500
+
+
+def _is_likely_stronghold_port(port: int) -> bool:
+    return port == 8443 or 6000 <= port <= 6999
+
+
+def _looks_like_stronghold_segment(segment: Segment) -> bool:
+    if _is_likely_stronghold_port(segment.src[1]) or _is_likely_stronghold_port(segment.dst[1]):
+        return True
+    payload = segment.payload
+    if len(payload) >= 8:
+        length, message_id = struct.unpack_from("!II", payload, 0)
+        if message_id in _STRONGHOLD_DEFER_IDS and 2 <= length <= 131072:
+            return True
+    if segment.syn and not segment.ack:
+        dst_port = segment.dst[1]
+        if (
+            dst_port not in _WEB_PORTS
+            and not _is_mumu_control_port(dst_port)
+            and not segment.dst[0].startswith("127.")
+        ):
+            return True
+    return False
 
 
 def _parse_tcp_table(buffer: bytes, pids: set[int], *, exclude_mumu_control: bool = False) -> set[Connection]:
@@ -335,7 +421,7 @@ def segments(
 
     def defer_game(segment: Segment) -> None:
         if (segment.src in game_servers or segment.dst in game_servers
-                or segment.src[1] == 8443 or segment.dst[1] == 8443):
+                or _looks_like_stronghold_segment(segment)):
             deferred.append(segment)
 
     try:
@@ -348,7 +434,9 @@ def segments(
                 else:
                     process_map = list_process_map()
                 detected_window = find_mumu_arknights_window(process_map)
-                has_mumu_traffic = client == "mumu" and any(server[1] == 8443 for _, server in connections)
+                has_mumu_traffic = client == "mumu" and any(
+                    _is_likely_stronghold_port(server[1]) for _, server in connections
+                )
                 client, pids, mumu_window = resolve_capture_target(
                     process_map, detected_window, has_mumu_traffic=has_mumu_traffic
                 )

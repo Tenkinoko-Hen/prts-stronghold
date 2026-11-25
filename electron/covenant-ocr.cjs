@@ -403,6 +403,24 @@ function isArknightsWindowName(name) {
     || /(?:明日方舟|Arknights).*MuMu|MuMu.*(?:明日方舟|Arknights)/i.test(text);
 }
 
+function isMumuEmulatorWindowName(name) {
+  const text = String(name || '').trim();
+  if (!text) return false;
+  if (/(?:多开器|游戏中心|应用中心|模拟器中心|Multi[-\s]?Instance|App\s*Center)/i.test(text)) {
+    return false;
+  }
+  return /(?:MuMu安卓设备|MuMu模拟器|MuMu\s*Player|NemuPlayer)/i.test(text);
+}
+
+function pickGameCaptureWindow(windows, ownHandle) {
+  const external = (Array.isArray(windows) ? windows : []).filter(
+    s => s && !(s.id?.startsWith('window:') && s.id.split(':')[1] === ownHandle),
+  );
+  return external.find(s => isArknightsWindowName(s.name))
+    || external.find(s => isMumuEmulatorWindowName(s.name))
+    || null;
+}
+
 function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut }) {
   const runner = createWinRtOcrRunner();
   let disposed = false;
@@ -436,7 +454,7 @@ function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, g
       types: ['window'],
       thumbnailSize: { width: 1920, height: 1080 },
     });
-    const gameWin = windows.find(s => !(s.id.startsWith('window:') && s.id.split(':')[1] === ownHandle) && isArknightsWindowName(s.name));
+    const gameWin = pickGameCaptureWindow(windows, ownHandle);
     if (gameWin && !gameWin.thumbnail.isEmpty()) {
       return { image: gameWin.thumbnail, label: gameWin.name, isWindow: true };
     }
@@ -623,5 +641,7 @@ module.exports = {
   evaluateOcrLines,
   createWinRtOcrRunner,
   isArknightsWindowName,
+  isMumuEmulatorWindowName,
+  pickGameCaptureWindow,
   installCovenantOcr,
 };

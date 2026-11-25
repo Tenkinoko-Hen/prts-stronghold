@@ -1111,28 +1111,57 @@ class CombatMeterAndInspectorTests(unittest.TestCase):
 
 
 class MumuCaptureDetectionTests(unittest.TestCase):
-    def test_resolve_capture_target_prioritizes_pc_and_guards_mumu_arknights(self):
+    def test_resolve_capture_target_prioritizes_pc_and_detects_mumu_instance_launch(self):
         from electron.prts_battle_core.windows_capture import resolve_capture_target
 
-        win = {'title': '明日方舟 - MuMu模拟器12', 'x': 100, 'y': 60, 'width': 1280, 'height': 720}
+        win = {'title': 'MuMu安卓设备-1', 'x': 100, 'y': 60, 'width': 1280, 'height': 720}
         # 1. PC Arknights.exe + MuMu running simultaneously -> must pick PC
-        both_map = {101: 'arknights.exe', 202: 'mumuplayer.exe', 203: 'mumuvmmheadless.exe'}
+        both_map = {101: 'arknights.exe', 202: 'mumunxdevice.exe', 203: 'mumuvmmheadless.exe'}
         self.assertEqual(resolve_capture_target(both_map, win), ('pc', {101}, None))
 
-        # 2. MuMu running with visible Arknights window -> picks MuMu PIDs + window bounds
-        mumu_only = {202: 'MuMuPlayer.exe', 203: 'MuMuNxMain.exe', 204: 'explorer.exe'}
-        self.assertEqual(resolve_capture_target(mumu_only, win), ('mumu', {202, 203}, win))
+        # 2. MuMu 12 v5 device running with instance-name title -> picks MuMu PIDs + window bounds
+        mumu_running = {202: 'MuMuNxDevice.exe', 203: 'MuMuNxMain.exe', 205: 'MuMuNxSVC.exe', 204: 'explorer.exe'}
+        self.assertEqual(resolve_capture_target(mumu_running, win), ('mumu', {202, 203, 205}, win))
 
-        # 3. MuMu running without Arknights window and without traffic -> does NOT misdetect
-        self.assertEqual(resolve_capture_target(mumu_only, None), ('none', set(), None))
+        # 3. MuMu emulator instance minimized (window=None) -> keeps MuMu capture alive without dropping
+        self.assertEqual(resolve_capture_target(mumu_running, None), ('mumu', {202, 203, 205}, None))
 
-        # 4. MuMu minimized mid-match with active traffic -> keeps MuMu capture alive
+        # 4. Only MuMu launcher / background services running without any emulator instance -> does NOT misdetect
+        launcher_only = {203: 'MuMuNxMain.exe', 205: 'MuMuNxSVC.exe', 204: 'explorer.exe'}
+        self.assertEqual(resolve_capture_target(launcher_only, None), ('none', set(), None))
+
+        # 5. Legacy launcher process with active Stronghold traffic -> keeps MuMu capture alive
         self.assertEqual(
-            resolve_capture_target(mumu_only, None, has_mumu_traffic=True),
-            ('mumu', {202, 203}, None),
+            resolve_capture_target(launcher_only, None, has_mumu_traffic=True),
+            ('mumu', {203, 205}, None),
         )
 
-    def test_parse_tcp_table_filters_mumu_control_ports_and_loopback(self):
+    def test_select_best_mumu_window_prefers_arknights_title_and_falls_back_to_instance_window(self):
+        from electron.prts_battle_core.windows_capture import _select_best_mumu_window
+
+        # 1. MuMu 12 v5 tab-bar UI keeps Win32 title as `MuMu安卓设备-1` -> must match device window, not launcher hub
+        picked = _select_best_mumu_window([
+            ('mumunxmain.exe', 'MuMu模拟器12', 0, 0, 1440, 900),
+            ('mumunxdevice.exe', 'MuMu多开器', 0, 0, 1600, 900),
+            ('mumunxdevice.exe', 'MuMu安卓设备-1', 40, 80, 1280, 720),
+            ('mumunxdevice.exe', '', 0, 0, 1920, 1080),
+        ])
+        self.assertEqual(picked, {'title': 'MuMu安卓设备-1', 'x': 40, 'y': 80, 'width': 1280, 'height': 720})
+
+        # 2. Explicit Arknights / 明日方舟 title still wins over a larger generic instance window
+        preferred = _select_best_mumu_window([
+            ('mumunxdevice.exe', 'MuMu安卓设备-2', 0, 0, 1600, 900),
+            ('mumuplayer.exe', '明日方舟 - MuMu模拟器12', 80, 60, 1280, 720),
+        ])
+        self.assertEqual(preferred, {'title': '明日方舟 - MuMu模拟器12', 'x': 80, 'y': 60, 'width': 1280, 'height': 720})
+
+        # 3. Launcher-only window without Arknights title is ignored
+        self.assertIsNone(_select_best_mumu_window([
+            ('mumunxmain.exe', 'MuMu游戏中心', 0, 0, 1280, 720),
+            ('mumunxdevice.exe', 'Mini', 0, 0, 200, 120),
+        ]))
+
+    def test_parse_tcp_table_filters_mumu_control_ports_and_keeps_stronghold_ports(self):
         import socket
         from electron.prts_battle_core.windows_capture import _parse_tcp_table
 
@@ -1149,23 +1178,54 @@ class MumuCaptureDetectionTests(unittest.TestCase):
             row(5, '127.0.0.1', 50100, '127.0.0.1', 8443, 203),      # loopback
             row(5, '192.168.1.10', 50101, '192.168.1.10', 5037, 203), # ADB 5037
             row(5, '192.168.1.10', 50102, '192.168.1.10', 5555, 203), # ADB 5555
+            row(5, '192.168.1.10', 50104, '192.168.1.10', 5557, 203), # Multi-instance ADB 5557
             row(5, '192.168.1.10', 50103, '192.168.1.10', 7555, 203), # MuMu control 7555
-            row(5, '192.168.1.10', 16400, '192.168.1.10', 16384, 203), # MuMu range 16384-16500
-            row(5, '10.0.2.15', 43210, '203.0.113.8', 8443, 203),    # Real Stronghold server
+            row(5, '192.168.1.10', 16416, '192.168.1.10', 16384, 203), # MuMu range 16384-16500
+            row(5, '10.0.2.15', 43210, '203.0.113.8', 8443, 203),    # Stronghold 8443
+            row(5, '198.18.0.1', 49801, '106.14.87.204', 6101, 203), # MuMu Stronghold 6101
         ]
         buf = struct.pack('<I', len(rows)) + b''.join(rows)
 
         all_conns = _parse_tcp_table(buf, {203}, exclude_mumu_control=False)
-        self.assertEqual(len(all_conns), 6)
+        self.assertEqual(len(all_conns), 8)
 
         filtered = _parse_tcp_table(buf, {203}, exclude_mumu_control=True)
-        self.assertEqual(filtered, {(('10.0.2.15', 43210), ('203.0.113.8', 8443))})
+        self.assertEqual(filtered, {
+            (('10.0.2.15', 43210), ('203.0.113.8', 8443)),
+            (('198.18.0.1', 49801), ('106.14.87.204', 6101)),
+        })
+
+    def test_looks_like_stronghold_segment_defers_6101_frames_and_syn_without_https_noise(self):
+        from electron.prts_battle_core.windows_capture import _looks_like_stronghold_segment
+
+        # Port 6101 & 8443 are deferred
+        self.assertTrue(_looks_like_stronghold_segment(
+            Segment(0.0, ('198.18.0.1', 49801), ('106.14.87.204', 6101), b'', 1, False, True, False, False)
+        ))
+        self.assertTrue(_looks_like_stronghold_segment(
+            Segment(0.0, ('192.0.2.1', 40001), ('192.0.2.2', 8443), b'', 1, False, True, False, False)
+        ))
+        # Stronghold V3_1 heartbeat / scene frame on any non-standard port is deferred
+        heartbeat = struct.pack('!II', 12, 1) + bytes(12)
+        self.assertTrue(_looks_like_stronghold_segment(
+            Segment(0.0, ('198.18.0.1', 50000), ('198.51.100.9', 19001), heartbeat, 1, False, True, False, False)
+        ))
+        # Initial outbound SYN to non-web game port is deferred; HTTPS 443 SYN / TLS data is NOT deferred
+        self.assertTrue(_looks_like_stronghold_segment(
+            Segment(0.0, ('198.18.0.1', 50001), ('198.51.100.9', 19001), b'', 1, True, False, False, False)
+        ))
+        self.assertFalse(_looks_like_stronghold_segment(
+            Segment(0.0, ('198.18.0.1', 50002), ('198.51.100.9', 443), b'\x16\x03\x03\x00\x20' + bytes(16), 1, False, True, False, False)
+        ))
+        self.assertFalse(_looks_like_stronghold_segment(
+            Segment(0.0, ('198.18.0.1', 50003), ('198.51.100.9', 443), b'', 1, True, False, False, False)
+        ))
 
     def test_segments_emits_mumu_source_callback(self):
         stopped = Event()
         sources = []
-        win = {'title': '明日方舟 - MuMu模拟器12', 'x': 80, 'y': 40, 'width': 1280, 'height': 720}
-        with patch('electron.prts_battle_core.windows_capture.list_process_map', return_value={202: 'mumuplayer.exe'}), \
+        win = {'title': 'MuMu安卓设备-1', 'x': 80, 'y': 40, 'width': 1280, 'height': 720}
+        with patch('electron.prts_battle_core.windows_capture.list_process_map', return_value={202: 'mumunxdevice.exe'}), \
              patch('electron.prts_battle_core.windows_capture.find_mumu_arknights_window', return_value=win), \
              patch('electron.prts_battle_core.windows_capture.game_connections', return_value={OLD}), \
              patch('electron.prts_battle_core.windows_capture.monotonic', return_value=0.0), \

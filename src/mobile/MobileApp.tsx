@@ -9,6 +9,7 @@ import { CovenantScanner, useCovenantScanner } from './CovenantScanner';
 import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
 import { isSecondScreenActive, MobileLanPanel, useMobileLanSync } from './MobileLanPanel';
+import { MobileCaptureToggle, useMobileCaptureSync } from './MobileCapturePanel';
 import { MobileSecondScreen } from './MobileSecondScreen';
 import type { RoundSyncProgress } from './RoundSync';
 import { StrategyBadge } from '../components/StrategyBadge';
@@ -71,7 +72,11 @@ export default function MobileApp() {
   const handleLanSync = useCallback((data: { bannedCovenants: string[]; round: number; selectedCompId?: string }) => {
     dispatch({ type: 'applyLanSync', ...data });
   }, []);
+  const handleCaptureSync = useCallback((data: { matchSerial: number; bansConfirmed: boolean; bannedCovenants: string[]; round: number }) => {
+    dispatch({ type: 'applyCaptureSync', ...data });
+  }, []);
   const lanSync = useMobileLanSync(handleLanSync);
+  const captureSync = useMobileCaptureSync(handleCaptureSync);
   const secondScreenOn = isSecondScreenActive(lanSync.lan);
   useEffect(() => {
     window.PRTSDisplay?.setSecondScreenMode(secondScreenOn);
@@ -171,6 +176,12 @@ export default function MobileApp() {
     <main className={`m-scroll ${session.step === 'guide' ? 'is-guide' : session.step === 'ban' ? 'is-scan' : ''}`} ref={scrollRef}>
       {session.step === 'ban' && <div className="m-scan-layout"><section className="m-scan-controls" aria-label="识别与校正">
         <CovenantScanner appliedId={session.scanId} scanner={scanner} />
+        <MobileCaptureToggle
+          capture={captureSync.capture}
+          supported={captureSync.supported}
+          onStart={captureSync.start}
+          onStop={captureSync.stop}
+        />
         {!overlay && <MobileLanPanel
           sharedLan={lanSync.lan}
           onConnect={lanSync.connect}
@@ -251,6 +262,7 @@ export default function MobileApp() {
           round={round}
           bans={session.bans}
           ownedMap={session.ownedOperators?.[comp.id] || {}}
+          liveCapture={captureSync.capture}
           roundSyncProgress={roundSyncProgress}
           onRound={value => dispatch({ type: 'round', round: value })}
           onToggleOwned={name => dispatch({ type: 'toggleOwned', compId: comp.id, name })}
@@ -265,7 +277,7 @@ export default function MobileApp() {
     <nav className="m-bottom-nav" aria-label="手机导航">{([
       ['ban', '识别', ShieldBan], ['plans', '方案', Crosshair], ['guide', '跟进', Check], ['library', '资料', BookOpen],
     ] as const).map(([step, title, Icon]) => <button key={step} aria-current={session.step === step ? 'page' : undefined} onClick={() => dispatch({ type: 'step', step })}><Icon size={19} /><span>{title}</span></button>)}</nav>
-    {help && <div className="m-modal-backdrop" onClick={() => setHelp(false)}><section className="m-confirm" role="dialog" aria-modal="true" aria-label="使用帮助" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭帮助" onClick={() => setHelp(false)}><X size={18} /></button><h2>识别 → 选方案 → 跟进</h2><p>悬浮球快捷手势：<b>单击</b>展开侧栏、<b>双击</b>一键识别盟约、<b>长按</b>切换战术迷你条，拖动自动贴边。</p><p>一次授权全流程复用：开局允许一次屏幕共享后，后续的回合自动同步与「扫商店」核心高亮无需再次弹窗授权。</p><p>跟打页可点击干员卡片右上角打卡（<b>✓ 已到手 / ★ 已精锐</b>），系统会自动汇总缺卡清单、同步迷你条抓牌提示，并联动「概率」离线搜牌速查。</p><p>常用阵容可点击星标收藏置顶；展开浮窗时仍可直接点击游戏区域操作，截图仅在本机内存处理，不保存、不上传。</p></section></div>}
+    {help && <div className="m-modal-backdrop" onClick={() => setHelp(false)}><section className="m-confirm" role="dialog" aria-modal="true" aria-label="使用帮助" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭帮助" onClick={() => setHelp(false)}><X size={18} /></button><h2>识别 → 选方案 → 跟进</h2><p><b>本机实时抓包（免 Root）</b>：开启后仅旁路解析明日方舟对局 TCP 帧，自动同步本局 Ban、回合、<b>下回合出怪种类</b>与<b>实时漏怪/协防兜底数</b>（与系统梯子/加速器互斥，不点开启则保持纯离线模式）。</p><p><b>悬浮球快捷手势</b>：单击展开侧栏、双击一键扫盟约、长按切换顶部战术迷你条；迷你条支持 2~3 行完整显示不截断，点正文可一键折叠，右上角可随时切「兜底」查看应急止损。</p><p><b>核心打卡与收藏</b>：点击干员角标打卡（<b>✓ 已到手 / ★ 已精锐</b>）同步缺卡清单；常用阵容可点星标收藏置顶；展开浮窗时窗外点击直达游戏。</p></section></div>}
     {lanModal && <div className="m-modal-backdrop" onClick={() => setLanModal(false)}><section className="m-confirm m-lan-modal" role="dialog" aria-modal="true" aria-label="无线副屏配对" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭无线副屏设置" onClick={() => setLanModal(false)}><X size={18} /></button><h2>电脑无线副屏</h2><MobileLanPanel sharedLan={lanSync.lan} onConnect={lanSync.connect} onDisconnect={lanSync.disconnect} /></section></div>}
     {resetPrompt && <div className="m-modal-backdrop"><section className="m-confirm" role="dialog" aria-modal="true" aria-label="开始新局"><h2>开始新的一局？</h2><p>将清空本局 Ban、已抓干员打卡与各方案回合进度（收藏阵容会保留）。</p><div className="m-two-buttons"><button className="m-secondary" onClick={() => setResetPrompt(false)}>继续本局</button><button className="m-primary" onClick={startNewMatch}>开始新局</button></div></section></div>}
     {image && <section className="m-image-modal" role="dialog" aria-modal="true" aria-label={image.title}><header><button className="m-icon-button" aria-label="关闭原图" onClick={() => setImage(null)}><X /></button><strong>{image.title}</strong><button className="m-secondary" onClick={() => setZoom(zoom >= 250 ? 100 : zoom + 50)}>{zoom}%</button></header><div className="m-image-scroll"><img src={image.url} alt={image.title} style={{ width: `${zoom}%`, maxWidth: 'none' }} /></div><p>拖动查看长图 · 点击比例放大 · 支持双指缩放</p></section>}

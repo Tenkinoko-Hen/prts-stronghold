@@ -52,10 +52,8 @@ public class CovenantScanService extends Service {
     private volatile long lastFrame;
     private int captureWidth, captureHeight;
 
-    private volatile String activeMode = "standby"; // covenant | round | shop | standby
-    private volatile String previousMode = "standby";
+    private volatile String activeMode = "standby"; // covenant | round | standby
     private volatile String scanId = "";
-    private volatile long shopReadyAfter = 0;
 
     private final RoundDetector roundDetector = new RoundDetector();
     private long roundGeneration = -1;
@@ -69,13 +67,6 @@ public class CovenantScanService extends Service {
         if (!finished && "round".equals(activeMode) && RoundScanState.is("capturing")) {
             RoundScanState.stop("等待游戏画面超时，请重新开启回合同步");
             enterStandbyMode();
-        }
-    };
-    private final Runnable shopTimeout = () -> {
-        if (!finished && "shop".equals(activeMode)) {
-            ShopScanState.fail("商店识别超时，请确认处于商店页面后重试");
-            OverlayService.flashShopResult("商店识别超时，请重试");
-            restoreAfterShop();
         }
     };
 
@@ -120,13 +111,6 @@ public class CovenantScanService extends Service {
         return true;
     }
 
-    static boolean switchToShop(String nextScanId, boolean hidePanelBriefly) {
-        CovenantScanService s = active;
-        if (s == null || s.projection == null || s.finished) return false;
-        s.mainHandler.post(() -> s.activateShopMode(nextScanId, hidePanelBriefly));
-        return true;
-    }
-
     @Override public void onCreate() {
         super.onCreate();
         active = this;
@@ -148,16 +132,13 @@ public class CovenantScanService extends Service {
 
         if (projection != null && !finished) {
             if ("round".equals(reqMode)) activateRoundMode(reqScanId);
-            else if ("shop".equals(reqMode)) activateShopMode(reqScanId, false);
             else activateCovenantMode(reqScanId);
             return START_NOT_STICKY;
         }
 
         boolean validPending = "round".equals(reqMode)
             ? (RoundScanState.matches(reqScanId) && RoundScanState.is("permission"))
-            : "shop".equals(reqMode)
-                ? (ShopScanState.matches(reqScanId) && ShopScanState.is("permission"))
-                : (CovenantScanState.matches(reqScanId) && CovenantScanState.permissionPending());
+            : (CovenantScanState.matches(reqScanId) && CovenantScanState.permissionPending());
         if (!validPending) { stopSelf(); return START_NOT_STICKY; }
 
         try {
@@ -185,7 +166,6 @@ public class CovenantScanService extends Service {
             );
 
             if ("round".equals(reqMode)) activateRoundMode(reqScanId);
-            else if ("shop".equals(reqMode)) activateShopMode(reqScanId, false);
             else activateCovenantMode(reqScanId);
         } catch (RuntimeException error) {
             failMode(reqMode, "识别未能启动，请重新授权屏幕共享");
@@ -206,12 +186,9 @@ public class CovenantScanService extends Service {
         } else if ("round".equals(mode)) {
             title = "回合自动同步中";
             text = "已复用本局屏幕共享自动跟进回合；点此停止共享";
-        } else if ("shop".equals(mode)) {
-            title = "商店刷牌速查中";
-            text = "正在本机识别底部商店卡面…";
         } else {
             title = "PRTS 屏幕共享待命中";
-            text = "本局可免二次授权直接开启回合同步或商店速查；点此关闭共享";
+            text = "本局可免二次授权直接开启回合同步；点此关闭共享";
         }
         Notification notice = new Notification.Builder(this, "prts_scan")
             .setSmallIcon(R.drawable.ic_notification)
@@ -229,7 +206,6 @@ public class CovenantScanService extends Service {
         if (finished || projection == null) return;
         mainHandler.removeCallbacks(covenantTimeout);
         mainHandler.removeCallbacks(roundCalibrateTimeout);
-        mainHandler.removeCallbacks(shopTimeout);
         scanId = nextScanId != null ? nextScanId : "";
         activeMode = "covenant";
         lastFrame = 0;
@@ -243,7 +219,6 @@ public class CovenantScanService extends Service {
         if (finished || projection == null) return;
         mainHandler.removeCallbacks(covenantTimeout);
         mainHandler.removeCallbacks(roundCalibrateTimeout);
-        mainHandler.removeCallbacks(shopTimeout);
         scanId = nextScanId != null ? nextScanId : "";
         activeMode = "round";
         lastFrame = 0;
@@ -254,50 +229,20 @@ public class CovenantScanService extends Service {
         mainHandler.postDelayed(roundCalibrateTimeout, 30000);
     }
 
-    private void activateShopMode(String nextScanId, boolean hidePanelBriefly) {
-        if (finished || projection == null) return;
-        mainHandler.removeCallbacks(shopTimeout);
-        if (!"shop".equals(activeMode)) previousMode = activeMode;
-        scanId = nextScanId != null ? nextScanId : "";
-        activeMode = "shop";
-        lastFrame = 0;
-        ShopScanState.set("scanning", "正在识别底部商店卡面…");
-        if (hidePanelBriefly) {
-            OverlayService.hideForShopQuickShot();
-            shopReadyAfter = SystemClock.elapsedRealtime() + 260;
-        } else {
-            shopReadyAfter = 0;
-        }
-        updateNotification("shop");
-        mainHandler.postDelayed(shopTimeout, 8000);
-    }
-
     private void finishCovenantMode(String message, boolean error) {
         mainHandler.removeCallbacks(covenantTimeout);
         if (CovenantScanState.matches(scanId)) {
             if (error) CovenantScanState.set("error", message);
             else CovenantScanState.finish(message);
         }
-        // 保持 MediaProjection 热待机，同局后续开启回合同步/商店速查无需二次弹窗授权！
+        // 保持 MediaProjection 热待机，同局后续开启回合同步无需二次弹窗授权
         enterStandbyMode();
         OverlayService.showAfterScan();
-    }
-
-    private void restoreAfterShop() {
-        mainHandler.removeCallbacks(shopTimeout);
-        if ("round".equals(previousMode) && (RoundScanState.is("scanning") || RoundScanState.is("paused"))) {
-            activeMode = "round";
-            scanId = RoundScanState.currentId();
-            updateNotification("round");
-        } else {
-            enterStandbyMode();
-        }
     }
 
     private void enterStandbyMode() {
         mainHandler.removeCallbacks(covenantTimeout);
         mainHandler.removeCallbacks(roundCalibrateTimeout);
-        mainHandler.removeCallbacks(shopTimeout);
         activeMode = "standby";
         if (!finished && projection != null) {
             updateNotification("standby");
@@ -306,7 +251,6 @@ public class CovenantScanService extends Service {
 
     private void failMode(String mode, String message) {
         if ("round".equals(mode)) RoundScanState.stop(message);
-        else if ("shop".equals(mode)) ShopScanState.fail(message);
         else CovenantScanState.set("error", message);
     }
 
@@ -379,8 +323,7 @@ public class CovenantScanService extends Service {
         try (Image frame = source.acquireLatestImage()) {
             if (frame == null || busy) return;
             long now = SystemClock.elapsedRealtime();
-            if ("shop".equals(mode) && now < shopReadyAfter) return;
-            long minInterval = "round".equals(mode) ? 900 : "shop".equals(mode) ? 120 : 260;
+            long minInterval = "round".equals(mode) ? 900 : 260;
             if (now - lastFrame < minInterval) return;
 
             if ("round".equals(mode)) {
@@ -399,10 +342,6 @@ public class CovenantScanService extends Service {
             bitmap = imageToBitmap(frame);
             if ("round".equals(mode)) {
                 processRoundFrame(bitmap);
-                return;
-            }
-            if ("shop".equals(mode)) {
-                processShopFrame(bitmap);
                 return;
             }
             processCovenantFrame(bitmap);
@@ -503,7 +442,7 @@ public class CovenantScanService extends Service {
         if (completed) {
             mainHandler.post(() -> {
                 if (!finished && "covenant".equals(activeMode) && CovenantScanState.matches(currentScanId)) {
-                    finishCovenantMode("26 项盟约已确认（本局共享待命，可直接开回合/扫店）", false);
+                    finishCovenantMode("26 项盟约已确认（本局共享待命，可直接开回合同步）", false);
                 }
             });
         }
@@ -657,52 +596,11 @@ public class CovenantScanService extends Service {
             .addOnCompleteListener(workerHandler::post, task -> { input.recycle(); busy = false; });
     }
 
-    private void processShopFrame(Bitmap full) {
-        final String currentScanId = scanId;
-        int w = full.getWidth();
-        int h = full.getHeight();
-        // 商店卡牌位于游戏画面下半区（约 y: 50%..99%）
-        int cropY = Math.max(0, Math.round(h * 0.50f));
-        int cropH = Math.max(1, h - cropY);
-        Bitmap bottom = Bitmap.createBitmap(full, 0, cropY, w, cropH);
-        full.recycle();
-        float scale = w < 1600 ? 1.5f : 1.15f;
-        Bitmap input = Bitmap.createScaledBitmap(bottom, Math.round(w * scale), Math.round(cropH * scale), true);
-        if (input != bottom) bottom.recycle();
-
-        busy = true;
-        recognizer.process(InputImage.fromBitmap(input, 0))
-            .addOnSuccessListener(workerHandler::post, text -> {
-                if (!finished && "shop".equals(activeMode) && ShopScanState.matches(currentScanId)) {
-                    List<String> found = ShopDetector.matchOperators(text.getText(), ShopScanState.catalog());
-                    ShopScanState.complete(found);
-                    String summary = ShopScanState.summaryForStrip();
-                    mainHandler.post(() -> {
-                        OverlayService.restoreAfterShopQuickShot();
-                        OverlayService.flashShopResult(summary);
-                        restoreAfterShop();
-                    });
-                }
-            })
-            .addOnFailureListener(workerHandler::post, error -> {
-                if (!finished && "shop".equals(activeMode) && ShopScanState.matches(currentScanId)) {
-                    ShopScanState.fail("商店文字识别失败，请重试");
-                    mainHandler.post(() -> {
-                        OverlayService.restoreAfterShopQuickShot();
-                        OverlayService.flashShopResult("商店识别失败，请重试");
-                        restoreAfterShop();
-                    });
-                }
-            })
-            .addOnCompleteListener(workerHandler::post, task -> { input.recycle(); busy = false; });
-    }
-
     private void shutdown(String message, boolean error) {
         if (finished) return;
         finished = true;
         String mode = activeMode;
         if ("round".equals(mode) && RoundScanState.matches(scanId)) RoundScanState.stop(message);
-        else if ("shop".equals(mode) && ShopScanState.matches(scanId)) ShopScanState.fail(message);
         else if ("covenant".equals(mode) && CovenantScanState.matches(scanId)) {
             if (error) CovenantScanState.set("error", message);
             else CovenantScanState.finish(message);
@@ -727,7 +625,6 @@ public class CovenantScanService extends Service {
     private void release() {
         mainHandler.removeCallbacks(covenantTimeout);
         mainHandler.removeCallbacks(roundCalibrateTimeout);
-        mainHandler.removeCallbacks(shopTimeout);
         if (display != null) { display.release(); display = null; }
         if (reader != null) { reader.close(); reader = null; }
         if (projection != null) { MediaProjection old = projection; projection = null; old.stop(); }

@@ -114,6 +114,10 @@ try {
             $entryName = 'assets/' + (Get-RelPath (Join-Path $projectRoot $WebRoot) $asset.FullName)
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $asset.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
         }
+        $enemyCatalogPath = Join-Path $projectRoot 'electron\prts_battle_core\enemy_power.json'
+        if ((Test-Path -LiteralPath $enemyCatalogPath) -and !$archive.GetEntry('assets/enemy_power.json')) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $enemyCatalogPath, 'assets/enemy_power.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
         foreach ($assetRoot in $ocr.Assets) {
             foreach ($asset in Get-ChildItem -LiteralPath $assetRoot -File -Recurse) {
                 $entryName = 'assets/' + (Get-RelPath $assetRoot $asset.FullName)

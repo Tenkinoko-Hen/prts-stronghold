@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private WebView guide;
     private LinearLayout guideControls;
     private TextView permissionBadge;
+    private Button vpnToggleBtn;
     private Button overlaySettingBtn;
     private Button notifyBtn;
     private LinearLayout root;
@@ -203,15 +204,19 @@ public class MainActivity extends Activity {
 
         // 主 CTA：工业黄
         actionButton(body, "开启悬浮助手 · 进入游戏", 0xffffe600, 0xffffe600, 0xff0b0d11, 50, v -> startOverlay());
+        // 本机免 Root 实时抓包开关（可选）
+        vpnToggleBtn = actionButton(body, "开启本机实时抓包（出怪预告 / 漏怪兜底）", 0xff0d232b, 0xff00e5ff, 0xff67e8f9, 46, v -> toggleVpnCapture());
         // 次要 CTA：应用内查阅 + 无线副屏
         actionButton(body, getString(R.string.home_open_button) + " / 无线副屏", 0xff171c26, 0xff334155, 0xfff1f5f9, 46, v -> {
             OverlayService.stopActive();
             showGuide();
         });
-        actionButton(body, "关闭悬浮助手", 0xff11151d, 0xff252d3a, 0xffcbd5e1, 42, v -> {
+        actionButton(body, "关闭悬浮助手与抓包", 0xff11151d, 0xff252d3a, 0xffcbd5e1, 42, v -> {
             stopService(new Intent(this, OverlayService.class));
             stopService(new Intent(this, CovenantScanService.class));
-            Toast.makeText(this, "悬浮助手已关闭，本局进度已保留", Toast.LENGTH_SHORT).show();
+            StrongholdVpnService.stopActive(this);
+            updatePermission();
+            Toast.makeText(this, "悬浮助手与抓包已关闭，本局进度已保留", Toast.LENGTH_SHORT).show();
         });
 
         // 权限按钮：未授权时高亮显示，已授权时收起为紧凑配置项
@@ -233,8 +238,8 @@ public class MainActivity extends Activity {
         body.addView(tipsCard, tipsLp);
         tipsCard.addView(label("隐私与安全说明", 12.5f, 0xffcbd5e1, true));
         TextView tipsBody = label(
-            "• 盟约、回合与商店识别均在本机内存实时完成，不保存截图、不上传云端。\n"
-            + "• 无需无障碍权限、无需 Root；无线副屏仅在局域网内配对同步。",
+            "• 本机实时抓包基于 Android 系统 VpnService，仅旁路解析明日方舟对局包（不改包、不经外服、不影响微信等其他 App）；与梯子/加速器互斥，可随时关闭。\n"
+            + "• 盟约与回合识别均在本机内存实时完成，不保存截图、不上传云端；无需无障碍权限、无需 Root。",
             12f, 0xff94a3b8, false
         );
         tipsBody.setLineSpacing(dp(3), 1f);
@@ -244,11 +249,39 @@ public class MainActivity extends Activity {
         updatePermission();
     }
 
+    private void toggleVpnCapture() {
+        if (BattleCaptureState.isRunning()) {
+            StrongholdVpnService.stopActive(this);
+            updatePermission();
+            Toast.makeText(this, "已停止本机实时抓包", Toast.LENGTH_SHORT).show();
+        } else {
+            try {
+                startActivity(new Intent(this, VpnPermissionActivity.class));
+            } catch (RuntimeException error) {
+                Toast.makeText(this, "无法打开本机抓包授权", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     private void updatePermission() {
         boolean canOverlay = Settings.canDrawOverlays(this);
+        boolean vpnOn = BattleCaptureState.isRunning();
         if (permissionBadge != null) {
-            permissionBadge.setText(canOverlay ? "● 悬浮窗权限已就绪（横屏默认右侧紧凑抽屉）" : "▲ 尚未开启悬浮窗权限（点击下方按钮去授权）");
-            permissionBadge.setTextColor(canOverlay ? 0xff34d399 : 0xfffbbf24);
+            String overlayTxt = canOverlay ? "● 悬浮窗就绪" : "▲ 待开悬浮窗";
+            String vpnTxt = vpnOn ? " · 实时抓包运行中" : " · 抓包未开（可选）";
+            permissionBadge.setText(overlayTxt + vpnTxt);
+            permissionBadge.setTextColor(canOverlay ? (vpnOn ? 0xff00e5ff : 0xff34d399) : 0xfffbbf24);
+        }
+        if (vpnToggleBtn != null) {
+            if (vpnOn) {
+                vpnToggleBtn.setText("● 本机实时抓包运行中 · 点击停止");
+                vpnToggleBtn.setTextColor(0xff0b0d11);
+                vpnToggleBtn.setBackground(box(0xff00e5ff, 4, 0xff00e5ff));
+            } else {
+                vpnToggleBtn.setText("开启本机实时抓包（下回合出怪 / 漏怪兜底）");
+                vpnToggleBtn.setTextColor(0xff67e8f9);
+                vpnToggleBtn.setBackground(box(0xff0d232b, 4, 0xff00e5ff));
+            }
         }
         if (overlaySettingBtn != null) {
             overlaySettingBtn.setVisibility(canOverlay ? View.GONE : View.VISIBLE);

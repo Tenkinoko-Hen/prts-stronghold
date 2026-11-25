@@ -105,6 +105,7 @@ export function restoreSession(raw: string | null): MobileSession {
 export type MobileAction =
   | { type: 'applyScan'; scan: CovenantScan }
   | { type: 'applyLanSync'; bannedCovenants: string[]; round: number; selectedCompId?: string }
+  | { type: 'applyCaptureSync'; matchSerial: number; bansConfirmed: boolean; bannedCovenants: string[]; round: number }
   | { type: 'ban'; group: keyof BanPickState; name: string }
   | { type: 'step'; step: MobileStep }
   | { type: 'choose'; id: string }
@@ -144,6 +145,28 @@ export function mobileReducer(state: MobileSession, action: MobileAction): Mobil
               scanComplete: true,
               confirmedCovenants: [...covenantNames],
               bans: { ...state.bans, bannedCovenants: cleanBans },
+            }
+          : {}),
+      };
+    }
+    case 'applyCaptureSync': {
+      const scanId = `vpn-${Math.max(1, Math.trunc(action.matchSerial || 1))}`;
+      const isNewVpnMatch = Boolean(state.scanId && state.scanId.startsWith('vpn-') && state.scanId !== scanId);
+      const base = isNewVpnMatch ? emptySession() : state;
+      const cleanBans = [...new Set(action.bannedCovenants.filter(name => covenantNames.has(name)))];
+      const clampedRound = action.round >= 1 ? Math.max(1, Math.min(15, Math.trunc(action.round))) : 0;
+      const nextRounds = base.compId && clampedRound > 0
+        ? { ...base.rounds, [base.compId]: clampedRound }
+        : base.rounds;
+      return {
+        ...base,
+        rounds: nextRounds,
+        ...(action.bansConfirmed
+          ? {
+              scanId,
+              scanComplete: true,
+              confirmedCovenants: [...covenantNames],
+              bans: { ...base.bans, bannedCovenants: cleanBans },
             }
           : {}),
       };

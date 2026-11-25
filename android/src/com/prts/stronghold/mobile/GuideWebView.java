@@ -50,8 +50,8 @@ final class GuideWebView {
         view.addJavascriptInterface(new ReportFiles.Bridge(context), "PRTSFiles");
         if (context.getResources().getBoolean(R.bool.covenant_scan_enabled)) {
             view.addJavascriptInterface(new ScanBridge(context.getApplicationContext()), "PRTSScan");
-            view.addJavascriptInterface(new ShopBridge(context.getApplicationContext()), "PRTSShop");
         }
+        view.addJavascriptInterface(new CaptureBridge(context.getApplicationContext()), "PRTSCapture");
         view.addJavascriptInterface(new RoundBridge(context.getApplicationContext()), "PRTSRound");
         view.addJavascriptInterface(new LanSyncBridge(context.getApplicationContext()), "PRTSLan");
         view.addJavascriptInterface(new OverlayBridge(), "PRTSOverlay");
@@ -110,7 +110,7 @@ final class GuideWebView {
         @JavascriptInterface public void reset() {
             CovenantScanState.reset();
             RoundScanState.reset();
-            ShopScanState.reset();
+            BattleCaptureState.resetMatch();
             main.post(() -> context.stopService(new Intent(context, CovenantScanService.class)));
         }
     }
@@ -160,44 +160,28 @@ final class GuideWebView {
         }
     }
 
-    private static final class ShopBridge {
+    private static final class CaptureBridge {
         private final Context context;
         private final Handler main = new Handler(Looper.getMainLooper());
-        ShopBridge(Context context) { this.context = context; }
-        @JavascriptInterface public String getState() { return ShopScanState.json(); }
-        @JavascriptInterface public boolean isProjectionReady() { return CovenantScanService.hasActiveProjection(); }
-        @JavascriptInterface public void reset() { ShopScanState.reset(); }
-        @JavascriptInterface public void scan(String catalogJson, String targetsJson) {
-            List<String> catalog = parseStringArray(catalogJson, 220);
-            List<String> targets = parseStringArray(targetsJson, 60);
+        CaptureBridge(Context context) { this.context = context; }
+        @JavascriptInterface public String getState() { return BattleCaptureState.json(); }
+        @JavascriptInterface public boolean isRunning() { return BattleCaptureState.isRunning(); }
+        @JavascriptInterface public void start() {
             main.post(() -> {
-                String id = ShopScanState.begin(catalog, targets);
-                boolean hideBriefly = OverlayService.isExpanded();
-                if (CovenantScanService.switchToShop(id, hideBriefly)) return;
-                if (hideBriefly) OverlayService.hideForScan();
+                if (BattleCaptureState.isRunning()) return;
                 try {
-                    context.startActivity(new Intent(context, CapturePermissionActivity.class)
-                        .putExtra("scanId", id)
-                        .putExtra("mode", "shop")
+                    context.startActivity(new Intent(context, VpnPermissionActivity.class)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS));
                 } catch (RuntimeException error) {
-                    ShopScanState.fail("无法打开截屏授权，请重试");
-                    OverlayService.showAfterScan();
+                    BattleCaptureState.setStatus(false, "error", "无法打开系统 VPN 授权，请从主页启动抓包");
                 }
             });
         }
-
-        private static List<String> parseStringArray(String raw, int max) {
-            List<String> out = new ArrayList<>();
-            if (raw == null || raw.isEmpty()) return out;
-            try {
-                JSONArray arr = new JSONArray(raw);
-                for (int i = 0; i < Math.min(arr.length(), max); i++) {
-                    String s = arr.optString(i, "").trim();
-                    if (!s.isEmpty()) out.add(s);
-                }
-            } catch (Exception ignored) {}
-            return out;
+        @JavascriptInterface public void stop() {
+            main.post(() -> StrongholdVpnService.stopActive(context));
+        }
+        @JavascriptInterface public void reset() {
+            BattleCaptureState.resetMatch();
         }
     }
 
@@ -207,6 +191,12 @@ final class GuideWebView {
         }
         @JavascriptInterface public void updateStripFull(int round, int tier, String headline, String grabHint, String detail) {
             OverlayService.updateStripFromBridge(round, tier, headline, grabHint, detail);
+        }
+        @JavascriptInterface public void updateStripV2(
+            int round, int tier, int prevTier, String headline, String grabHint,
+            String progressText, String banWarning, String loadoutHint, String fallbackAdvice, String detail
+        ) {
+            OverlayService.updateStripV2(round, tier, prevTier, headline, grabHint, progressText, banWarning, loadoutHint, fallbackAdvice, detail);
         }
         @JavascriptInterface public void enterStrip(boolean locked) {
             OverlayService.enterStripFromBridge(locked);

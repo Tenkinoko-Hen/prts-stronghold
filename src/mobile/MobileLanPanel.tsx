@@ -42,6 +42,10 @@ declare global {
     PRTSOverlay?: {
       updateStrip(round: number, headline: string, detail: string): void;
       updateStripFull?(round: number, tier: number, headline: string, grabHint: string, detail: string): void;
+      updateStripV2?(
+        round: number, tier: number, prevTier: number, headline: string, grabHint: string,
+        progressText: string, banWarning: string, loadoutHint: string, fallbackAdvice: string, detail: string,
+      ): void;
       enterStrip(locked: boolean): void;
       setFocusable?(focusable: boolean): void;
       stopScreenShare?(): void;

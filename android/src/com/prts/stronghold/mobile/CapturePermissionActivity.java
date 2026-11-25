@@ -13,17 +13,14 @@ public class CapturePermissionActivity extends Activity {
     private String mode;
 
     private boolean isRound() { return "round".equals(mode); }
-    private boolean isShop() { return "shop".equals(mode); }
 
     private boolean pending() {
         if (isRound()) return RoundScanState.matches(scanId) && RoundScanState.is("permission");
-        if (isShop()) return ShopScanState.matches(scanId) && ShopScanState.is("permission");
         return CovenantScanState.matches(scanId) && CovenantScanState.permissionPending();
     }
 
     private void fail(String message) {
         if (isRound()) RoundScanState.stop(message);
-        else if (isShop()) ShopScanState.fail(message);
         else CovenantScanState.set("cancelled", message);
         OverlayService.showAfterScan();
     }

@@ -4,8 +4,6 @@ import test from 'node:test';
 import { META_COMPS } from '../data/strongholdData';
 import { rankCompsByBanState } from '../utils/tacticalLogic';
 import { emptySession, mobileReducer, nextOwnershipState, restoreFavorites, restoreSession, toggleFavoriteId } from './mobileSession';
-import { computeOfflineRollOdds, formatOddsPct } from './mobileOdds';
-import { classifyShopMatches } from './ShopScanner';
 
 test('选 Ban 后推荐排除被禁主阵营，清空恢复全部方案', () => {
   let session = mobileReducer(emptySession(), { type: 'ban', group: 'bannedCovenants', name: '乌萨斯' });
@@ -87,40 +85,43 @@ test('已抓核心干员打卡三态循环、持久化恢复与开新局重置',
   assert.deepEqual({}, session.ownedOperators);
 });
 
-test('离线搜牌概率引擎：未解锁阶数、单刷/5刷/升本对比与三连碰牌', () => {
-  const locked = computeOfflineRollOdds({ shopLevel: 3, targetTier: 5 });
-  assert.equal(false, locked.unlocked);
-  assert.equal(0, locked.perRollProb);
-  assert.equal(5, locked.nextLevelShopLevel);
-  assert.ok((locked.nextLevelPerRollProb || 0) > 0);
-  assert.equal(null, locked.tripleDiscoverProb);
+test('本机 VPN 抓包自动同步 26 项 Ban 选、回合推进与新局自动重置', () => {
+  const cid = META_COMPS[0].id;
+  let session = mobileReducer(emptySession(), {
+    type: 'applyCaptureSync',
+    matchSerial: 1,
+    bansConfirmed: true,
+    bannedCovenants: ['乌萨斯', '炎', '精准', '未知'],
+    round: 1,
+  });
+  assert.equal('vpn-1', session.scanId);
+  assert.equal(true, session.scanComplete);
+  assert.equal(26, session.confirmedCovenants?.length);
+  assert.deepEqual(['乌萨斯', '炎', '精准'], session.bans.bannedCovenants);
 
-  // 4本三连可碰 5阶 3选1
-  const discover = computeOfflineRollOdds({ shopLevel: 4, targetTier: 5 });
-  assert.equal(false, discover.unlocked);
-  assert.ok((discover.tripleDiscoverProb || 0) > 0.05 && (discover.tripleDiscoverProb || 0) < 0.25);
+  session = mobileReducer(session, { type: 'choose', id: cid });
+  session = mobileReducer(session, { type: 'toggleOwned', compId: cid, name: '野鬃' });
+  session = mobileReducer(session, {
+    type: 'applyCaptureSync',
+    matchSerial: 1,
+    bansConfirmed: true,
+    bannedCovenants: ['乌萨斯', '炎', '精准'],
+    round: 6,
+  });
+  assert.equal(6, session.rounds[cid]);
+  assert.equal('owned', session.ownedOperators?.[cid]?.['野鬃']);
 
-  const base = computeOfflineRollOdds({ shopLevel: 4, targetTier: 4, takenCopies: 0, targetCount: 1 });
-  const taken = computeOfflineRollOdds({ shopLevel: 4, targetTier: 4, takenCopies: 6, targetCount: 1 });
-  assert.equal(true, base.unlocked);
-  assert.ok(base.perRollProb > taken.perRollProb);
-  assert.ok(base.fiveRollProb > base.perRollProb);
-  assert.equal('0%', formatOddsPct(0));
-  assert.equal('<0.1%', formatOddsPct(0.0005));
-});
-
-test('商店扫牌结果按本回合急抓 > 阵容必抓 > 整备 > 已精锐 > 非本阵排序', () => {
-  const comp = META_COMPS[0];
-  const fieldOp = comp.phases[0].fieldOperators[0].name;
-  const fieldOp2 = comp.phases[comp.phases.length - 1].fieldOperators[0].name;
-  const result = classifyShopMatches(
-    ['陌生干员', fieldOp2, fieldOp],
-    comp,
-    { [fieldOp2]: 'elite' },
-    [fieldOp],
-  );
-  assert.equal(fieldOp, result[0].name);
-  assert.equal('urgent', result[0].priority);
-  assert.equal('done', result.find(r => r.name === fieldOp2)?.priority);
-  assert.equal('other', result[result.length - 1].priority);
+  // 开新一局（matchSerial=2）自动清空上局打卡与回合，并更新为新局 Ban 列表
+  session = mobileReducer(session, {
+    type: 'applyCaptureSync',
+    matchSerial: 2,
+    bansConfirmed: true,
+    bannedCovenants: ['阿戈尔'],
+    round: 1,
+  });
+  assert.equal('vpn-2', session.scanId);
+  assert.equal('ban', session.step);
+  assert.deepEqual(['阿戈尔'], session.bans.bannedCovenants);
+  assert.deepEqual({}, session.ownedOperators);
+  assert.deepEqual({}, session.rounds);
 });

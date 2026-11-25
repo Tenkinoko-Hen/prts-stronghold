@@ -177,7 +177,7 @@ export function MobileLanPanel({
       {connected && topOps.length > 0 && (
         <div style={{ display: 'grid', gap: '4px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #26313d' }}>
           <small className="m-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <Cpu size={12} />PC 实时干员算力榜（激战秒伤）
+            <Cpu size={12} />PC 实时伤害排行（秒伤）
           </small>
           {topOps.map((op, i) => (
             <div key={op.charId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>

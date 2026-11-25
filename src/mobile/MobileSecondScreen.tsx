@@ -144,13 +144,13 @@ export function MobileSecondScreen({
       { id: 'lineup', label: '阵容攻略', icon: BookOpen },
       { id: 'deck', label: '当局牌库', icon: Layers, badge: report?.deckPool?.operators.length },
       { id: 'rounds', label: '战报兜底', icon: Activity, badge: report?.rounds.length || undefined },
-      { id: 'combat', label: '算力/Boss', icon: Swords, badge: topOps.length || undefined },
+      { id: 'combat', label: '伤害/Boss', icon: Swords, badge: topOps.length || undefined },
     ]
     : [
       { id: 'overview', label: '态势总览', icon: LayoutGrid },
       { id: 'deck', label: '当局牌库', icon: Layers, badge: report?.deckPool?.operators.length },
       { id: 'rounds', label: '战报兜底', icon: Activity, badge: report?.rounds.length || undefined },
-      { id: 'combat', label: '算力/Boss', icon: Swords, badge: topOps.length || undefined },
+      { id: 'combat', label: '伤害/Boss', icon: Swords, badge: topOps.length || undefined },
     ];
 
   const isReconnecting = lan.status === 'reconnecting';
@@ -257,7 +257,7 @@ export function MobileSecondScreen({
                     </div>
                   </div>
                   <p className="ms-standby-desc">
-                    进入对局后，本屏将自动同步实时回合承压、队友漏怪兜底、当局干员/装备牌池余量与抽卡概率，以及首领战算力曲线。顶部标签可随时自由切换。
+                    进入对局后，本屏将自动同步实时回合承压、队友漏怪兜底、当局干员/装备牌池余量与抽卡概率，以及 Boss 伤害曲线。顶部标签可随时自由切换。
                   </p>
                   <div className="ms-standby-shortcuts">
                     {productMode === 'full' && (
@@ -273,7 +273,7 @@ export function MobileSecondScreen({
               ) : topOps.length > 0 ? (
                 <section className="ms-card">
                   <header className="ms-card-head">
-                    <span><b className="d-prts-slash">//</b>实时干员算力排行</span>
+                    <span><b className="d-prts-slash">//</b>实时伤害排行</span>
                     <button type="button" className="ms-link-btn" onClick={() => setTab('combat')}>
                       完整曲线 →
                     </button>
@@ -601,7 +601,7 @@ export function MobileSecondScreen({
                 aria-pressed={combatSub === 'telemetry'}
                 onClick={() => setCombatSub('telemetry')}
               >
-                <Cpu size={13} />算力遥测与 DPS 曲线
+                <Cpu size={13} />干员伤害与秒伤曲线
               </button>
               <button
                 type="button"

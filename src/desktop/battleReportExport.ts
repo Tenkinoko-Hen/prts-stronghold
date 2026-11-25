@@ -235,7 +235,7 @@ export function summarizeBattleReport(
   const soloStage = isSoloStageMode(report.mode);
   const solo = isSoloMode(report.mode);
   const title = soloStage
-    ? `${report.difficulty || '单人作战关卡'} · 算力遥测战报`
+    ? `${report.difficulty || '单人作战关卡'} · 伤害统计战报`
     : '卫戍协议 · 局内详情战报';
   return { title, name: entry.label, difficulty: report.difficulty || '', start: localTime(new Date(entry.seenAt)), exported: localTime(at),
     filename: `${brand.exportPrefix}_${safeName}_${year}${month}${day}-${hour}${minute}`, rounds, bosses, hasPartial,

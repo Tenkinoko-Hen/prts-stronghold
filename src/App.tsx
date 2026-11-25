@@ -1,6 +1,6 @@
 // 青逝痕 Tenkinoko 制作
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { BookOpen, Calculator, Cpu, Grid, Images, Pin, Repeat2, Smartphone } from 'lucide-react';
+import { AppWindow, BookOpen, Calculator, Grid, Images, Pin, Repeat2, Smartphone } from 'lucide-react';
 import {
   META_COMPS,
   OperatorPlacement,
@@ -210,11 +210,11 @@ export default function App() {
         : 'idle';
   const telemetryLabel = banSync.npcapInstalled === false ? '未装 Npcap'
     : banSync.status === 'listening'
-      ? (banSync.liveRound !== null ? `LIVE · R${String(banSync.liveRound).padStart(2, '0')}` : 'LIVE · 待开局')
-      : banSync.status === 'connecting' ? '待进对局'
+      ? (banSync.liveRound !== null ? `记录中 · R${String(banSync.liveRound).padStart(2, '0')}` : '记录中 · 待开局')
+      : banSync.status === 'connecting' ? '待进局'
         : banSync.status === 'waiting' ? '待游戏启动'
           : banSync.status === 'permission' ? '需管理员'
-            : banSync.status === 'paused' ? '已暂停' : '采集待命';
+            : banSync.status === 'paused' ? '已暂停' : '等待开局';
 
   return (
     <div className="desktop-app relative w-screen h-screen overflow-hidden select-none">
@@ -285,11 +285,11 @@ export default function App() {
               type="button"
               onClick={() => void desktopAPI.hud?.setOpen(!hudState?.open)}
               aria-pressed={Boolean(hudState?.open)}
-              title="开启/关闭桌面置顶鼠标穿透微缩条（Ctrl+Shift+F10 切换穿透）"
+              title="打开/关闭桌面置顶小窗（Ctrl+Shift+F10 锁定鼠标穿透）"
               className={`d-button d-small d-pin-btn${hudState?.open ? ' is-pinned' : ''}`}
             >
-              <Cpu size={13} />
-              <span>{hudState?.open ? (hudState.locked ? '微缩穿透' : '微缩条') : '微缩条'}</span>
+              <AppWindow size={13} />
+              <span>{hudState?.open ? (hudState.locked ? '悬浮穿透' : '悬浮窗') : '悬浮窗'}</span>
             </button>
           )}
           {desktopAPI?.lanSync && (

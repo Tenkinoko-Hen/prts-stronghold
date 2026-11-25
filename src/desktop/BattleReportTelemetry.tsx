@@ -543,7 +543,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
             </span>
             {activeSnap.stageName && <strong className="d-tele-stage">{activeSnap.stageName}</strong>}
             {activeSnap.retainedRound !== null && (
-              <span className="d-tele-retain-chip" title="休整选牌期自动冻结保留上一轮防守算力供复盘">
+              <span className="d-tele-retain-chip" title="休整选牌期自动保留上一轮防守伤害供复盘">
                 冻结复盘 · R{activeSnap.retainedRound} 防守
               </span>
             )}
@@ -552,7 +552,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
                 ? '卫戍协议实采'
                 : midstream
                   ? '中途接入 (≥下限)'
-                  : '逻辑帧守卫'}
+                  : '精准计时'}
             </span>
             {durationSec !== null && (
               <span className="d-tele-clock">
@@ -564,7 +564,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
           <div className="d-tele-controls">
             {roundNumbers.length > 1 && (
               <select
-                aria-label="切换回合遥测快照"
+                aria-label="切换回合伤害记录"
                 value={selectedRound}
                 onChange={e => setSelectedRound(e.target.value === 'live' ? 'live' : Number(e.target.value))}
               >
@@ -615,7 +615,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
 
       {/* Top 5-Cell Industrial Telemetry KPI Bar */}
       {visibleOps.length > 0 && (
-        <section className="d-tele-kpi-grid" aria-label="核心算力指标">
+        <section className="d-tele-kpi-grid" aria-label="核心伤害指标">
           <div className="d-tele-kpi is-highlight">
             <small>当前实时 DPS</small>
             <strong>{formatTelemetryRate(currentDps)}</strong>
@@ -681,7 +681,7 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
       )}
 
       {activeSnap && visibleOps.length > 0 && (
-        <section className="d-tele-matrix" aria-label="干员算力矩阵">
+        <section className="d-tele-matrix" aria-label="干员伤害明细">
           <div className="d-tele-legend">
             <span>干员输出排行 · 合计 <strong>{formatTelemetryTotal(totalMetricSum, midstream)}</strong></span>
             {metric === 'damage' && activeSnap.coverage !== 'protocol' && (

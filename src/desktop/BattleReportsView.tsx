@@ -1,6 +1,6 @@
 // 青逝痕 Tenkinoko 制作
 import { useEffect, useRef, useState } from 'react';
-import { Activity, ChevronDown, Cpu, FileDown, Layers, ListTree, Radio, Swords } from 'lucide-react';
+import { Activity, BarChart3, ChevronDown, FileDown, Layers, ListTree, Radio, Swords } from 'lucide-react';
 import { BossRoutes } from '../components/BossRoutes';
 import { ImageLightboxModal } from '../components/ImageLightboxModal';
 import { DesktopDialog } from './DesktopDialog';
@@ -31,8 +31,8 @@ const STATUS: Record<ReportStatus, string> = {
   incompatible: '当前游戏数据未能识别。已有历史战局仍可查阅或导出。',
   failed: `本地战报组件未启动，请重启 ${PRODUCT_BRAND.shortName}。`,
 };
-const TABS = { rounds: '实时战报', deck: '当局牌库', telemetry: '算力遥测', boss: 'Boss 伤害', preview: '出怪预告' } as const;
-const TAB_ICONS = { rounds: Activity, deck: Layers, telemetry: Cpu, boss: Swords, preview: ListTree };
+const TABS = { rounds: '实时战报', deck: '当局牌库', telemetry: '伤害统计', boss: 'Boss 伤害', preview: '出怪预告' } as const;
+const TAB_ICONS = { rounds: Activity, deck: Layers, telemetry: BarChart3, boss: Swords, preview: ListTree };
 const shortStatus: Record<ReportStatus, string> = { starting: '启动中', waiting: '等待游戏', connecting: '等待对局',
   listening: '采集中', permission: '需要权限', paused: '已暂停', unavailable: '采集不可用', incompatible: '数据未识别', failed: '启动失败' };
 const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
@@ -121,7 +121,7 @@ export default function BattleReportsView({
     ? (['telemetry'] as Tab[])
     : (Object.keys(TABS) as Tab[]);
   const progressLabel = soloStage
-    ? (report?.difficulty || '单人关卡实时遥测')
+    ? (report?.difficulty || '单人关卡伤害统计')
     : reportProgress(report, liveView).label;
   const seat = perspective?.key === key ? perspective.seat : report?.self ?? null;
   const previewRound = previewFilter?.key === key ? previewFilter.round : replay ? 'all' : 'follow';

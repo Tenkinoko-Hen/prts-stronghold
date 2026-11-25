@@ -228,7 +228,7 @@ function telemetrySection(
   opCount: number,
 ) {
   if (!r.telemetryOperators?.length) return '';
-  return `<section>${sectionHead(sectionNumber, '干员算力贡献明细', '激战秒伤按局内定点数逻辑帧计算，自动剥离暂停与倍速干扰')}<table class="tele-table" aria-label="干员算力贡献明细">
+  return `<section>${sectionHead(sectionNumber, '干员伤害统计明细', '按局内实际交战帧计算秒伤，自动排除暂停与倍速影响')}<table class="tele-table" aria-label="干员伤害统计明细">
 <thead><tr><th scope="col">干员</th><th scope="col">属性构成</th><th scope="col">输出占比</th><th scope="col">激战秒伤</th><th scope="col">累计输出</th></tr></thead>
 <tbody>${r.telemetryOperators.map((op, i) => {
     const barColor = i === 0 ? PRTS_CHART.ochre : PRTS_CHART.blue;

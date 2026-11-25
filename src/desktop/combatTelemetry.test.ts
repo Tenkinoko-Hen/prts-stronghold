@@ -57,7 +57,7 @@ test('solo stage demo report parses 4-channel operator telemetry, summons, devic
   assert.equal(summary.soloStage, true);
   assert.equal(summary.telemetryOperators.length, 4);
   const html = renderBattleReportHtml(summary, css);
-  assert.match(html, /干员算力贡献明细/);
+  assert.match(html, /干员伤害统计明细/);
   assert.match(html, /维什戴尔/);
   assert.match(html, /5,420 \/s/);
   assert.doesNotMatch(html, /四人战绩总览/);

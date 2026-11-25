@@ -21,7 +21,7 @@
   "desktop": {
     "appId": "com.stronghold.telemetry",
     "productName": "PRTS Stronghold Lite",
-    "artifactName": "PRTS-Stronghold-Lite-Windows-x64-${version}.${ext}",
+    "artifactName": "PRTS-Stronghold-Lite-${version}-Win64.${ext}",
     "outputDirTemplate": "release/telemetry-${version}",
     "useIsolatedUserData": true,
     "useTray": true,

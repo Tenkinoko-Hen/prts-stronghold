@@ -21,7 +21,7 @@
   "desktop": {
     "appId": "com.prts.stronghold",
     "productName": "PRTS Stronghold",
-    "artifactName": "PRTS-Stronghold-${version}-Windows-x64.${ext}",
+    "artifactName": "PRTS-Stronghold-Full-${version}-Win64.${ext}",
     "outputDirTemplate": "work/windows-${version}",
     "useIsolatedUserData": false,
     "useTray": false,
@@ -38,8 +38,8 @@
   },
   "android": {
     "package": "com.prts.stronghold.mobile",
-    "versionCode": 21,
-    "versionName": "2.0.0",
+    "versionCode": 22,
+    "versionName": "2.0.1",
     "icon": "@mipmap/ic_prts",
     "roundIcon": "@mipmap/ic_prts",
     "apkTemplate": "PRTS-Stronghold-${version}-Android.apk",

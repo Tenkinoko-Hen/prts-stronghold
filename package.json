@@ -1,7 +1,7 @@
 {
   "name": "prts-stronghold",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "卫戍协议战术终端",
   "author": "青逝痕 Tenkinoko 制作",
   "main": "electron/main.cjs",
@@ -23,8 +23,8 @@
     "prepare:telemetry-worker": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-worker.ps1 -Product telemetry",
     "desktop": "npm run prepare:desktop && electron .",
     "desktop:telemetry": "npm run prepare:desktop && npm run build:telemetry && node scripts/run-with-product.cjs telemetry electron .",
-    "package:win": "npm run prepare:desktop && npm run prepare:worker && pwsh -NoProfile -File scripts/build-windows.ps1 -Product stronghold -Version 2.0.0",
-    "package:win:telemetry": "npm run prepare:desktop && npm run prepare:telemetry-worker && pwsh -NoProfile -File scripts/build-windows.ps1 -Product telemetry -Version 1.0.0",
+    "package:win": "npm run prepare:desktop && npm run prepare:worker && pwsh -NoProfile -File scripts/build-windows.ps1 -Product stronghold -Version 2.0.1",
+    "package:win:telemetry": "npm run prepare:desktop && npm run prepare:telemetry-worker && pwsh -NoProfile -File scripts/build-windows.ps1 -Product telemetry -Version 2.0.1",
     "cache:avatars": "node --import tsx scripts/cache-avatars.ts"
   },
   "dependencies": {

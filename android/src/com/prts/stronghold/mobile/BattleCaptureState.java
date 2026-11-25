@@ -32,20 +32,31 @@ final class BattleCaptureState {
         }
     }
 
+    static final class RoundWave {
+        final int round;
+        final List<EnemyCount> enemies;
+        RoundWave(int round, List<EnemyCount> enemies) {
+            this.round = round;
+            this.enemies = enemies;
+        }
+    }
+
     static final class SeatLeakRow {
         final int seat;
         final String name;
         final boolean isSelf;
         final int hp;
+        final int shopLevel; // 1..6, 0 if unknown
         final int leaked;    // 本人漏出总数
         final int assisted;  // 帮队友兜底击杀数
         final int covered;   // 本人漏怪中被队友兜住数
         final int escaped;   // 本人漏怪中最终未兜住逃跑数
-        SeatLeakRow(int seat, String name, boolean isSelf, int hp, int leaked, int assisted, int covered, int escaped) {
+        SeatLeakRow(int seat, String name, boolean isSelf, int hp, int shopLevel, int leaked, int assisted, int covered, int escaped) {
             this.seat = seat;
             this.name = name;
             this.isSelf = isSelf;
             this.hp = hp;
+            this.shopLevel = shopLevel;
             this.leaked = leaked;
             this.assisted = assisted;
             this.covered = covered;
@@ -121,13 +132,14 @@ final class BattleCaptureState {
         final int banCount;
         final int forecastRound;
         final List<EnemyCount> forecastEnemies;
+        final List<RoundWave> allWaves;
         final boolean activeRoundHasLeaks;
         final LeakSnapshot cumulativeLeak;
         final LeakSnapshot currentRoundLeak;
         final BossSnapshot boss;
         TelemetrySnapshot(
             boolean vpnRunning, int currentRound, String phase, int selfSeat, int selfHp, int banCount,
-            int forecastRound, List<EnemyCount> forecastEnemies, boolean activeRoundHasLeaks,
+            int forecastRound, List<EnemyCount> forecastEnemies, List<RoundWave> allWaves, boolean activeRoundHasLeaks,
             LeakSnapshot cumulativeLeak, LeakSnapshot currentRoundLeak, BossSnapshot boss
         ) {
             this.vpnRunning = vpnRunning;
@@ -138,6 +150,7 @@ final class BattleCaptureState {
             this.banCount = banCount;
             this.forecastRound = forecastRound;
             this.forecastEnemies = forecastEnemies;
+            this.allWaves = allWaves;
             this.activeRoundHasLeaks = activeRoundHasLeaks;
             this.cumulativeLeak = cumulativeLeak;
             this.currentRoundLeak = currentRoundLeak;
@@ -176,6 +189,7 @@ final class BattleCaptureState {
 
     private static final Map<Integer, String> playerNames = new HashMap<>();
     private static final Map<Integer, Integer> hpBySeat = new HashMap<>();
+    private static final Map<Integer, Integer> shopLevelBySeat = new HashMap<>();
     private static final Map<Integer, Integer> bossDamageBySeat = new HashMap<>();
     private static final List<String> bannedCovenants = new ArrayList<>();
     private static boolean bansConfirmed = false;
@@ -211,6 +225,7 @@ final class BattleCaptureState {
         bossLastMs = 0;
         playerNames.clear();
         hpBySeat.clear();
+        shopLevelBySeat.clear();
         bossDamageBySeat.clear();
         bannedCovenants.clear();
         bansConfirmed = false;
@@ -272,9 +287,10 @@ final class BattleCaptureState {
                 }
             }
 
-            if (ev.messageId == 300 || !ev.bannedBonds.isEmpty()) {
+            if (ev.messageId == 300 || !ev.bannedBonds.isEmpty() || !ev.bannedUnitBonds.isEmpty()) {
+                List<String> srcBonds = !ev.bannedBonds.isEmpty() ? ev.bannedBonds : ev.bannedUnitBonds;
                 bannedCovenants.clear();
-                for (String bond : ev.bannedBonds) {
+                for (String bond : srcBonds) {
                     String cn = StrongholdEnemyCatalog.covenantName(bond);
                     if (cn != null && !bannedCovenants.contains(cn)) bannedCovenants.add(cn);
                 }
@@ -335,6 +351,7 @@ final class BattleCaptureState {
                 if (selfSeat == 0) selfSeat = ev.seat;
                 if (ev.hp >= 0) hpBySeat.put(ev.seat, ev.hp);
             }
+            updateShopLevels(ev);
         } else if ("runtime".equals(ev.kind)) {
             updateRuntimeMaps(ev, now);
         } else if ("spawn_plan".equals(ev.kind)) {
@@ -410,7 +427,18 @@ final class BattleCaptureState {
         pushToOverlay();
     }
 
+    private static void updateShopLevels(StrongholdWireDecoder.Event ev) {
+        for (Map.Entry<Integer, Integer> e : ev.shopLevelBySeat.entrySet()) {
+            int s = e.getKey();
+            int lv = e.getValue() != null ? e.getValue() : 0;
+            if (s >= 1 && s <= 4 && lv >= 1 && lv <= 6) {
+                shopLevelBySeat.put(s, lv);
+            }
+        }
+    }
+
     private static void updateRuntimeMaps(StrongholdWireDecoder.Event ev, long now) {
+        updateShopLevels(ev);
         for (Map.Entry<Integer, Integer> e : ev.hpBySeat.entrySet()) {
             if (e.getKey() >= 1 && e.getKey() <= 4 && e.getValue() != null) {
                 hpBySeat.put(e.getKey(), e.getValue());
@@ -504,6 +532,18 @@ final class BattleCaptureState {
         return sb.toString();
     }
 
+    static synchronized List<RoundWave> buildAllWaves() {
+        if (spawnPlanByRound.isEmpty()) return Collections.emptyList();
+        List<Integer> rounds = new ArrayList<>(spawnPlanByRound.keySet());
+        Collections.sort(rounds);
+        List<RoundWave> waves = new ArrayList<>();
+        for (Integer r : rounds) {
+            List<EnemyCount> list = getSpawnList(r);
+            if (!list.isEmpty()) waves.add(new RoundWave(r, list));
+        }
+        return waves;
+    }
+
     private static String seatLabel(int seat) {
         String n = playerNames.get(seat);
         if (n != null && !n.isEmpty()) {
@@ -515,6 +555,11 @@ final class BattleCaptureState {
     private static int seatHp(int seat) {
         Integer h = hpBySeat.get(seat);
         return h != null ? h : -1;
+    }
+
+    private static int seatShopLevel(int seat) {
+        Integer lv = shopLevelBySeat.get(seat);
+        return lv != null ? lv : 0;
     }
 
     /** 构造指定单回合（round > 0）或整局累计（round == 0）的 4 玩家漏/兜图表快照。 */
@@ -558,7 +603,7 @@ final class BattleCaptureState {
             sumLeak += leaked[s];
             sumAssist += assisted[s];
             sumEsc += escaped[s];
-            rows.add(new SeatLeakRow(s, seatLabel(s), s == effectiveSelf, seatHp(s), leaked[s], assisted[s], covered[s], escaped[s]));
+            rows.add(new SeatLeakRow(s, seatLabel(s), s == effectiveSelf, seatHp(s), seatShopLevel(s), leaked[s], assisted[s], covered[s], escaped[s]));
         }
         List<EnemyCount> enemies = new ArrayList<>();
         for (Map.Entry<String, Integer> e : enemyCounts.entrySet()) {
@@ -617,6 +662,7 @@ final class BattleCaptureState {
     static synchronized TelemetrySnapshot buildTelemetrySnapshot() {
         int fcRound = pickForecastRound();
         List<EnemyCount> fcList = fcRound > 0 ? getSpawnList(fcRound) : Collections.<EnemyCount>emptyList();
+        List<RoundWave> allWaves = buildAllWaves();
         int curR = currentRound > 0 ? currentRound : 1;
         LeakSnapshot curLeak = buildLeakSnapshot(curR);
         LeakSnapshot cumLeak = buildLeakSnapshot(0);
@@ -624,7 +670,7 @@ final class BattleCaptureState {
         int myHp = selfSeat >= 1 && selfSeat <= 4 ? seatHp(selfSeat) : seatHp(1);
         return new TelemetrySnapshot(
             running, currentRound, phase, selfSeat, myHp, bansConfirmed ? bannedCovenants.size() : -1,
-            fcRound, fcList, activeHasLeaks, cumLeak, curLeak, buildBossSnapshot()
+            fcRound, fcList, allWaves, activeHasLeaks, cumLeak, curLeak, buildBossSnapshot()
         );
     }
 
@@ -660,6 +706,20 @@ final class BattleCaptureState {
             }
             obj.put("forecastEnemies", fcArr);
             obj.put("forecastText", snap.forecastRound > 0 ? formatSpawnSummary(snap.forecastRound, 5) : "");
+            JSONArray wavesArr = new JSONArray();
+            for (RoundWave w : snap.allWaves) {
+                JSONArray we = new JSONArray();
+                for (EnemyCount ec : w.enemies) {
+                    we.put(new JSONObject().put("id", ec.enemyId).put("name", ec.name).put("count", ec.count));
+                }
+                wavesArr.put(new JSONObject().put("round", w.round).put("enemies", we));
+            }
+            obj.put("allWaves", wavesArr);
+            JSONObject tiers = new JSONObject();
+            for (Map.Entry<Integer, Integer> e : shopLevelBySeat.entrySet()) {
+                tiers.put(String.valueOf(e.getKey()), e.getValue());
+            }
+            obj.put("shopLevels", tiers);
 
             JSONObject leak = new JSONObject();
             leak.put("round", snap.currentRoundLeak.round);

@@ -21,8 +21,8 @@ final class StrongholdWireDecoder {
     static final int DIR_DOWN = 1;
 
     private static final int HEADER_SIZE = 8;
-    private static final int MAX_BODY = 131072;
-    private static final int MAX_BUFFER = 524288;
+    private static final int MAX_BODY = 262144;
+    private static final int MAX_BUFFER = 1048576;
 
     private static final Map<Integer, Integer> DOWN_MIN = new HashMap<>();
     private static final Map<Integer, Integer> UP_MIN = new HashMap<>();
@@ -35,6 +35,7 @@ final class StrongholdWireDecoder {
         DOWN_MIN.put(310, 2);
         DOWN_MIN.put(344, 2);
         DOWN_MIN.put(348, 10);
+        DOWN_MIN.put(354, 11);
         DOWN_MIN.put(366, 7);
 
         UP_MIN.put(303, 2);
@@ -117,8 +118,10 @@ final class StrongholdWireDecoder {
         String bossId = "";
         int stageSeed;
         final List<String> bannedBonds = new ArrayList<>();
+        final List<String> bannedUnitBonds = new ArrayList<>();
         final Map<Integer, String> players = new HashMap<>();
         final Map<Integer, Integer> hpBySeat = new HashMap<>();
+        final Map<Integer, Integer> shopLevelBySeat = new HashMap<>();
         final Map<Integer, Integer> bossDamageBySeat = new HashMap<>();
         final List<SpawnPreview> spawnPreviews = new ArrayList<>();
         final List<EscapedEnemy> escapedEnemies = new ArrayList<>();
@@ -242,8 +245,9 @@ final class StrongholdWireDecoder {
         try {
             return decodeMessage(dir, msgId, buf, off, len);
         } catch (WireException ex) {
-            // 开局 300 帧若已成功解出 roster + banned_bonds，允许返回部分事件以立刻同步禁选
-            if (dir == DIR_DOWN && msgId == 300 && ex.partialEvent != null && !ex.partialEvent.bannedBonds.isEmpty()) {
+            // 开局 300 帧若已解出 banned_bonds / banned_units 或 roster，允许返回部分事件立刻同步禁选与席位
+            if (dir == DIR_DOWN && msgId == 300 && ex.partialEvent != null
+                && (!ex.partialEvent.bannedBonds.isEmpty() || !ex.partialEvent.bannedUnitBonds.isEmpty() || !ex.partialEvent.players.isEmpty())) {
                 return ex.partialEvent;
             }
             return null;
@@ -260,6 +264,11 @@ final class StrongholdWireDecoder {
                 ev = parseScene(r, -1, -1);
                 r.finish();
             } else if (msgId == 306) {
+                ev = parsePreparationEvent(r);
+                r.finish();
+            } else if (msgId == 354) {
+                if (len <= 7 || buf[off + 4] != 0 || buf[off + 5] != 0 || buf[off + 6] != 1) return null;
+                r.skip(7);
                 ev = parsePreparationEvent(r);
                 r.finish();
             } else if (msgId == 310) {
@@ -320,42 +329,45 @@ final class StrongholdWireDecoder {
         int banCnt = r.count();
         for (int i = 0; i < banCnt; i++) partial.bannedBonds.add(r.str());
 
-        int playerCnt = r.count();
-        if (playerCnt > 4) throw new WireException("player roster exceeds 4");
-        for (int i = 0; i < playerCnt; i++) {
-            r.skipStr(); // account
-            int uid = r.i8();
-            if (uid < 1 || uid > 4 || partial.players.containsKey(uid)) {
-                throw new WireException("invalid player seat");
-            }
-            int slotCnt = r.count();
-            for (int j = 0; j < slotCnt; j++) {
-                // _SQUAD_SLOT: 6 strings, 3 bytes, list(str), 1 bool
-                for (int k = 0; k < 6; k++) r.skipStr();
-                r.skip(3);
-                int bCnt = r.count();
-                for (int b = 0; b < bCnt; b++) r.skipStr();
-                r.skip(1);
-            }
-            r.skipStr();
-            String nickname = r.str();
-            partial.players.put(uid, nickname);
-            // ('str','str','str','str','str', 5, 'str', 1, 'str')
-            for (int k = 0; k < 5; k++) r.skipStr();
-            r.skip(5);
-            r.skipStr();
-            r.skip(1);
-            r.skipStr();
-            // banned_units list
-            int buCnt = r.count();
-            for (int u = 0; u < buCnt; u++) {
-                r.skipStr();
-                int idCnt = r.count();
-                r.skip(idCnt * 2);
-            }
-        }
-
         try {
+            int playerCnt = r.count();
+            if (playerCnt > 4) throw new WireException("player roster exceeds 4");
+            for (int i = 0; i < playerCnt; i++) {
+                r.skipStr(); // account
+                int uid = r.i8();
+                if (uid < 1 || uid > 4 || partial.players.containsKey(uid)) {
+                    throw new WireException("invalid player seat");
+                }
+                int slotCnt = r.count();
+                for (int j = 0; j < slotCnt; j++) {
+                    // _SQUAD_SLOT: 6 strings, 3 bytes, list(str), 1 bool
+                    for (int k = 0; k < 6; k++) r.skipStr();
+                    r.skip(3);
+                    int bCnt = r.count();
+                    for (int b = 0; b < bCnt; b++) r.skipStr();
+                    r.skip(1);
+                }
+                r.skipStr();
+                String nickname = r.str();
+                partial.players.put(uid, nickname);
+                // ('str','str','str','str','str', 5, 'str', 1, 'str')
+                for (int k = 0; k < 5; k++) r.skipStr();
+                r.skip(5);
+                r.skipStr();
+                r.skip(1);
+                r.skipStr();
+                // banned_units list: 顺带提取 bond_id 兜底
+                int buCnt = r.count();
+                for (int u = 0; u < buCnt; u++) {
+                    String bId = r.str();
+                    if (!bId.isEmpty() && !partial.bannedUnitBonds.contains(bId)) {
+                        partial.bannedUnitBonds.add(bId);
+                    }
+                    int idCnt = r.count();
+                    r.skip(idCnt * 2);
+                }
+            }
+
             int[] header = parseSceneHeader(r);
             Event scene = parseScene(r, header[0], header[1]);
             // trailing enemy_types list(str)
@@ -367,6 +379,7 @@ final class StrongholdWireDecoder {
             scene.stageSeed = partial.stageSeed;
             scene.selfUid = partial.selfUid;
             scene.bannedBonds.addAll(partial.bannedBonds);
+            scene.bannedUnitBonds.addAll(partial.bannedUnitBonds);
             scene.players.putAll(partial.players);
             return scene;
         } catch (WireException ex) {
@@ -406,9 +419,9 @@ final class StrongholdWireDecoder {
         int spCnt = r.count();
         for (int i = 0; i < spCnt; i++) skipSpPreparation(r);
 
-        // preparations list
+        // preparations list：提取 4 名玩家当前商店本数（level）与血量
         int prepCnt = r.count();
-        for (int i = 0; i < prepCnt; i++) skipPreparation(r);
+        for (int i = 0; i < prepCnt; i++) parsePreparationInto(r, ev);
 
         // boss_rounds list
         int brCnt = r.count();
@@ -505,17 +518,29 @@ final class StrongholdWireDecoder {
         ev.seat = r.u8();
         ev.hp = r.i16();
         ev.round = r.u8();
-        skipPreparationBodyAfterHeader(r);
+        int level = r.u8();
+        if (ev.seat >= 1 && ev.seat <= 4) {
+            if (level >= 1 && level <= 6) ev.shopLevelBySeat.put(ev.seat, level);
+            if (ev.hp >= 0) ev.hpBySeat.put(ev.seat, ev.hp);
+        }
+        skipPreparationBodyAfterLevel(r);
         return ev;
     }
 
-    private static void skipPreparation(Reader r) throws WireException {
-        r.skip(4); // player(B), hp(h), number(B)
-        skipPreparationBodyAfterHeader(r);
+    private static void parsePreparationInto(Reader r, Event ev) throws WireException {
+        int seat = r.u8();
+        int hp = r.i16();
+        r.skip(1); // number(B)
+        int level = r.u8();
+        if (seat >= 1 && seat <= 4) {
+            if (level >= 1 && level <= 6) ev.shopLevelBySeat.put(seat, level);
+            if (hp >= 0 && !ev.hpBySeat.containsKey(seat)) ev.hpBySeat.put(seat, hp);
+        }
+        skipPreparationBodyAfterLevel(r);
     }
 
-    private static void skipPreparationBodyAfterHeader(Reader r) throws WireException {
-        r.skip(7); // level..special
+    private static void skipPreparationBodyAfterLevel(Reader r) throws WireException {
+        r.skip(6); // remaining 6 of 7 bytes after shop level
         r.skipFixedList(5); // goods
         r.skip(1); // sequence
         // pieces

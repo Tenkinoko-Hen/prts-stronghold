@@ -11,6 +11,112 @@ function replaceTemplateBlock(template, original, replacement) {
   return template.replace(original, () => replacement);
 }
 
+function patchPortableNsiTemplate(rawTemplate) {
+  let template = rawTemplate.replace(/\r\n/g, '\n');
+  const stockInit = String.raw`Function .onInit
+  !ifndef SPLASH_IMAGE
+    SetSilent silent
+  !endif
+
+  !insertmacro check64BitAndSetRegView
+FunctionEnd
+
+Function .onGUIInit
+  InitPluginsDir
+
+  !ifdef SPLASH_IMAGE
+    File /oname=$PLUGINSDIR\splash.bmp "SPLASH_IMAGE_VALUE"
+    BgImage::SetBg $PLUGINSDIR\splash.bmp
+    BgImage::Redraw
+  !endif
+FunctionEnd`.replace('SPLASH_IMAGE_VALUE', '${SPLASH_IMAGE}');
+  template = replaceTemplateBlock(template, stockInit, `!include "prts-startup.nsh"
+
+Function .onInit
+  !insertmacro check64BitAndSetRegView
+  InitPluginsDir
+  StrCpy $prtsSplashProcess 0
+  StrCpy $prtsSplashUnpacked 0
+  StrCpy $prtsSplashDone 0
+  StrCpy $prtsCacheRoot ""
+  StrCpy $prtsStageDir ""
+  StrCpy $prtsCleanupInstDir "0"
+  IfSilent prts_silent
+    Call PrtsShowSplash
+  prts_silent:
+    SetSilent silent
+FunctionEnd`);
+  template = replaceTemplateBlock(template, '  !ifdef SPLASH_IMAGE\n    HideWindow\n  !endif\n\n', '');
+
+  const stockUnpack = [
+    '  StrCpy $INSTDIR "$PLUGINSDIR\\app"',
+    '  !ifdef UNPACK_DIR_NAME',
+    '    StrCpy $INSTDIR "$TEMP\\${UNPACK_DIR_NAME}"',
+    '  !endif',
+    '',
+    '  RMDir /r $INSTDIR',
+    '  SetOutPath $INSTDIR',
+    '',
+    '  !ifdef APP_DIR_64',
+    '    !ifdef APP_DIR_ARM64',
+    '      !ifdef APP_DIR_32',
+    '        ${if} ${IsNativeARM64}',
+    '          File /r "${APP_DIR_ARM64}\\*.*"',
+    '        ${elseif} ${RunningX64}',
+    '          File /r "${APP_DIR_64}\\*.*"',
+    '        ${else}',
+    '          File /r "${APP_DIR_32}\\*.*"',
+    '        ${endIf}',
+    '      !else',
+    '        ${if} ${IsNativeARM64}',
+    '          File /r "${APP_DIR_ARM64}\\*.*"',
+    '        ${else}',
+    '          File /r "${APP_DIR_64}\\*.*"',
+    '        {endIf}',
+    '      !endif',
+    '    !else',
+    '      !ifdef APP_DIR_32',
+    '        ${if} ${RunningX64}',
+    '          File /r "${APP_DIR_64}\\*.*"',
+    '        ${else}',
+    '          File /r "${APP_DIR_32}\\*.*"',
+    '        ${endIf}',
+    '      !else',
+    '        File /r "${APP_DIR_64}\\*.*"',
+    '      !endif',
+    '    !endif',
+    '  !else',
+    '    !ifdef APP_DIR_32',
+    '      File /r "${APP_DIR_32}\\*.*"',
+    '    !else',
+    '      !insertmacro extractEmbeddedAppPackage',
+    '    !endif',
+    '  !endif',
+  ].join('\n');
+  template = replaceTemplateBlock(template, stockUnpack, '  !insertmacro PrtsPrepareApp');
+
+  const stockLaunch = [
+    '  !ifdef SPLASH_IMAGE',
+    '    BgImage::Destroy',
+    '  !endif',
+    '',
+    '\tExecWait "$INSTDIR\\${APP_EXECUTABLE_FILENAME} $R0" $0',
+    '  SetErrorLevel $0',
+    '',
+    '  SetOutPath $EXEDIR',
+    '\tRMDir /r $INSTDIR',
+  ].join('\n');
+  template = replaceTemplateBlock(template, stockLaunch, [
+    '  Call PrtsRunApp',
+    '',
+    '  SetOutPath $EXEDIR',
+    '  ${If} $prtsCleanupInstDir == "1"',
+    '    RMDir /r $INSTDIR',
+    '  ${EndIf}',
+  ].join('\n'));
+  return template;
+}
+
 function compileSplash(root, templates, product) {
   const framework = path.join(process.env.WINDIR, 'Microsoft.NET', 'Framework64', 'v4.0.30319');
   const compiler = path.join(framework, 'csc.exe');
@@ -42,47 +148,7 @@ async function packageWindows(arg1, arg2) {
   const desktop = product.desktop;
   const work = path.join(root, 'work');
   const oldTemplates = nsis.nsisTemplatesDir;
-  let template = fs.readFileSync(path.join(oldTemplates, 'portable.nsi'), 'utf8').replace(/\r\n/g, '\n');
-  const stockInit = String.raw`Function .onInit
-  !ifndef SPLASH_IMAGE
-    SetSilent silent
-  !endif
-
-  !insertmacro check64BitAndSetRegView
-FunctionEnd
-
-Function .onGUIInit
-  InitPluginsDir
-
-  !ifdef SPLASH_IMAGE
-    File /oname=$PLUGINSDIR\splash.bmp "SPLASH_IMAGE_VALUE"
-    BgImage::SetBg $PLUGINSDIR\splash.bmp
-    BgImage::Redraw
-  !endif
-FunctionEnd`.replace('SPLASH_IMAGE_VALUE', '${SPLASH_IMAGE}');
-  template = replaceTemplateBlock(template, stockInit, `!include "prts-startup.nsh"
-
-Function .onInit
-  !insertmacro check64BitAndSetRegView
-  InitPluginsDir
-  StrCpy $prtsSplashProcess 0
-  StrCpy $prtsSplashUnpacked 0
-  StrCpy $prtsSplashDone 0
-  IfSilent prts_silent
-    Call PrtsShowSplash
-  prts_silent:
-    SetSilent silent
-FunctionEnd`);
-  template = replaceTemplateBlock(template, '  !ifdef SPLASH_IMAGE\n    HideWindow\n  !endif\n\n', '');
-  const stockLaunch = [
-    '  !ifdef SPLASH_IMAGE',
-    '    BgImage::Destroy',
-    '  !endif',
-    '',
-    '\tExecWait "$INSTDIR\\${APP_EXECUTABLE_FILENAME} $R0" $0',
-    '  SetErrorLevel $0',
-  ].join('\n');
-  template = replaceTemplateBlock(template, stockLaunch, '  Call PrtsRunApp');
+  const template = patchPortableNsiTemplate(fs.readFileSync(path.join(oldTemplates, 'portable.nsi'), 'utf8'));
 
   fs.mkdirSync(work, { recursive: true });
   // The portable target ignores the custom installer script option. Patch a private copy of its template.
@@ -156,7 +222,11 @@ FunctionEnd`);
   }
 }
 
-packageWindows(...process.argv.slice(2)).catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+module.exports = { patchPortableNsiTemplate, compileSplash };
+
+if (require.main === module) {
+  packageWindows(...process.argv.slice(2)).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

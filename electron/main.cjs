@@ -29,7 +29,19 @@ if (process.platform === 'win32' && desktop.appId) {
   app.setAppUserModelId(desktop.appId);
 }
 
-app.whenReady().then(() => {
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
+if (gotSingleInstanceLock) app.whenReady().then(() => {
   const root = path.join(app.getAppPath(), 'dist');
   protocol.handle('prts', (request) => {
     const url = new URL(request.url);

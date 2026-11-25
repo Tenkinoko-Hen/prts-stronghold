@@ -273,6 +273,53 @@ public final class VpnCodecAndWireTest {
         for (BattleCaptureState.BossPlayerRow row : bossSnap.players) shareSum += row.sharePct;
         check(Math.abs(shareSum - 100.0) < 0.2, "boss sharePct sums to 100%: " + shareSum);
 
+        // 5. 校验 306/354 备战商店本数解析 -> SeatLeakRow.shopLevel & buildAllWaves()
+        ByteArrayOutputStream b306 = new ByteArrayOutputStream();
+        DataOutputStream d306 = new DataOutputStream(b306);
+        d306.writeByte(2); // seat 2
+        d306.writeShort(27); // hp 27
+        d306.writeByte(4); // round 4
+        d306.writeByte(4); // shop level 4本
+        d306.write(new byte[6]); // remaining 6 bytes
+        d306.writeShort(0); // goods
+        d306.writeByte(1); // seq
+        d306.writeShort(0); d306.writeShort(0); d306.writeShort(0); d306.writeShort(0); d306.writeShort(0); // pieces..bonds
+        d306.writeShort(0); d306.writeByte(0); // sp_prepare + 1
+        d306.writeShort(0); // enemies
+        d306.writeShort(0); d306.writeByte(0); d306.writeShort(0); // after enemies
+        d306.writeShort(0); // special_effects
+        writeStr(d306, ""); // skill_id
+        d306.write(new byte[13]);
+        byte[] f306 = wrapFrame(306, b306.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306, 0, f306.length)) {
+            BattleCaptureState.accept(e);
+        }
+        BattleCaptureState.LeakSnapshot withTier = BattleCaptureState.buildLeakSnapshot(0);
+        check(withTier.seats.get(1).shopLevel == 4, "seat 2 shopLevel decoded to 4本: " + withTier.seats.get(1).shopLevel);
+
+        List<BattleCaptureState.RoundWave> allWaves = BattleCaptureState.buildAllWaves();
+        check(allWaves.size() == 1 && allWaves.get(0).round == 5 && allWaves.get(0).enemies.size() == 2,
+            "buildAllWaves returns sorted waves with icons");
+
+        // 6. 校验开局 300 帧即使场景截断也能抢救 banned_bonds（避免 1/3 确认信息界面丢 Ban）
+        ByteArrayOutputStream b300Partial = new ByteArrayOutputStream();
+        DataOutputStream d300Partial = new DataOutputStream(b300Partial);
+        writeStr(d300Partial, "mode_multi_hard");
+        writeStr(d300Partial, "stage_01");
+        writeStr(d300Partial, "boss_1");
+        writeStr(d300Partial, "");
+        d300Partial.writeInt(777777);
+        d300Partial.writeByte(1);
+        d300Partial.writeShort(2);
+        writeStr(d300Partial, "sargonShip");
+        writeStr(d300Partial, "arcaneShip");
+        d300Partial.writeShort(0); // 0 players
+        d300Partial.write(new byte[] { 0, 1, 0, 0, 0 }); // truncated scene
+        byte[] f300Partial = wrapFrame(300, b300Partial.toByteArray());
+        StrongholdWireDecoder d2 = new StrongholdWireDecoder();
+        List<StrongholdWireDecoder.Event> pEvs = d2.feed(StrongholdWireDecoder.DIR_DOWN, f300Partial, 0, f300Partial.length);
+        check(pEvs.size() == 1 && pEvs.get(0).bannedBonds.size() == 2, "partial opening 300 rescues banned_bonds");
+
         System.out.println("VpnCodecAndWire: " + checks + " checks passed");
     }
 }

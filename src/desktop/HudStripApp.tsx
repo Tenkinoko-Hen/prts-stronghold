@@ -147,6 +147,7 @@ export default function HudStripApp({
   const [leakCumulative, setLeakCumulative] = useState(true);
   const [leakSelectedRound, setLeakSelectedRound] = useState<number>(1);
   const [dpsSub, setDpsSub] = useState<HudDpsSub>('team');
+  const [showAllWaves, setShowAllWaves] = useState(false);
   const [storageTick, setStorageTick] = useState(0);
   const autoSwitchedBossRoundRef = useRef(0);
 
@@ -411,28 +412,48 @@ export default function HudStripApp({
     return { trackedOps: ranked.slice(0, 4), trackedSource: 'hot' };
   }, [liveShopLevel, matchKey, parsed?.deckPool, previewState, selfLineup?.deployed, selfSeat, state.guide.suggestedOperators, storageTick]);
 
-  // 4. Intel Tab: Next/Current Wave Enemy Icons
-  const { waveSpawns, spawnRound, spawnIsNext } = useMemo(() => {
+  // 4. Intel Tab: Next/Current Wave Enemy Icons + Full All-Waves Schedule (R01-R15)
+  const { waveSpawns, spawnRound, spawnIsNext, allWaveRounds } = useMemo(() => {
+    type WaveItem = { id: string; name: string; count: number | null; boss?: true };
     if (!parsed || parsed.preview.length === 0) {
-      return { waveSpawns: [] as Array<{ id: string; name: string; count: number | null; boss?: true }>, spawnRound: roundNo, spawnIsNext: false };
+      return {
+        waveSpawns: [] as WaveItem[],
+        spawnRound: roundNo,
+        spawnIsNext: false,
+        allWaveRounds: [] as Array<{ round: number; enemies: WaveItem[] }>,
+      };
     }
     const planRows = parsed.preview.filter(p => p.kind === 'plan');
     const sourceRows = planRows.length > 0 ? planRows : parsed.preview;
-    const isSettled = activeRound?.phase === 'settle' || activeRound?.phase === 'end';
-    const nextRows = isSettled ? sourceRows.filter(p => p.round === roundNo + 1) : [];
-    const curRows = sourceRows.filter(p => p.round === roundNo);
-    const chosenRound = nextRows.length > 0 ? roundNo + 1 : curRows.length > 0 ? roundNo : (sourceRows.find(p => p.round >= roundNo)?.round ?? sourceRows[0].round);
-    const targetRows = sourceRows.filter(p => p.round === chosenRound);
-    const merged = new Map<string, { id: string; name: string; count: number | null; boss?: true }>();
-    for (const sp of targetRows) {
+    const byRound = new Map<number, Map<string, WaveItem>>();
+    for (const sp of sourceRows) {
+      const bucket = byRound.get(sp.round) ?? new Map<string, WaveItem>();
       const key = `${sp.boss ? '1' : '0'}:${sp.id}:${sp.name}`;
-      const prev = merged.get(key);
-      if (!prev) merged.set(key, { id: sp.id, name: sp.name, count: sp.count, boss: sp.boss });
+      const prev = bucket.get(key);
+      if (!prev) bucket.set(key, { id: sp.id, name: sp.name, count: sp.count, boss: sp.boss });
       else if (sp.count !== null) prev.count = (prev.count ?? 0) + sp.count;
+      byRound.set(sp.round, bucket);
     }
-    const list = [...merged.values()]
-      .sort((a, b) => Number(Boolean(b.boss)) - Number(Boolean(a.boss)) || (b.count ?? 0) - (a.count ?? 0));
-    return { waveSpawns: list.slice(0, 8), spawnRound: chosenRound, spawnIsNext: chosenRound > roundNo };
+    const allWaveRounds = [...byRound.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([r, m]) => ({
+        round: r,
+        enemies: [...m.values()].sort((a, b) => Number(Boolean(b.boss)) - Number(Boolean(a.boss)) || (b.count ?? 0) - (a.count ?? 0)),
+      }));
+    const isSettled = activeRound?.phase === 'settle' || activeRound?.phase === 'end';
+    const hasNext = isSettled && byRound.has(roundNo + 1);
+    const chosenRound = hasNext
+      ? roundNo + 1
+      : byRound.has(roundNo)
+        ? roundNo
+        : (allWaveRounds.find(w => w.round >= roundNo)?.round ?? allWaveRounds[0]?.round ?? roundNo);
+    const chosenEnemies = allWaveRounds.find(w => w.round === chosenRound)?.enemies ?? [];
+    return {
+      waveSpawns: chosenEnemies.slice(0, 8),
+      spawnRound: chosenRound,
+      spawnIsNext: chosenRound > roundNo,
+      allWaveRounds,
+    };
   }, [activeRound?.phase, parsed, roundNo]);
 
   // 5. Leak/Assist Tab (漏兜): 4-player chart + leaked enemy real icons (Cumulative OR Single Round)
@@ -1242,38 +1263,126 @@ export default function HudStripApp({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
                       <span style={{ color: '#00e5ff', fontWeight: 700 }}>
-                        // R{spawnRound} {spawnIsNext ? '下波出怪' : '本波出怪'}
+                        {showAllWaves ? `// 全波次出怪总览 · ${allWaveRounds.length} 波` : `// R${spawnRound} ${spawnIsNext ? '下波出怪' : '本波出怪'}`}
                       </span>
-                      <span style={{ fontFamily: 'var(--font-mono)', color: '#6b7888' }}>
-                        {waveSpawns.length} 怪种
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3.5px' }}>
-                      {waveSpawns.map(sp => (
-                        <span
-                          key={`${sp.id}-${sp.name}`}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3.5px',
-                            padding: '1.5px 5px 1.5px 2px',
-                            background: '#131822',
-                            border: `1px solid ${sp.boss ? 'rgba(255,230,0,0.55)' : '#242e3e'}`,
-                            borderRadius: '2px',
-                            fontSize: '9.5px',
-                            color: '#e2e8f0',
-                          }}
-                        >
-                          <EnemyAvatar id={sp.id} size={15} />
-                          <span>{sp.name}</span>
-                          {sp.count !== null && (
-                            <b style={{ fontFamily: 'var(--font-mono)', color: '#ffe600', fontSize: '9px' }}>
-                              ×{sp.count}
-                            </b>
-                          )}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', color: '#6b7888' }}>
+                          {showAllWaves ? `当前 R${roundNo}` : `${waveSpawns.length} 怪种`}
                         </span>
-                      ))}
+                        {allWaveRounds.length > 1 && !state.locked && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllWaves(v => !v)}
+                            style={{
+                              padding: '0 5px',
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              borderRadius: '2px',
+                              cursor: 'pointer',
+                              border: '1px solid rgba(0, 229, 255, 0.55)',
+                              background: showAllWaves ? '#00e5ff' : 'rgba(0, 229, 255, 0.12)',
+                              color: showAllWaves ? '#0b0d11' : '#00e5ff',
+                            }}
+                          >
+                            {showAllWaves ? '收起' : `完整(${allWaveRounds.length})`}
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {showAllWaves ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        {allWaveRounds.map(w => {
+                          const isCur = w.round === roundNo;
+                          const isNext = w.round === spawnRound && spawnIsNext;
+                          const isBossWave = w.round >= 14 || w.enemies.some(e => e.boss);
+                          const isPast = w.round < roundNo;
+                          return (
+                            <div
+                              key={w.round}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '4px',
+                                padding: '2px 4px',
+                                background: isCur ? 'rgba(255,230,0,0.08)' : isNext ? 'rgba(0,229,255,0.08)' : isBossWave ? 'rgba(255,77,79,0.1)' : '#101620',
+                                borderLeft: `2px solid ${isBossWave ? '#ff4d4f' : isCur ? '#ffe600' : isNext ? '#00e5ff' : '#2a3547'}`,
+                                opacity: isPast ? 0.55 : 1,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  minWidth: '28px',
+                                  textAlign: 'center',
+                                  padding: '1px 3px',
+                                  borderRadius: '2px',
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: '9px',
+                                  fontWeight: 800,
+                                  background: isBossWave ? '#ff4d4f' : isCur ? '#ffe600' : isNext ? '#00e5ff' : '#1e293b',
+                                  color: (isCur || isNext) && !isBossWave ? '#0b0d11' : '#ffffff',
+                                }}
+                              >
+                                R{String(w.round).padStart(2, '0')}
+                              </span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', flex: 1, minWidth: 0 }}>
+                                {w.enemies.map(sp => (
+                                  <span
+                                    key={`${w.round}-${sp.id}-${sp.name}`}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      padding: '1px 4px 1px 2px',
+                                      background: '#131822',
+                                      border: `1px solid ${sp.boss ? 'rgba(255,77,79,0.55)' : '#242e3e'}`,
+                                      borderRadius: '2px',
+                                      fontSize: '9px',
+                                      color: '#e2e8f0',
+                                    }}
+                                  >
+                                    <EnemyAvatar id={sp.id} size={14} />
+                                    <span>{sp.name}</span>
+                                    {sp.count !== null && (
+                                      <b style={{ fontFamily: 'var(--font-mono)', color: sp.boss ? '#fca5a5' : '#ffe600', fontSize: '8.5px' }}>
+                                        ×{sp.count}
+                                      </b>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3.5px' }}>
+                        {waveSpawns.map(sp => (
+                          <span
+                            key={`${sp.id}-${sp.name}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3.5px',
+                              padding: '1.5px 5px 1.5px 2px',
+                              background: '#131822',
+                              border: `1px solid ${sp.boss ? 'rgba(255,230,0,0.55)' : '#242e3e'}`,
+                              borderRadius: '2px',
+                              fontSize: '9.5px',
+                              color: '#e2e8f0',
+                            }}
+                          >
+                            <EnemyAvatar id={sp.id} size={15} />
+                            <span>{sp.name}</span>
+                            {sp.count !== null && (
+                              <b style={{ fontFamily: 'var(--font-mono)', color: '#ffe600', fontSize: '9px' }}>
+                                ×{sp.count}
+                              </b>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -38,6 +38,7 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.List;
@@ -102,9 +103,15 @@ public class OverlayService extends Service {
     private TextView guideFocusKey;
     private HorizontalScrollView guideEnemyScroll;
     private LinearLayout guideEnemyChips;
+    private TextView guideAllWavesBtn;
     private TextView guideFocusFallbackVal;
     private TextView guideFocusProg;
     private TextView guideBodyView;
+
+    // Body D: 全波次出怪总览（点「完整」展开 R01–R15 所有波次怪物与实机图标）
+    private LinearLayout wavesContainer;
+    private ScrollView wavesScroll;
+    private LinearLayout wavesList;
 
     // Body B: 漏兜（4 人彩色柱图 + 漏怪实机图标）
     private LinearLayout leakContainer;
@@ -662,6 +669,23 @@ public class OverlayService extends Service {
         guideEnemyScroll.addView(guideEnemyChips, new FrameLayout.LayoutParams(-2, -2));
         guideFocusRow.addView(guideEnemyScroll, new LinearLayout.LayoutParams(0, -2, 1f));
 
+        guideAllWavesBtn = new TextView(this);
+        guideAllWavesBtn.setText("完整");
+        guideAllWavesBtn.setTextSize(9.5f);
+        guideAllWavesBtn.setTypeface(null, Typeface.BOLD);
+        guideAllWavesBtn.setTextColor(0xff00e5ff);
+        guideAllWavesBtn.setPadding(dp(5), dp(1), dp(5), dp(1));
+        guideAllWavesBtn.setBackground(background(0xff0f222c, 2, 0x8800e5ff));
+        guideAllWavesBtn.setSingleLine(true);
+        guideAllWavesBtn.setVisibility(View.GONE);
+        guideAllWavesBtn.setOnClickListener(v -> {
+            stripTab = "waves";
+            refreshStripAndBallContent();
+        });
+        LinearLayout.LayoutParams awLp = new LinearLayout.LayoutParams(-2, -2);
+        awLp.leftMargin = dp(4);
+        guideFocusRow.addView(guideAllWavesBtn, awLp);
+
         guideFocusFallbackVal = new TextView(this);
         guideFocusFallbackVal.setTextSize(10f);
         guideFocusFallbackVal.setTextColor(0xffe2e8f0);
@@ -790,6 +814,22 @@ public class OverlayService extends Service {
         rankLp.topMargin = dp(3);
         dpsContainer.addView(bossRankList, rankLp);
         strip.addView(dpsContainer);
+
+        // ===== Body D: 全波次出怪总览（R01–R15 所有波次实机图标）=====
+        wavesContainer = new LinearLayout(this);
+        wavesContainer.setOrientation(LinearLayout.VERTICAL);
+        wavesContainer.setVisibility(View.GONE);
+
+        wavesScroll = new ScrollView(this);
+        wavesScroll.setVerticalScrollBarEnabled(true);
+        wavesScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        wavesList = new LinearLayout(this);
+        wavesList.setOrientation(LinearLayout.VERTICAL);
+        wavesScroll.addView(wavesList, new FrameLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams wsLp = new LinearLayout.LayoutParams(-1, dp(164));
+        wsLp.topMargin = dp(4);
+        wavesContainer.addView(wavesScroll, wsLp);
+        strip.addView(wavesContainer);
 
         stripParams = params(preferredStripWidth(), WindowManager.LayoutParams.WRAP_CONTENT, false, true);
         positionStripDefault();
@@ -965,6 +1005,8 @@ public class OverlayService extends Service {
     ) {
         guideEnemyChips.removeAllViews();
         boolean hasEnemyIcons = snap != null && vpnRunning && snap.forecastEnemies != null && !snap.forecastEnemies.isEmpty();
+        boolean hasAllWaves = snap != null && vpnRunning && snap.allWaves != null && !snap.allWaves.isEmpty();
+        guideAllWavesBtn.setVisibility((hasEnemyIcons && hasAllWaves && !stripLocked) ? View.VISIBLE : View.GONE);
 
         String progRight = !pendingProgress.isEmpty()
             ? pendingProgress
@@ -1085,10 +1127,19 @@ public class OverlayService extends Service {
             head.addView(nameTv, new LinearLayout.LayoutParams(0, -2, 1f));
 
             TextView hpTv = new TextView(this);
-            hpTv.setText(row.hp >= 0 ? ("♥" + row.hp) : "—");
-            hpTv.setTextSize(9f);
+            SpannableStringBuilder hpSb = new SpannableStringBuilder();
+            if (row.hp >= 0) {
+                int hpCol = row.hp <= 5 ? 0xffff7875 : (row.hp >= 15 ? 0xff34d399 : 0xffcbd5e1);
+                appendColored(hpSb, "♥" + row.hp, hpCol);
+            } else {
+                appendColored(hpSb, "—", 0xff64748b);
+            }
+            if (row.shopLevel >= 1 && row.shopLevel <= 6) {
+                appendColored(hpSb, " " + row.shopLevel + "本", 0xff38bdf8);
+            }
+            hpTv.setText(hpSb);
+            hpTv.setTextSize(8.5f);
             hpTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-            hpTv.setTextColor(row.hp >= 0 && row.hp <= 5 ? 0xffff7875 : (row.hp >= 15 ? 0xff34d399 : 0xff94a3b8));
             hpTv.setSingleLine(true);
             head.addView(hpTv);
             card.addView(head);
@@ -1164,6 +1215,74 @@ public class OverlayService extends Service {
         View seg = new View(this);
         seg.setBackgroundColor(color);
         track.addView(seg, new LinearLayout.LayoutParams(0, -1, weight));
+    }
+
+    private void renderAllWavesBody(BattleCaptureState.TelemetrySnapshot snap, int curRound) {
+        wavesList.removeAllViews();
+        List<BattleCaptureState.RoundWave> waves = snap != null ? snap.allWaves : null;
+        if (waves == null || waves.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("暂无已同步波次数据，请进入对局后查看。");
+            empty.setTextSize(10f);
+            empty.setTextColor(0xff94a3b8);
+            empty.setPadding(dp(4), dp(8), dp(4), dp(8));
+            wavesList.addView(empty);
+            return;
+        }
+        int scrollH = waves.size() > 5 ? dp(168) : WindowManager.LayoutParams.WRAP_CONTENT;
+        LinearLayout.LayoutParams wsLp = new LinearLayout.LayoutParams(-1, scrollH);
+        wsLp.topMargin = dp(4);
+        wavesScroll.setLayoutParams(wsLp);
+
+        int nextRound = snap.forecastRound > curRound ? snap.forecastRound : Math.min(15, curRound + 1);
+        for (int i = 0; i < waves.size(); i++) {
+            BattleCaptureState.RoundWave w = waves.get(i);
+            boolean isCur = w.round == curRound;
+            boolean isNext = w.round == nextRound;
+            boolean isBossWave = w.round >= 14;
+            boolean isPast = w.round < curRound;
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(4), dp(3), dp(4), dp(3));
+            int rowBg = isCur ? 0x1affe600 : (isNext ? 0x1800e5ff : (isBossWave ? 0x18ff4d4f : 0xff111720));
+            int rowBorder = isCur ? 0x88ffe600 : (isNext ? 0x8800e5ff : (isBossWave ? 0x77ff4d4f : 0xff222d3d));
+            row.setBackground(background(rowBg, 3, rowBorder));
+            if (isPast) row.setAlpha(0.56f);
+
+            TextView rBadge = new TextView(this);
+            rBadge.setText(isBossWave ? String.format(Locale.US, "R%02d·B", w.round) : String.format(Locale.US, "R%02d", w.round));
+            rBadge.setTextSize(9f);
+            rBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            int rbBg = isBossWave ? 0xffff4d4f : (isCur ? 0xffffe600 : (isNext ? 0xff00e5ff : 0xff1e293b));
+            int rbFg = (isCur || isNext) && !isBossWave ? 0xff0b0d11 : 0xffffffff;
+            rBadge.setTextColor(rbFg);
+            rBadge.setGravity(Gravity.CENTER);
+            rBadge.setPadding(dp(4), dp(2), dp(4), dp(2));
+            rBadge.setMinWidth(dp(32));
+            rBadge.setBackground(background(rbBg, 2, rbBg));
+            LinearLayout.LayoutParams rbLp = new LinearLayout.LayoutParams(-2, -2);
+            rbLp.rightMargin = dp(5);
+            row.addView(rBadge, rbLp);
+
+            HorizontalScrollView hsv = new HorizontalScrollView(this);
+            hsv.setHorizontalScrollBarEnabled(false);
+            hsv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            LinearLayout chips = new LinearLayout(this);
+            chips.setOrientation(LinearLayout.HORIZONTAL);
+            chips.setGravity(Gravity.CENTER_VERTICAL);
+            for (BattleCaptureState.EnemyCount ec : w.enemies) {
+                chips.addView(buildEnemyChip(ec, isBossWave ? 0xfffca5a5 : 0xffffe600,
+                    isBossWave ? 0x77ff4d4f : 0xff28384e, 15));
+            }
+            hsv.addView(chips, new FrameLayout.LayoutParams(-2, -2));
+            row.addView(hsv, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+            if (i > 0) rowLp.topMargin = dp(3);
+            wavesList.addView(row, rowLp);
+        }
     }
 
     private void renderDpsBody(BattleCaptureState.BossSnapshot boss) {
@@ -1340,7 +1459,8 @@ public class OverlayService extends Service {
         // 1. 顶部模式胶囊与控件可见性
         boolean inLeak = "leak".equals(stripTab);
         boolean inDps = "dps".equals(stripTab);
-        boolean inGuide = !inLeak && !inDps;
+        boolean inWaves = "waves".equals(stripTab);
+        boolean inGuide = !inLeak && !inDps && !inWaves;
 
         boolean showStepper = !stripLocked && ((inGuide && hasComp) || inLeak);
         stripPrevBtn.setVisibility(showStepper ? View.VISIBLE : View.GONE);
@@ -1351,9 +1471,10 @@ public class OverlayService extends Service {
         stripTabDpsBtn.setVisibility(isBossContext ? View.VISIBLE : View.GONE);
         int activeLeakCount = snap != null ? snap.currentRoundLeak.totalLeaks : 0;
         stripTabLeakBtn.setText(activeLeakCount > 0 ? ("漏兜·" + activeLeakCount) : "漏兜");
+        stripTabGuideBtn.setText(inWaves ? "返回" : "跟打");
 
         styleCapsuleChip(stripTabDpsBtn, inDps, 0xffff4d4f, 0xffffffff, 0xfffca5a5);
-        styleCapsuleChip(stripTabGuideBtn, inGuide, 0xffffe600, 0xff0b0d11, 0xffcbd5e1);
+        styleCapsuleChip(stripTabGuideBtn, inGuide || inWaves, inWaves ? 0xff00e5ff : 0xffffe600, 0xff0b0d11, 0xffcbd5e1);
         styleCapsuleChip(stripTabLeakBtn, inLeak, activeLeakCount > 0 ? 0xffff7a00 : 0xff00e5ff, 0xff0b0d11,
             activeLeakCount > 0 ? 0xfffdba74 : 0xff67e8f9);
         styleCapsuleChip(stripScopeCumBtn, leakCumulative, 0xff00e5ff, 0xff0b0d11, 0xff94a3b8);
@@ -1376,7 +1497,15 @@ public class OverlayService extends Service {
 
         stripBossHeaderIcon.setVisibility(View.GONE);
 
-        if (inDps && activeBossSnap != null) {
+        if (inWaves) {
+            int waveCount = snap != null && snap.allWaves != null ? snap.allWaves.size() : 0;
+            borderCol = 0xff00e5ff;
+            fillCol = stripLocked ? 0xbb0b1319 : 0xf40b1319;
+            badgeBg = 0xff00e5ff;
+            badgeFg = 0xff0b0d11;
+            badgeText = "全波次·" + waveCount + "波";
+            titleText = "所有波次出怪总览（当前 R" + String.format(Locale.US, "%02d", curRound) + "）";
+        } else if (inDps && activeBossSnap != null) {
             borderCol = 0xffff4d4f;
             fillCol = stripLocked ? 0xc2180a0d : 0xf5180a0d;
             badgeBg = 0xffff4d4f;
@@ -1438,6 +1567,7 @@ public class OverlayService extends Service {
         guideContainer.setVisibility(inGuide ? View.VISIBLE : View.GONE);
         leakContainer.setVisibility(inLeak ? View.VISIBLE : View.GONE);
         dpsContainer.setVisibility(inDps ? View.VISIBLE : View.GONE);
+        wavesContainer.setVisibility(inWaves ? View.VISIBLE : View.GONE);
 
         if (inGuide) {
             renderGuideBody(snap, hasComp, vpnRunning, isUpgrade, hasBanWarn, curRound);
@@ -1445,6 +1575,8 @@ public class OverlayService extends Service {
             renderLeakBody(activeLeakSnap, vpnRunning);
         } else if (inDps && activeBossSnap != null) {
             renderDpsBody(activeBossSnap);
+        } else if (inWaves) {
+            renderAllWavesBody(snap, curRound);
         }
 
         if (stripMode && strip.isAttachedToWindow()) {

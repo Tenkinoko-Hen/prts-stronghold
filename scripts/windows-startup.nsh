@@ -1,6 +1,9 @@
 Var prtsSplashProcess
 Var prtsSplashUnpacked
 Var prtsSplashDone
+Var prtsCacheRoot
+Var prtsStageDir
+Var prtsCleanupInstDir
 
 ; The portable NSIS stub is 32-bit. $R1 is the quoted command line, $R5 and $R7 are the child handle and PID.
 Function PrtsLaunchProcess
@@ -53,6 +56,198 @@ Function PrtsCloseSplash
   ${EndIf}
 FunctionEnd
 
+; Input: $0 = directory path, $R8 = PID. Output: $1 = "1" if writable, "0" otherwise.
+Function PrtsTestWritableDir
+  CreateDirectory "$0"
+  ClearErrors
+  FileOpen $2 "$0\.probe-$R8" w
+  IfErrors prts_dir_unwritable
+  FileClose $2
+  Delete "$0\.probe-$R8"
+  StrCpy $1 "1"
+  Return
+prts_dir_unwritable:
+  StrCpy $1 "0"
+FunctionEnd
+
+; Input: $0 = existing directory path, $2 = required MB. Output: $3 = "1" (ok) / "0" (low), $4 = free MB.
+Function PrtsCheckFreeSpaceMb
+  StrCpy $3 "1"
+  StrCpy $4 "99999"
+  System::Call 'kernel32::GetDiskFreeSpaceExW(w r0, *l .r1, p 0, p 0)i.r5'
+  ${If} $5 != 0
+    System::Int64Op $1 / 1048576
+    Pop $4
+    ${If} $4 < $2
+      StrCpy $3 "0"
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
+; Clean previous cached build directories under $prtsCacheRoot (keeps active $R9 and in-flight tmp-* folders).
+Function PrtsPruneOldCache
+  ${If} $prtsCacheRoot == ""
+    Return
+  ${EndIf}
+  FindFirst $0 $1 "$prtsCacheRoot\*"
+prts_prune_loop:
+  StrCmp $1 "" prts_prune_done
+  StrCmp $1 "." prts_prune_next
+  StrCmp $1 ".." prts_prune_next
+  StrCmp $1 $R9 prts_prune_next
+  StrCpy $2 $1 4
+  StrCmp $2 "tmp-" prts_prune_next
+  RMDir /r "$prtsCacheRoot\$1"
+prts_prune_next:
+  FindNext $0 $1
+  Goto prts_prune_loop
+prts_prune_done:
+  FindClose $0
+FunctionEnd
+
+; Direct 1-pass unpack into a versioned local cache (zero CopyFiles / SHFileOperation double-copy).
+; Subsequent launches reuse the verified cache instantly without re-extracting ~500 MB.
+!macro PrtsPrepareApp
+  System::Call 'kernel32::GetCurrentProcessId()i.R8'
+  !ifdef APP_64_HASH
+    StrCpy $R9 "${APP_64_HASH}" 16
+  !else
+    !ifdef UNPACK_DIR_NAME
+      StrCpy $R9 "${UNPACK_DIR_NAME}" 16
+    !else
+      StrCpy $R9 "default"
+    !endif
+  !endif
+
+  StrCpy $prtsCacheRoot ""
+  StrCpy $prtsCleanupInstDir "0"
+
+  ; Prefer %LOCALAPPDATA%\PRTS-Cache\<Product>, fall back to %TEMP%\PRTS-Cache\<Product>, then unique $PLUGINSDIR\app.
+  ${If} $LOCALAPPDATA != ""
+    CreateDirectory "$LOCALAPPDATA\PRTS-Cache"
+    StrCpy $0 "$LOCALAPPDATA\PRTS-Cache\${PRODUCT_FILENAME}"
+    Call PrtsTestWritableDir
+    ${If} $1 == "1"
+      StrCpy $prtsCacheRoot "$0"
+    ${EndIf}
+  ${EndIf}
+  ${If} $prtsCacheRoot == ""
+    CreateDirectory "$TEMP\PRTS-Cache"
+    StrCpy $0 "$TEMP\PRTS-Cache\${PRODUCT_FILENAME}"
+    Call PrtsTestWritableDir
+    ${If} $1 == "1"
+      StrCpy $prtsCacheRoot "$0"
+    ${EndIf}
+  ${EndIf}
+
+  ${If} $prtsCacheRoot != ""
+    StrCpy $INSTDIR "$prtsCacheRoot\$R9"
+    StrCpy $prtsCleanupInstDir "0"
+  ${Else}
+    StrCpy $INSTDIR "$PLUGINSDIR\app"
+    StrCpy $prtsCleanupInstDir "1"
+  ${EndIf}
+
+  ; Fast path: reuse verified versioned cache (0 ms unpack, avoids antivirus re-scan & mid-game I/O stalls).
+  IfFileExists "$INSTDIR\.prts-ready" 0 prts_need_unpack
+  IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 prts_need_unpack
+  IfFileExists "$INSTDIR\resources\app.asar" prts_app_ready prts_need_unpack
+
+prts_need_unpack:
+  Call PrtsPruneOldCache
+
+  ; Check free disk space before writing payload so low-space C: drives show an actionable message instead of stalling.
+  !ifdef APP_64_UNPACKED_SIZE
+    IntOp $2 ${APP_64_UNPACKED_SIZE} / 1024
+    IntOp $2 $2 + 280
+  !else
+    StrCpy $2 800
+  !endif
+  ${If} $prtsCacheRoot != ""
+    StrCpy $0 "$prtsCacheRoot"
+  ${Else}
+    StrCpy $0 "$PLUGINSDIR"
+  ${EndIf}
+  Call PrtsCheckFreeSpaceMb
+  ${If} $3 == "0"
+    Call PrtsCloseSplash
+    SetSilent normal
+    MessageBox MB_OK|MB_ICONSTOP "磁盘可用空间不足，无法完成首次解包。$\r$\n$\r$\n目标位置需要约 $2 MB 空间，当前仅剩 $4 MB。请清理 C 盘空间后重试。"
+    SetErrorLevel 1
+    Quit
+  ${EndIf}
+
+  ; Extract embedded 7z directly into a unique per-PID staging dir in 1 pass (no 7z-out + CopyFiles double-copy).
+  !ifdef APP_64
+    !ifdef COMPRESS
+      SetCompress off
+    !endif
+    ClearErrors
+    File /oname=$PLUGINSDIR\app-64.${COMPRESSION_METHOD} "${APP_64}"
+    !ifdef COMPRESS
+      SetCompress "${COMPRESS}"
+    !endif
+    IfFileExists "$PLUGINSDIR\app-64.${COMPRESSION_METHOD}" prts_archive_ready
+    Call PrtsCloseSplash
+    SetSilent normal
+    MessageBox MB_OK|MB_ICONSTOP "无法释放应用安装包，可能是临时目录空间不足或被安全软件拦截。$\r$\n$\r$\n请检查 C 盘空间并将本程序加入 Windows Defender / 360 / 火绒信任区后重试。"
+    SetErrorLevel 1
+    Quit
+prts_archive_ready:
+    ${If} $prtsCacheRoot != ""
+      StrCpy $prtsStageDir "$prtsCacheRoot\tmp-$R8"
+    ${Else}
+      StrCpy $prtsStageDir "$INSTDIR"
+    ${EndIf}
+    RMDir /r "$prtsStageDir"
+    CreateDirectory "$prtsStageDir"
+    SetOutPath "$prtsStageDir"
+    ClearErrors
+    Nsis7z::Extract "$PLUGINSDIR\app-64.${COMPRESSION_METHOD}"
+    Delete "$PLUGINSDIR\app-64.${COMPRESSION_METHOD}"
+  !else
+    StrCpy $prtsStageDir "$INSTDIR"
+    RMDir /r "$prtsStageDir"
+    CreateDirectory "$prtsStageDir"
+    SetOutPath "$prtsStageDir"
+    !insertmacro extractEmbeddedAppPackage
+  !endif
+
+  ; Verify extracted main binary and ASAR before switching to launch.
+  IfFileExists "$prtsStageDir\${APP_EXECUTABLE_FILENAME}" 0 prts_unpack_failed
+  IfFileExists "$prtsStageDir\resources\app.asar" prts_unpack_verified prts_unpack_failed
+
+prts_unpack_failed:
+  SetOutPath $EXEDIR
+  RMDir /r "$prtsStageDir"
+  Call PrtsCloseSplash
+  SetSilent normal
+  MessageBox MB_OK|MB_ICONSTOP "应用首次解包失败，主程序文件缺失或被拦截。$\r$\n$\r$\n常见原因：$\r$\n1. Windows Defender / 360 / 火绒拦截隔离了主程序（请加入信任区）$\r$\n2. C 盘可用空间不足（首次解包需约 $2 MB）$\r$\n3. 安装包下载不完整，请重新下载后重试。"
+  SetErrorLevel 1
+  Quit
+
+prts_unpack_verified:
+  FileOpen $0 "$prtsStageDir\.prts-ready" w
+  FileWrite $0 "ok"
+  FileClose $0
+
+  ${If} $prtsStageDir != $INSTDIR
+    ; Release CWD handle on staging dir before atomic NTFS directory rename.
+    SetOutPath $EXEDIR
+    Rename "$prtsStageDir" "$INSTDIR"
+    IfFileExists "$INSTDIR\.prts-ready" 0 prts_rename_fallback
+    RMDir /r "$prtsStageDir"
+    Goto prts_app_ready
+prts_rename_fallback:
+    ; If another process locked $INSTDIR mid-race, run cleanly from our unique staging folder and remove it on exit.
+    StrCpy $INSTDIR "$prtsStageDir"
+    StrCpy $prtsCleanupInstDir "1"
+  ${EndIf}
+
+prts_app_ready:
+  SetOutPath "$INSTDIR"
+!macroend
+
 Function PrtsRunApp
   ${If} $prtsSplashUnpacked != 0
     System::Call 'kernel32::SetEvent(p $prtsSplashUnpacked)'
@@ -61,6 +256,8 @@ Function PrtsRunApp
   Call PrtsLaunchProcess
   ${If} $R5 == 0
     Call PrtsCloseSplash
+    SetSilent normal
+    MessageBox MB_OK|MB_ICONSTOP "无法启动主程序，可能被安全软件（Windows Defender / 360 / 火绒）拦截。$\r$\n$\r$\n请将本程序加入信任区后重试。"
     SetErrorLevel 1
     Return
   ${EndIf}

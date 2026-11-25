@@ -43,6 +43,11 @@ export interface MobileCaptureLeak {
   enemies: MobileCaptureEnemy[];
 }
 
+export interface MobileCaptureWave {
+  round: number;
+  enemies: MobileCaptureEnemy[];
+}
+
 export interface MobileCaptureState {
   running: boolean;
   status: 'idle' | 'permission' | 'running' | 'error';
@@ -61,6 +66,8 @@ export interface MobileCaptureState {
   forecastRound: number;
   forecastEnemies: MobileCaptureEnemy[];
   forecastText: string;
+  allWaves?: MobileCaptureWave[];
+  shopLevels?: Record<string, number>;
   leak: MobileCaptureLeak;
   updatedAt: number;
 }
@@ -152,8 +159,12 @@ export function MobileCaptureToggle({
             {running
               ? (capture?.bansConfirmed
                 ? `✓ 已自动Ban选(${capture.bannedCovenants.length}) · ${capture.round ? `R${capture.round}` : '待开打'}`
-                : capture?.round ? `R${capture.round} · ${capture.messages} 帧` : '等进局自动Ban选…')
-              : '免Root · 自动Ban/出怪图标/4人漏兜/Boss DPS'}
+                : capture?.round
+                  ? `R${capture.round} · ${capture.messages} 帧`
+                  : capture?.messages
+                    ? `已收 ${capture.messages} 帧 · 等待开局 300 帧`
+                    : '开局前开启自动Ban（已在1/3界面请点重扫）')
+              : '免Root · 开局前开启可自动Ban/出怪/4人漏兜'}
           </small>
         </span>
         <button
@@ -173,8 +184,10 @@ export function MobileCaptureToggle({
 }
 
 export function MobileLiveWaveStrip({ capture }: { capture?: MobileCaptureState | null }) {
+  const [showAllWaves, setShowAllWaves] = useState(false);
   if (!capture || !capture.running) return null;
   const forecastList = capture.forecastEnemies || [];
+  const allWaves = capture.allWaves || [];
   const hasForecast = forecastList.length > 0 || Boolean(capture.forecastText);
   const leakEnemies = capture.leak?.enemies || [];
   const hasLeak = Boolean(capture.leak) && (
@@ -183,14 +196,14 @@ export function MobileLiveWaveStrip({ capture }: { capture?: MobileCaptureState 
     || capture.leak.assistKills > 0
     || capture.leak.uncoveredLeaks > 0
   );
-  if (!hasForecast && !hasLeak) return null;
+  if (!hasForecast && !hasLeak && allWaves.length === 0) return null;
 
   return (
     <div className="m-live-wave" aria-label="本机实时战报">
-      {hasForecast && (
+      {(hasForecast || allWaves.length > 0) && (
         <div className="m-live-row is-spawn">
           <span className="m-live-tag">
-            {capture.forecastRound > capture.round ? `下波 R${capture.forecastRound}` : `本波 R${capture.forecastRound}`}
+            {capture.forecastRound > capture.round ? `下波 R${capture.forecastRound}` : `本波 R${capture.forecastRound || capture.round || 1}`}
           </span>
           {forecastList.length > 0 ? (
             <div className="m-live-chips">
@@ -203,8 +216,44 @@ export function MobileLiveWaveStrip({ capture }: { capture?: MobileCaptureState 
               ))}
             </div>
           ) : (
-            <span className="m-live-val">{capture.forecastText}</span>
+            <span className="m-live-val">{capture.forecastText || `已同步 ${allWaves.length} 波`}</span>
           )}
+          {allWaves.length > 0 && (
+            <button
+              type="button"
+              className={`m-waves-toggle${showAllWaves ? ' is-open' : ''}`}
+              onClick={() => setShowAllWaves(v => !v)}
+            >
+              {showAllWaves ? '收起' : `完整(${allWaves.length})`}
+            </button>
+          )}
+        </div>
+      )}
+      {showAllWaves && allWaves.length > 0 && (
+        <div className="m-all-waves-list" aria-label="所有波次出怪总览">
+          {allWaves.map(w => {
+            const isCur = w.round === capture.round;
+            const isNext = w.round === capture.forecastRound && w.round > capture.round;
+            const isBoss = w.round >= 14;
+            const isPast = capture.round > 0 && w.round < capture.round;
+            return (
+              <div
+                key={w.round}
+                className={`m-all-wave-item${isCur ? ' is-cur' : isNext ? ' is-next' : isBoss ? ' is-boss' : ''}${isPast ? ' is-past' : ''}`}
+              >
+                <span className="m-all-wave-r">R{String(w.round).padStart(2, '0')}</span>
+                <div className="m-live-chips">
+                  {w.enemies.map((enemy, idx) => (
+                    <span className={`m-enemy-chip${isBoss ? ' is-leak' : ''}`} key={`${w.round}-${enemy.id || enemy.name}-${idx}`}>
+                      <MobileEnemyIcon id={enemy.id} size={14} />
+                      <span>{enemy.name}</span>
+                      <b>×{enemy.count}</b>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
       {hasLeak && (

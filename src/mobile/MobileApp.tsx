@@ -222,33 +222,59 @@ export default function MobileApp() {
         </section></div>}
 
       {session.step === 'plans' && <>
-        <div className="m-plans-top"><div className="m-section-heading"><div><span className="m-eyebrow">02 / 选择路线</span><h1>本局可用方案</h1></div><span className="m-count">{available.length} 套</span></div>
-        <button className="m-inline-back" onClick={() => dispatch({ type: 'step', step: 'ban' })}><ArrowLeft size={16} /> 重新识别 / 校正 · 受限 {banCount} 项</button></div>
-        {session.scanComplete === false && <p className="m-warning">本次盟约尚未读全，以下为部分条件下的候选。请重新识别或核对缺项。</p>}
-        <div className="m-chips" aria-label="阵容难度">{['全部', '已收藏', '新手轮椅', '进阶公式', '高难上限'].map(label => <button key={label} aria-pressed={difficulty === label} onClick={() => setDifficulty(label)}>{label === '已收藏' && favorites.length > 0 ? `★ 已收藏 (${favorites.length})` : label}</button>)}</div>
-        {filtered.length === 0 && <div className="m-card"><h2>{difficulty === '已收藏' ? '还没有可用的收藏阵容' : '暂无符合条件的方案'}</h2><p>{difficulty === '已收藏' ? '点击任意方案右上角星标即可收藏，后续开局将自动置顶优先推荐。' : '可以修改 Ban、切回全部难度，或展开下方受限方案核对转型条件。'}</p></div>}
-        <div className="m-plan-grid">{filtered.map(({ comp: item, score, statusLabel, blockedReasons, pivotAdvice }, index) => {
+        <div className="m-plans-compact-bar">
+          <button className="m-compact-back" onClick={() => dispatch({ type: 'step', step: 'ban' })}><ArrowLeft size={13} /> 校正({banCount}禁)</button>
+          <span className="m-compact-count">可用 {available.length} 套</span>
+          <div className="m-chips m-chips-compact" aria-label="阵容难度">
+            {([
+              ['全部', '全部'],
+              ['已收藏', favorites.length > 0 ? `★${favorites.length}` : '★收藏'],
+              ['新手轮椅', '新手'],
+              ['进阶公式', '进阶'],
+              ['高难上限', '高难'],
+            ] as const).map(([key, label]) => (
+              <button key={key} aria-pressed={difficulty === key} onClick={() => setDifficulty(key)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {session.scanComplete === false && <p className="m-warning">本次盟约尚未读全，以下为候选方案。</p>}
+        {filtered.length === 0 && <div className="m-card"><h2>{difficulty === '已收藏' ? '还没有可用的收藏阵容' : '暂无符合条件的方案'}</h2><p>{difficulty === '已收藏' ? '点击任意方案右上角星标即可收藏并置顶。' : '可以修改 Ban 或切回全部难度。'}</p></div>}
+        <div className="m-plan-grid m-plan-grid-compact">{filtered.map(({ comp: item, score, statusLabel, blockedReasons, pivotAdvice }, index) => {
           const mainPhase = getRecommendedPaceForRound(item, 15).activePhaseName;
           const previewOps = item.phases.find(phase => phase.phaseName === mainPhase)?.fieldOperators || [];
           const isFav = favSet.has(item.id);
-          return <article className={`m-card m-plan${isFav ? ' is-fav' : ''}`} key={item.id}>
-          <div className="m-plan-meta">
-            <span>{String(index + 1).padStart(2, '0')} · {item.difficulty}</span>
-            <div className="m-plan-head-right">
-              <strong>{score} <small>适配</small></strong>
-              <button type="button" className={`m-star-btn${isFav ? ' is-active' : ''}`} aria-pressed={isFav} aria-label={isFav ? `取消收藏 ${item.title}` : `收藏 ${item.title}`} title={isFav ? '取消收藏' : '收藏并置顶'} onClick={() => toggleFavorite(item.id)}>
-                <Star size={14} fill={isFav ? 'currentColor' : 'none'} />
+          const resumedRound = session.rounds[item.id];
+          return <article
+            className={`m-card m-plan m-plan-compact${isFav ? ' is-fav' : ''}${session.compId === item.id ? ' is-selected' : ''}`}
+            key={item.id}
+            onClick={(ev) => {
+              if ((ev.target as HTMLElement).closest('button,details,summary')) return;
+              dispatch({ type: 'choose', id: item.id });
+            }}
+          >
+            <div className="m-plan-toprow">
+              <span className="m-plan-rank">{String(index + 1).padStart(2, '0')}</span>
+              <h2 className="m-plan-title" title={item.title}>{item.title}</h2>
+              <strong className="m-plan-score">{score}</strong>
+              <button type="button" className={`m-star-btn m-star-sm${isFav ? ' is-active' : ''}`} aria-pressed={isFav} aria-label={isFav ? `取消收藏 ${item.title}` : `收藏 ${item.title}`} title={isFav ? '取消收藏' : '收藏并置顶'} onClick={() => toggleFavorite(item.id)}>
+                <Star size={12} fill={isFav ? 'currentColor' : 'none'} />
+              </button>
+              <button type="button" className="m-plan-go" aria-label={`选择方案 ${item.title}`} onClick={() => dispatch({ type: 'choose', id: item.id })}>
+                {resumedRound ? `R${resumedRound}` : '跟打'}<ArrowRight size={12} />
               </button>
             </div>
-          </div>
-          <h2>{item.title}</h2><StrategyBadge text={item.strategist} /><div className="m-tags">{item.covenants.map(cov => <span key={cov}>{cov}</span>)}</div>
-          <div className="m-plan-avatars" aria-label="主阵容预览">{previewOps.map((op, i) => <OperatorAvatar key={`${op.name}-${i}`} name={op.name} tier={op.tier} size="sm" />)}</div>
-          <details className="m-plan-explanation"><summary>核心思路</summary><p>{item.subtitle}</p><p className="m-muted">{item.coreHighlight}</p></details>
-          {blockedReasons.length > 0 && <details className="m-notice"><summary>{summarizeBlockedReasons(blockedReasons, statusLabel)}</summary><ul>{blockedReasons.map(line => <li key={line}>{line}</li>)}</ul><p>{pivotAdvice}</p></details>}
-          <button className="m-primary m-wide" aria-label={`选择方案 ${item.title}`} onClick={() => dispatch({ type: 'choose', id: item.id })}>{session.rounds[item.id] ? `继续 R${session.rounds[item.id]}` : '选这套 · 从 R1 开始'}<ArrowRight size={17} /></button>
-          <span className="m-footnote">{statusLabel}</span>
-        </article>; })}</div>
-        {blocked.length > 0 && <details className="m-card"><summary>受限方案 <span>{blocked.length} 套</span><ChevronDown size={16} /></summary>{blocked.map(item => <div className="m-blocked" key={item.comp.id}><h3>{item.comp.title}</h3><ul>{item.blockedReasons.map(line => <li key={line}>{line}</li>)}</ul><p>{item.pivotAdvice}</p><button className="m-secondary m-wide" onClick={() => dispatch({ type: 'choose', id: item.comp.id })}>查看攻略与限制</button></div>)}</details>}
+            <div className="m-plan-subrow">
+              <StrategyBadge text={item.strategist} />
+              <span className="m-plan-diff">{item.difficulty}</span>
+              <div className="m-tags m-tags-compact">{item.covenants.map(cov => <span key={cov}>{cov}</span>)}</div>
+            </div>
+            <div className="m-plan-avatars m-plan-avatars-compact" aria-label="主阵容预览">
+              {previewOps.map((op, i) => <OperatorAvatar key={`${op.name}-${i}`} name={op.name} tier={op.tier} size="sm" />)}
+            </div>
+            {blockedReasons.length > 0 && <details className="m-notice m-notice-compact"><summary>{summarizeBlockedReasons(blockedReasons, statusLabel)}</summary><ul>{blockedReasons.map(line => <li key={line}>{line}</li>)}</ul><p>{pivotAdvice}</p></details>}
+          </article>;
+        })}</div>
+        {blocked.length > 0 && <details className="m-card m-blocked-fold"><summary>受限方案 <span>{blocked.length} 套</span><ChevronDown size={15} /></summary>{blocked.map(item => <div className="m-blocked" key={item.comp.id}><h3>{item.comp.title}</h3><ul>{item.blockedReasons.map(line => <li key={line}>{line}</li>)}</ul><p>{item.pivotAdvice}</p><button className="m-secondary m-wide" onClick={() => dispatch({ type: 'choose', id: item.comp.id })}>查看攻略与限制</button></div>)}</details>}
       </>}
 
       {guiding && comp && <>
@@ -276,7 +302,24 @@ export default function MobileApp() {
     {guiding && <div className="m-round-controls"><button className="m-secondary chamfer-box" aria-label="上一回合" disabled={round <= 1} onClick={() => manualRound(round - 1)}><ArrowLeft size={17} /><span>上一回合</span></button><button className="m-primary chamfer-box" aria-label="下一回合" disabled={round >= 15} onClick={() => manualRound(round + 1)}><span>{round === 15 ? '已到终盘' : '下一回合'}</span><ArrowRight size={17} /></button></div>}
     <nav className="m-bottom-nav" aria-label="手机导航">{([
       ['ban', '识别', ShieldBan], ['plans', '方案', Crosshair], ['guide', '跟进', Check], ['library', '资料', BookOpen],
-    ] as const).map(([step, title, Icon]) => <button key={step} aria-current={session.step === step ? 'page' : undefined} onClick={() => dispatch({ type: 'step', step })}><Icon size={19} /><span>{title}</span></button>)}</nav>
+    ] as const).map(([step, title, Icon]) => (
+      <button
+        key={step}
+        aria-current={session.step === step ? 'page' : undefined}
+        onClick={() => {
+          if (step === 'guide' && !session.compId) {
+            const fallbackId = filtered[0]?.comp.id || available[0]?.comp.id || ranked[0]?.comp.id;
+            if (fallbackId) {
+              dispatch({ type: 'choose', id: fallbackId });
+              return;
+            }
+          }
+          dispatch({ type: 'step', step });
+        }}
+      >
+        <Icon size={19} /><span>{title}</span>
+      </button>
+    ))}</nav>
     {help && <div className="m-modal-backdrop" onClick={() => setHelp(false)}><section className="m-confirm" role="dialog" aria-modal="true" aria-label="使用帮助" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭帮助" onClick={() => setHelp(false)}><X size={18} /></button><h2>识别 → 选方案 → 跟进</h2><p><b>本机实时抓包（免 Root）</b>：开启后仅旁路解析明日方舟对局 TCP 帧，自动同步本局 Ban、回合、<b>下回合出怪种类</b>与<b>实时漏怪/协防兜底数</b>（与系统梯子/加速器互斥，不点开启则保持纯离线模式）。</p><p><b>悬浮球快捷手势</b>：单击展开侧栏、双击一键扫盟约、长按切换顶部战术迷你条；迷你条支持 2~3 行完整显示不截断，点正文可一键折叠，右上角可随时切「兜底」查看应急止损。</p><p><b>核心打卡与收藏</b>：点击干员角标打卡（<b>✓ 已到手 / ★ 已精锐</b>）同步缺卡清单；常用阵容可点星标收藏置顶；展开浮窗时窗外点击直达游戏。</p></section></div>}
     {lanModal && <div className="m-modal-backdrop" onClick={() => setLanModal(false)}><section className="m-confirm m-lan-modal" role="dialog" aria-modal="true" aria-label="无线副屏配对" onClick={e => e.stopPropagation()}><button className="m-icon-button m-close" aria-label="关闭无线副屏设置" onClick={() => setLanModal(false)}><X size={18} /></button><h2>电脑无线副屏</h2><MobileLanPanel sharedLan={lanSync.lan} onConnect={lanSync.connect} onDisconnect={lanSync.disconnect} /></section></div>}
     {resetPrompt && <div className="m-modal-backdrop"><section className="m-confirm" role="dialog" aria-modal="true" aria-label="开始新局"><h2>开始新的一局？</h2><p>将清空本局 Ban、已抓干员打卡与各方案回合进度（收藏阵容会保留）。</p><div className="m-two-buttons"><button className="m-secondary" onClick={() => setResetPrompt(false)}>继续本局</button><button className="m-primary" onClick={startNewMatch}>开始新局</button></div></section></div>}

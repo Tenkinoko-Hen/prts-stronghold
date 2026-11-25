@@ -377,3 +377,28 @@ test('mumu-layout computes outside-right, inside-right 28%, screen-right fallbac
     '明日方舟',
   );
 });
+
+test('windows portable launcher patches away CopyFiles double-copy and uses versioned cache + single-instance lock', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const nsis = require('app-builder-lib/out/targets/nsis/nsisUtil.js');
+  const { patchPortableNsiTemplate } = require('../scripts/package-windows.cjs');
+
+  const stock = fs.readFileSync(path.join(nsis.nsisTemplatesDir, 'portable.nsi'), 'utf8');
+  const patched = patchPortableNsiTemplate(stock);
+  assert.ok(patched.includes('!include "prts-startup.nsh"'));
+  assert.ok(patched.includes('!insertmacro PrtsPrepareApp'));
+  assert.ok(patched.includes('Call PrtsRunApp'));
+  assert.ok(!patched.includes('!insertmacro extractEmbeddedAppPackage'), 'should bypass stock 7z-out + CopyFiles loop');
+  assert.ok(patched.includes('${If} $prtsCleanupInstDir == "1"'), 'keeps persistent cache dir on normal exit');
+
+  const startupNsh = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'windows-startup.nsh'), 'utf8');
+  assert.ok(startupNsh.includes('Nsis7z::Extract'));
+  assert.ok(!/^\s*CopyFiles\b/m.test(startupNsh), 'must not call SHFileOperation CopyFiles');
+  assert.ok(startupNsh.includes('GetDiskFreeSpaceExW'));
+  assert.ok(startupNsh.includes('.prts-ready'));
+
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.cjs'), 'utf8');
+  assert.ok(mainSource.includes('app.requestSingleInstanceLock()'));
+  assert.ok(mainSource.includes("app.on('second-instance'"));
+});

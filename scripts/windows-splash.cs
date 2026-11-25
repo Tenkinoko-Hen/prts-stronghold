@@ -11,22 +11,25 @@ using System.Windows.Forms;
 internal sealed class StartupSplash : Form
 {
     private static readonly Rectangle Track = new Rectangle(136, 224, 208, 3);
-    private static readonly Rectangle Caption = new Rectangle(100, 236, 280, 24);
+    private static readonly Rectangle Caption = new Rectangle(40, 236, 400, 24);
     private readonly Color fillColor;
     private readonly Color captionBg;
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly Font captionFont = new Font("Microsoft YaHei UI", 9F);
     private readonly Bitmap artwork;
     private readonly bool animate;
+    private readonly Process launcher;
     private bool unpacked;
+    private string lastCaption = "";
 
     [DllImport("user32.dll")]
     private static extern bool SystemParametersInfo(uint action, uint param, out int value, uint flags);
 
-    private StartupSplash(Bitmap artwork, string title, Color accent)
+    private StartupSplash(Bitmap artwork, string title, Color accent, Process launcher)
     {
         this.artwork = artwork;
         this.fillColor = accent;
+        this.launcher = launcher;
         this.captionBg = artwork.GetPixel(4, Math.Max(0, artwork.Height - 5));
         int animationsEnabled;
         const uint spiGetClientAreaAnimation = 0x1042;
@@ -38,6 +41,32 @@ internal sealed class StartupSplash : Form
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = artwork.Size;
         DoubleBuffered = true;
+        KeyPreview = true;
+    }
+
+    private string CurrentCaption()
+    {
+        long sec = clock.ElapsedMilliseconds / 1000;
+        if (unpacked)
+        {
+            return sec >= 12 ? "正在初始化主窗口…（按 Esc 隐藏）" : "正在打开主窗口…";
+        }
+        if (sec >= 25) return "首次解包耗时较长（" + sec + "s），请检查杀软拦截或按 Esc 取消";
+        if (sec >= 5) return "正在首次解包应用… " + sec + "s（后续启动将秒开）";
+        return "正在准备应用…";
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.Escape)
+        {
+            if (!unpacked)
+            {
+                try { if (launcher != null && !launcher.HasExited) launcher.Kill(); } catch { }
+            }
+            Close();
+        }
     }
 
     private static void LoadMeta(out string title, out Color accent)
@@ -81,7 +110,9 @@ internal sealed class StartupSplash : Form
         {
             e.Graphics.FillRectangle(bgBrush, Caption);
         }
-        TextRenderer.DrawText(e.Graphics, unpacked ? "正在打开主窗口…" : "正在解包应用…", captionFont, Caption,
+        string caption = CurrentCaption();
+        lastCaption = caption;
+        TextRenderer.DrawText(e.Graphics, caption, captionFont, Caption,
             Color.FromArgb(195, 205, 215), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }
 
@@ -110,7 +141,7 @@ internal sealed class StartupSplash : Form
             {
                 if (launcher.HasExited || done.WaitOne(0)) return;
                 Application.EnableVisualStyles();
-                using (var splash = new StartupSplash(bitmap, title, accent))
+                using (var splash = new StartupSplash(bitmap, title, accent, launcher))
                 using (var timer = new System.Windows.Forms.Timer { Interval = 30 })
                 {
                     timer.Tick += delegate
@@ -121,8 +152,8 @@ internal sealed class StartupSplash : Form
                             return;
                         }
                         bool opening = extracted.WaitOne(0);
-                        if (splash.unpacked != opening) splash.Invalidate(Caption);
                         splash.unpacked = opening;
+                        if (splash.CurrentCaption() != splash.lastCaption) splash.Invalidate(Caption);
                         if (splash.animate) splash.Invalidate(Track);
                     };
                     splash.unpacked = extracted.WaitOne(0);

@@ -3,7 +3,7 @@ import { PRTS_OPERATOR_TIERS, resolveOperatorAvatars } from '../data/prtsAvatars
 import { TRANSFER_ITEM_RECIPES, type CompPhase, type MetaCompGuide } from '../data/strongholdData';
 
 export type GuideOperator = CompPhase['fieldOperators'][number];
-const aliases: Record<string, string> = { 小羊: '艾雅法拉', 奶羊: '纯烬艾雅法拉', 塞爹: '塞雷娅', 罗比: '罗比菈塔' };
+const aliases: Record<string, string> = { 小羊: '艾雅法拉', 奶羊: '纯烬艾雅法拉', 塞爹: '塞雷娅', 罗比: '罗比菈塔', 火陈: '赤刃明霄陈' };
 
 // 先匹配完整姓名，避免把“纯烬艾雅法拉”再次当成“艾雅法拉”。
 export function mentionedOperators(text: string): string[] {

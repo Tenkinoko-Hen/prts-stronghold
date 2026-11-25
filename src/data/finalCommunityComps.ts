@@ -497,8 +497,8 @@ export const FINAL_COMMUNITY_COMPS: MetaCompGuide[] = [
           "role": "支援仇白"
         },
         {
-          "name": "假日威龙陈",
-          "tier": "VI",
+          "name": "赤刃明霄陈",
+          "tier": "V",
           "role": "仅策略取得后上场，非四本商店卡"
         }
       ],
@@ -515,13 +515,13 @@ export const FINAL_COMMUNITY_COMPS: MetaCompGuide[] = [
       "covenantTarget": "3炎灵巧聚合，空位补生存",
       "fieldOperators": [
         {
-          "name": "假日威龙陈",
-          "tier": "VI",
+          "name": "赤刃明霄陈",
+          "tier": "V",
           "role": "策略取得的第一名火陈"
         },
         {
-          "name": "假日威龙陈",
-          "tier": "VI",
+          "name": "赤刃明霄陈",
+          "tier": "V",
           "role": "第二名火陈，实际取得后部署"
         },
         {
@@ -987,8 +987,8 @@ export const FINAL_COMMUNITY_COMPS: MetaCompGuide[] = [
           "role": "五阶本家生存"
         },
         {
-          "name": "假日威龙陈",
-          "tier": "VI",
+          "name": "赤刃明霄陈",
+          "tier": "V",
           "role": "仅策略实际取得后部署"
         }
       ],

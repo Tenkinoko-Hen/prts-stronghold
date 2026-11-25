@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Maximize2,
   PanelTopClose,
+  Pin,
   Radio,
   RotateCcw,
   ScanLine,
@@ -106,6 +107,9 @@ export interface MumuDrawerAppProps {
   onToggleAutoFollow(): void;
   onChangeRound(round: number): void;
   hudState: HudOverlayState | null;
+  alwaysOnTop?: boolean;
+  pinPending?: boolean;
+  onToggleAlwaysOnTop?(): void;
   onSnapMumu?(): void;
   onExpandWide?(): void;
   onCollapseToHud?(): void;
@@ -133,6 +137,9 @@ export default function MumuDrawerApp({
   onToggleAutoFollow,
   onChangeRound,
   hudState,
+  alwaysOnTop = false,
+  pinPending = false,
+  onToggleAlwaysOnTop,
   onSnapMumu,
   onExpandWide,
   onCollapseToHud,
@@ -357,6 +364,19 @@ export default function MumuDrawerApp({
         </div>
 
         <div className="mumu-top-actions">
+          {onToggleAlwaysOnTop && (
+            <button
+              type="button"
+              className={`mumu-top-btn${alwaysOnTop ? ' is-pinned' : ''}`}
+              aria-pressed={alwaysOnTop}
+              disabled={pinPending}
+              onClick={onToggleAlwaysOnTop}
+              title={alwaysOnTop ? '取消窗口置顶（切换其他软件时不再遮挡）' : '置顶窗口（MuMu 全屏叠放时建议开启）'}
+            >
+              <Pin size={11} />
+              <span>{alwaysOnTop ? '已置顶' : '置顶'}</span>
+            </button>
+          )}
           {onSnapMumu && (
             <button
               type="button"

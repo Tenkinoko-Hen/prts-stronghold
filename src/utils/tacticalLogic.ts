@@ -582,7 +582,7 @@ const COMP_BAN_PROFILES: Record<string, CompBanRuleProfile> = {
   },
   'yan-double-chen-low-tier': {
     hardRequiredCovenants: ['炎', '灵巧', '聚合'], softSupportCovenants: ['坚守', '迅捷'],
-    criticalOperators: ['假日威龙陈', '仇白'], importantOperators: ['华法琳', '风絮', '余'],
+    criticalOperators: ['赤刃明霄陈', '仇白'], importantOperators: ['华法琳', '风絮', '余'],
     pivotTipWhenSoftBanned: '火陈通过策略取得，四本不能直接购买；缺第二名火陈保原有输出，聚合受限时核对替代生存。',
   },
   'yan-slow-six-convergence': {
@@ -645,7 +645,7 @@ const COMP_BAN_PROFILES: Record<string, CompBanRuleProfile> = {
     hardRequiredCovenants: ['炎', '聚合', '灵巧'],
     softSupportCovenants: ['坚守', '投资人'],
     criticalOperators: ['风絮'],
-    importantOperators: ['余', '仇白', '华法琳', '假日威龙陈'],
+    importantOperators: ['余', '仇白', '华法琳', '赤刃明霄陈'],
     pivotTipWhenSoftBanned:
       '此卡为四本精锐风絮主线，余或仇白缺席时按已有输出和生存调整；火陈未到可用实际取得的精锐老鲤2技能。灵巧/聚合受限先核对存活组件，坚守与投资人按需，不保证核心按时到。',
   },

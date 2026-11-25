@@ -43,19 +43,34 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).href);
   });
   const layoutFile = path.join(app.getPath('userData'), 'window-layout.json');
+  const defaultPin = Boolean(desktop.defaultAlwaysOnTop);
   const readWindowLayout = () => {
     try {
-      if (product.mode !== 'telemetry' || !fs.existsSync(layoutFile)) return { mode: 'wide' };
+      if (!fs.existsSync(layoutFile)) {
+        return {
+          mode: 'wide',
+          wideAlwaysOnTop: defaultPin,
+          railAlwaysOnTop: defaultPin,
+          mumuAlwaysOnTop: defaultPin,
+        };
+      }
       const parsed = JSON.parse(fs.readFileSync(layoutFile, 'utf8'));
-      const mode = parsed && parsed.mode === 'rail' ? 'rail' : 'wide';
+      const mode = product.mode === 'telemetry' && parsed?.mode === 'rail' ? 'rail' : 'wide';
       return {
         mode,
-        wideBounds: parsed?.wideBounds,
-        railBounds: parsed?.railBounds,
-        wideAlwaysOnTop: typeof parsed?.wideAlwaysOnTop === 'boolean' ? parsed.wideAlwaysOnTop : Boolean(desktop.defaultAlwaysOnTop),
+        wideBounds: product.mode === 'telemetry' ? parsed?.wideBounds : undefined,
+        railBounds: product.mode === 'telemetry' ? parsed?.railBounds : undefined,
+        wideAlwaysOnTop: typeof parsed?.wideAlwaysOnTop === 'boolean' ? parsed.wideAlwaysOnTop : defaultPin,
+        railAlwaysOnTop: typeof parsed?.railAlwaysOnTop === 'boolean' ? parsed.railAlwaysOnTop : defaultPin,
+        mumuAlwaysOnTop: typeof parsed?.mumuAlwaysOnTop === 'boolean' ? parsed.mumuAlwaysOnTop : defaultPin,
       };
     } catch {
-      return { mode: 'wide' };
+      return {
+        mode: 'wide',
+        wideAlwaysOnTop: defaultPin,
+        railAlwaysOnTop: defaultPin,
+        mumuAlwaysOnTop: defaultPin,
+      };
     }
   };
   const clampBounds = (bounds, fallbackW, fallbackH) => {
@@ -71,20 +86,38 @@ app.whenReady().then(() => {
     return { x, y, width, height };
   };
   let layoutState = readWindowLayout();
-  let autoMumuEnabled = product.mode === 'full';
+  let autoMumuEnabled = true;
   let manualOverride = false;
   let autoEnteredMumu = false;
+  let autoEnteredFromMode = null;
   let drawerCollapsed = false;
   let hudOpenedByCollapse = false;
   let latestClientSource = 'none';
   let latestMumuWindow = null;
   let mumuPlacement = null;
 
+  const getModeAlwaysOnTop = (mode = layoutState.mode) => {
+    if (mode === 'mumu-drawer') return Boolean(layoutState.mumuAlwaysOnTop);
+    if (mode === 'rail') return Boolean(layoutState.railAlwaysOnTop);
+    return Boolean(layoutState.wideAlwaysOnTop);
+  };
+
   const persistWindowLayout = () => {
-    if (product.mode !== 'telemetry') return;
     try {
       fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
-      fs.writeFileSync(layoutFile, JSON.stringify(layoutState, null, 2), 'utf8');
+      const payload = product.mode === 'telemetry'
+        ? {
+            mode: layoutState.mode === 'rail' ? 'rail' : 'wide',
+            wideBounds: layoutState.wideBounds,
+            railBounds: layoutState.railBounds,
+            wideAlwaysOnTop: Boolean(layoutState.wideAlwaysOnTop),
+            railAlwaysOnTop: Boolean(layoutState.railAlwaysOnTop),
+          }
+        : {
+            wideAlwaysOnTop: Boolean(layoutState.wideAlwaysOnTop),
+            mumuAlwaysOnTop: Boolean(layoutState.mumuAlwaysOnTop),
+          };
+      fs.writeFileSync(layoutFile, JSON.stringify(payload, null, 2), 'utf8');
     } catch {
       // ignore layout write errors
     }
@@ -111,9 +144,7 @@ app.whenReady().then(() => {
       sandbox: true,
     },
   });
-  const initialOnTop = layoutState.mode === 'rail'
-    ? true
-    : (typeof layoutState.wideAlwaysOnTop === 'boolean' ? layoutState.wideAlwaysOnTop : Boolean(desktop.defaultAlwaysOnTop));
+  const initialOnTop = getModeAlwaysOnTop(layoutState.mode);
   if (initialOnTop) mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.setMenu(null);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -156,24 +187,28 @@ app.whenReady().then(() => {
 
   const snapWindowToMumu = (animate = true) => {
     if (mainWindow.isDestroyed()) return;
+    const isLite = product.mode === 'telemetry';
+    const minW = isLite ? desktop.minWidth : 380;
+    const minH = isLite ? desktop.minHeight : 560;
+    const drawerWidth = isLite ? 460 : 416;
     const display = latestMumuWindow
       ? screen.getDisplayMatching(latestMumuWindow)
       : screen.getDisplayMatching(mainWindow.getBounds());
     const result = computeMumuDrawerBounds({
       mumuWindow: latestMumuWindow,
       workArea: display.workArea,
-      drawerWidth: 416,
-      minWidth: 380,
-      minHeight: 560,
+      drawerWidth,
+      minWidth: minW,
+      minHeight: minH,
     });
     mumuPlacement = result.placement;
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    mainWindow.setMinimumSize(380, 560);
+    mainWindow.setMinimumSize(minW, minH);
     mainWindow.setBounds(result.bounds, animate);
-    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    mainWindow.setAlwaysOnTop(getModeAlwaysOnTop(isLite ? 'rail' : 'mumu-drawer'), 'screen-saver');
   };
 
-  const switchLayoutMode = (requestedMode, { isAuto = false, isManual = false } = {}) => {
+  const switchLayoutMode = (requestedMode, { isAuto = false, isManual = false, snapMumu = false } = {}) => {
     if (mainWindow.isDestroyed()) return getLayoutPublicState();
     if (product.mode === 'telemetry') {
       const mode = requestedMode === 'rail' ? 'rail' : 'wide';
@@ -185,24 +220,46 @@ app.whenReady().then(() => {
           layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
         } else {
           layoutState.railBounds = current;
+          layoutState.railAlwaysOnTop = mainWindow.isAlwaysOnTop();
         }
+        const prevMode = layoutState.mode;
         layoutState.mode = mode;
         const display = screen.getDisplayMatching(current);
         const wa = display.workArea;
         if (mode === 'rail') {
-          const defaultRailW = 460;
-          const defaultRailH = Math.min(840, Math.max(desktop.minHeight, wa.height - 32));
-          const target = layoutState.railBounds
-            ? clampBounds(layoutState.railBounds, defaultRailW, defaultRailH)
-            : { x: wa.x + wa.width - defaultRailW - 12, y: wa.y + Math.round((wa.height - defaultRailH) / 2), width: defaultRailW, height: defaultRailH };
-          mainWindow.setBounds(target, true);
-          mainWindow.setAlwaysOnTop(true, 'screen-saver');
+          if (snapMumu || (latestClientSource === 'mumu' && isManual)) {
+            if (isAuto) {
+              autoEnteredMumu = true;
+              autoEnteredFromMode = prevMode;
+            }
+            snapWindowToMumu(true);
+          } else {
+            const defaultRailW = 460;
+            const defaultRailH = Math.min(840, Math.max(desktop.minHeight, wa.height - 32));
+            const target = layoutState.railBounds
+              ? clampBounds(layoutState.railBounds, defaultRailW, defaultRailH)
+              : { x: wa.x + wa.width - defaultRailW - 12, y: wa.y + Math.round((wa.height - defaultRailH) / 2), width: defaultRailW, height: defaultRailH };
+            mainWindow.setBounds(target, true);
+            mainWindow.setAlwaysOnTop(getModeAlwaysOnTop('rail'), 'screen-saver');
+          }
         } else {
           const target = clampBounds(layoutState.wideBounds, desktop.width, desktop.height);
           mainWindow.setBounds(target, true);
-          mainWindow.setAlwaysOnTop(Boolean(layoutState.wideAlwaysOnTop), 'screen-saver');
+          mainWindow.setAlwaysOnTop(getModeAlwaysOnTop('wide'), 'screen-saver');
+          mumuPlacement = null;
+          autoEnteredMumu = false;
+          autoEnteredFromMode = null;
+          if (isManual && latestClientSource === 'mumu') {
+            manualOverride = true;
+          }
         }
         persistWindowLayout();
+      } else if (mode === 'rail' && snapMumu) {
+        if (isAuto && !autoEnteredMumu) {
+          autoEnteredMumu = true;
+          autoEnteredFromMode = 'rail';
+        }
+        snapWindowToMumu(true);
       }
       return sendLayoutState();
     }
@@ -232,7 +289,7 @@ app.whenReady().then(() => {
     mainWindow.setMinimumSize(desktop.minWidth, desktop.minHeight);
     const target = clampBounds(layoutState.wideBounds, desktop.width, desktop.height);
     mainWindow.setBounds(target, true);
-    mainWindow.setAlwaysOnTop(Boolean(layoutState.wideAlwaysOnTop), 'screen-saver');
+    mainWindow.setAlwaysOnTop(getModeAlwaysOnTop('wide'), 'screen-saver');
     layoutState.mode = 'wide';
     mumuPlacement = null;
     autoEnteredMumu = false;
@@ -252,12 +309,17 @@ app.whenReady().then(() => {
   ipcMain.handle('set-always-on-top', (event, flag) => {
     if (!isTrustedMainSender(event) || typeof flag !== 'boolean') return false;
     mainWindow.setAlwaysOnTop(flag, 'screen-saver');
-    if (layoutState.mode === 'wide') {
-      layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
-      persistWindowLayout();
+    const actual = mainWindow.isAlwaysOnTop();
+    if (layoutState.mode === 'mumu-drawer') {
+      layoutState.mumuAlwaysOnTop = actual;
+    } else if (layoutState.mode === 'rail') {
+      layoutState.railAlwaysOnTop = actual;
+    } else {
+      layoutState.wideAlwaysOnTop = actual;
     }
+    persistWindowLayout();
     sendLayoutState();
-    return mainWindow.isAlwaysOnTop();
+    return actual;
   });
   ipcMain.handle('window-layout-get', (event) => {
     if (!isTrustedMainSender(event)) {
@@ -274,12 +336,18 @@ app.whenReady().then(() => {
       }
       return switchLayoutMode('wide', { isManual: true });
     }
-    return switchLayoutMode(nextMode);
+    if (nextMode === 'rail') {
+      manualOverride = false;
+      return switchLayoutMode('rail', { isManual: true, snapMumu: latestClientSource === 'mumu' });
+    }
+    return switchLayoutMode('wide', { isManual: true });
   });
   ipcMain.handle('window-layout-snap-mumu', (event) => {
     if (!isTrustedMainSender(event)) return getLayoutPublicState();
-    if (product.mode !== 'full') return getLayoutPublicState();
     manualOverride = false;
+    if (product.mode === 'telemetry') {
+      return switchLayoutMode('rail', { isManual: true, isAuto: latestClientSource === 'mumu', snapMumu: true });
+    }
     if (layoutState.mode !== 'mumu-drawer') {
       return switchLayoutMode('mumu-drawer', { isManual: true, isAuto: latestClientSource === 'mumu' });
     }
@@ -302,10 +370,15 @@ app.whenReady().then(() => {
   ipcMain.handle('window-layout-set-auto-mumu', (event, enabled) => {
     if (!isTrustedMainSender(event)) return getLayoutPublicState();
     autoMumuEnabled = Boolean(enabled);
-    if (autoMumuEnabled && product.mode === 'full') {
+    if (autoMumuEnabled) {
       manualOverride = false;
-      if (latestClientSource === 'mumu' && layoutState.mode !== 'mumu-drawer') {
-        return switchLayoutMode('mumu-drawer', { isAuto: true });
+      if (latestClientSource === 'mumu') {
+        if (product.mode === 'full' && layoutState.mode !== 'mumu-drawer') {
+          return switchLayoutMode('mumu-drawer', { isAuto: true });
+        }
+        if (product.mode === 'telemetry') {
+          return switchLayoutMode('rail', { isAuto: true, snapMumu: true });
+        }
       }
     }
     return sendLayoutState();
@@ -325,12 +398,22 @@ app.whenReady().then(() => {
     sendLayoutState();
   });
   mainWindow.on('close', () => {
-    if (product.mode !== 'telemetry' || mainWindow.isMinimized()) return;
-    const current = mainWindow.getBounds();
-    if (layoutState.mode === 'rail') layoutState.railBounds = current;
-    else {
-      layoutState.wideBounds = current;
-      layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
+    if (mainWindow.isMinimized()) return;
+    if (product.mode === 'telemetry') {
+      const current = mainWindow.getBounds();
+      if (layoutState.mode === 'rail') {
+        layoutState.railBounds = current;
+        layoutState.railAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      } else {
+        layoutState.wideBounds = current;
+        layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      }
+    } else {
+      if (layoutState.mode === 'mumu-drawer') {
+        layoutState.mumuAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      } else {
+        layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      }
     }
     persistWindowLayout();
   });
@@ -385,7 +468,35 @@ app.whenReady().then(() => {
           hudOverlay?.updateBattleFeed(feed);
           lanSync?.updateBattleFeed(feed);
 
-          if (product.mode !== 'full') return;
+          if (product.mode === 'telemetry') {
+            if (latestClientSource === 'mumu') {
+              const moved = mumuWindowMovedSignificantly(prevWin, latestMumuWindow);
+              if (autoMumuEnabled && !manualOverride && (!autoEnteredMumu || layoutState.mode !== 'rail')) {
+                switchLayoutMode('rail', { isAuto: true, snapMumu: true });
+              } else if (layoutState.mode === 'rail' && !manualOverride && moved) {
+                snapWindowToMumu(false);
+                sendLayoutState();
+              } else if (prevSource !== latestClientSource || moved) {
+                sendLayoutState();
+              }
+            } else {
+              manualOverride = false;
+              mumuPlacement = null;
+              if (autoEnteredMumu) {
+                const restoreWide = autoEnteredFromMode === 'wide' && layoutState.mode === 'rail';
+                autoEnteredMumu = false;
+                autoEnteredFromMode = null;
+                if (restoreWide) {
+                  switchLayoutMode('wide', { isAuto: true });
+                } else {
+                  sendLayoutState();
+                }
+              } else if (prevSource !== latestClientSource || prevWin !== null) {
+                sendLayoutState();
+              }
+            }
+            return;
+          }
           if (latestClientSource === 'mumu') {
             const moved = mumuWindowMovedSignificantly(prevWin, latestMumuWindow);
             if (layoutState.mode !== 'mumu-drawer' && autoMumuEnabled && !manualOverride) {

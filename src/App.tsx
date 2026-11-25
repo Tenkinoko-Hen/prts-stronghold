@@ -363,6 +363,9 @@ export default function App() {
         onToggleAutoFollow={toggleAutoFollow}
         onChangeRound={handleManualRound}
         hudState={hudState}
+        alwaysOnTop={alwaysOnTop}
+        pinPending={pinPending}
+        onToggleAlwaysOnTop={desktopAPI ? toggleAlwaysOnTop : undefined}
         onSnapMumu={desktopAPI?.windowLayout?.snapToMumu ? () => void desktopAPI.windowLayout?.snapToMumu?.() : undefined}
         onExpandWide={() => {
           if (desktopAPI?.windowLayout) void desktopAPI.windowLayout.setMode('wide');

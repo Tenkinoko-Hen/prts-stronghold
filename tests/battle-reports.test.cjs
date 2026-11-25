@@ -315,7 +315,28 @@ test('mumu-layout computes outside-right, inside-right 28%, screen-right fallbac
   assert.equal(insideNarrow.placement, 'inside-right');
   assert.deepEqual(insideNarrow.bounds, { x: 1530, y: 100, width: 390, height: 720 });
 
-  // 3. No MuMu window -> screen-right fallback
+  // 3. Lite (460px drawer, minWidth 440) computes outside-right and inside-right 440px clamp
+  const liteOut = computeMumuDrawerBounds({
+    mumuWindow: { x: 40, y: 80, width: 1280, height: 720 },
+    workArea,
+    drawerWidth: 460,
+    minWidth: 440,
+    minHeight: 560,
+  });
+  assert.equal(liteOut.placement, 'outside-right');
+  assert.deepEqual(liteOut.bounds, { x: 1324, y: 80, width: 460, height: 720 });
+
+  const liteInside = computeMumuDrawerBounds({
+    mumuWindow: { x: 0, y: 0, width: 1920, height: 1040 },
+    workArea,
+    drawerWidth: 460,
+    minWidth: 440,
+    minHeight: 560,
+  });
+  assert.equal(liteInside.placement, 'inside-right');
+  assert.deepEqual(liteInside.bounds, { x: 1480, y: 0, width: 440, height: 1040 });
+
+  // 4. No MuMu window -> screen-right fallback
   const fallback = computeMumuDrawerBounds({ mumuWindow: null, workArea });
   assert.equal(fallback.placement, 'screen-right');
   assert.deepEqual(fallback.bounds, { x: 1504, y: 0, width: 416, height: 1040 });

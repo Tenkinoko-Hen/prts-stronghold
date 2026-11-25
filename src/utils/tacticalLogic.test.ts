@@ -156,7 +156,7 @@ test('Community routes distinguish main-faction bans from restricted secondary c
     ['faith-mixer-fast-four', '莱塔尼亚', null, 'blocked'],
     ['siracusa-precision-six', '叙拉古', '伺夜', 'blocked'],
     ['siracusa-bastion-roberta', '叙拉古', '贝洛内', 'blocked'],
-    ['yan-double-chen-low-tier', '炎', '假日威龙陈', 'blocked'],
+    ['yan-double-chen-low-tier', '炎', '赤刃明霄陈', 'blocked'],
     ['eunectes-two-tier-scopes', '灵巧', '暴躁铁皮', 'viable'],
     ['ursus-arcane-talulah', '乌萨斯', null, 'blocked'],
     ['sargon-precision-arcane-three', '萨尔贡', '鸿雪', 'blocked'],
@@ -226,12 +226,19 @@ test('Every scored operator can be marked, and all stages fit the eight deployme
   const available = new Set<string>(BAN_SENSITIVE_OPERATORS.map(op => op.name));
   for (const comp of META_COMPS) {
     assert(comp.phases.every(p => p.fieldOperators.length <= 8), comp.id);
+    for (const phase of comp.phases) {
+      for (const op of [...phase.fieldOperators, ...phase.benchOperators]) {
+        assert.notEqual(op.name, '假日威龙陈', `${comp.id}: should use 赤刃明霄陈`);
+      }
+    }
     const score = evaluateCompUnderBans(comp, {bannedCovenants: [], bannedOperators: []}).score;
-    for (const name of [...Object.keys(PRTS_OPERATOR_TIERS), '假日威龙陈']) {
+    for (const name of Object.keys(PRTS_OPERATOR_TIERS)) {
       if (evaluateCompUnderBans(comp,{bannedCovenants: [], bannedOperators: [name]}).score < score)
         assert(available.has(name), `${comp.id}: ${name}`);
     }
   }
+  assert.equal(available.has('假日威龙陈'), false);
+  assert.equal(available.has('赤刃明霄陈'), true);
 });
 
 test('Conditional pivots and phase transitions follow the current lineup, even before a scan', () => {
@@ -240,7 +247,7 @@ test('Conditional pivots and phase transitions follow the current lineup, even b
     evaluateCompUnderBans(route(id), {bannedCovenants,bannedOperators});
   const ranked = rankCompsByBanState(META_COMPS,{bannedCovenants:[],bannedOperators:[]});
   assert(ranked.every((r,i)=>!i || ranked[i-1].score>=r.score));
-  assert.equal(score('harmony-yan-victoria-chen',[],['假日威龙陈']).score,100);
+  assert.equal(score('harmony-yan-victoria-chen',[],['赤刃明霄陈']).score,100);
   for(const id of ['kazimierz-fartooth-6','sargon-pozy-pepe-swift','yan-bison-shop-four']){
     assert.equal(getRecommendedPaceForRound(route(id),5).activePhaseName,route(id).phases[0].phaseName);
     assert.equal(getRecommendedPaceForRound(route(id),6).activePhaseName,route(id).phases[1].phaseName);
@@ -256,12 +263,12 @@ test('Conditional pivots and phase transitions follow the current lineup, even b
 test('Separated slow Yan route has independent bans and does not auto-select its conditional endgame', () => {
   const comp = META_COMPS.find(c => c.id === 'yan-slow-six-convergence')!;
   assert.equal(evaluateCompUnderBans(comp, {bannedCovenants: [], bannedOperators: ['华法琳']}).status, 'blocked');
-  assert.equal(evaluateCompUnderBans(comp, {bannedCovenants: [], bannedOperators: ['假日威龙陈']}).status, 'optimal');
+  assert.equal(evaluateCompUnderBans(comp, {bannedCovenants: [], bannedOperators: ['赤刃明霄陈']}).status, 'optimal');
   for (const round of [6, 10, 12, 15]) {
     assert.equal(getRecommendedPaceForRound(comp, round).activePhaseName, '四本炎灵巧底座');
   }
   assert.ok(comp.phases.at(-1)!.fieldOperators.some(op => op.name === '黍'));
-  assert.equal(comp.phases.at(-1)!.fieldOperators.filter(op => op.name === '假日威龙陈').length, 1);
+  assert.equal(comp.phases.at(-1)!.fieldOperators.filter(op => op.name === '赤刃明霄陈').length, 1);
 });
 
 test('Four-tier routes keep automatic guide and picker previews on their normal roster', () => {
@@ -309,7 +316,7 @@ test('Updated Ban rules distinguish pure scope economy from optional Yan support
   assert.equal(restricted.status, 'viable');
   assert.ok(restricted.blockedReasons.some(reason => reason.includes('核对存活干员')));
   const yan = META_COMPS.find(item => item.id === 'yan-bastion-chen-wang')!;
-  for (const operator of ['余', '仇白', '假日威龙陈']) {
+  for (const operator of ['余', '仇白', '赤刃明霄陈']) {
     assert.notEqual(evaluateCompUnderBans(yan, { bannedCovenants: [], bannedOperators: [operator] }).status, 'blocked');
   }
   assert.equal(evaluateCompUnderBans(yan, { bannedCovenants: [], bannedOperators: ['风絮'] }).status, 'blocked');

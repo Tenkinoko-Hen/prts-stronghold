@@ -5,6 +5,7 @@ import {
   AppWindow,
   BarChart3,
   ChevronDown,
+  Crosshair,
   FileDown,
   LayoutDashboard,
   Layers,
@@ -44,6 +45,7 @@ import {
   type ReportRecords,
   type ReportSeat,
   type ReportStatus,
+  type WindowLayoutState,
 } from './battleReports';
 import { LiteCockpitView, type LiteTab } from './LiteCockpitView';
 import './desktop.css';
@@ -104,6 +106,7 @@ export default function TelemetryApp({
   const [tab, setTab] = useState<LiteTab>('cockpit');
   const [status, setStatus] = useState<ReportStatus>('starting');
   const [clientSource, setClientSource] = useState<ClientSource>('none');
+  const [mumuPlacement, setMumuPlacement] = useState<'outside-right' | 'inside-right' | 'screen-right' | null>(null);
   const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(undefined);
   const [npcapInstall, setNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
   const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
@@ -118,16 +121,21 @@ export default function TelemetryApp({
 
   useEffect(() => {
     let mounted = true;
-    const offHud = desktopAPI?.hud?.onState(next => { if (mounted) setHudState(next); });
-    void desktopAPI?.hud?.getState().then(next => { if (mounted) setHudState(next); }).catch(() => {});
-    void desktopAPI?.windowLayout?.getMode().then(next => {
+    const applyLayout = (next: WindowLayoutState) => {
       if (!mounted) return;
       setWindowMode(next.mode === 'rail' ? 'rail' : 'wide');
       setAlwaysOnTop(next.alwaysOnTop);
-    }).catch(() => {});
+      if (next.clientSource !== undefined) setClientSource(next.clientSource);
+      if (next.placement !== undefined) setMumuPlacement(next.placement ?? null);
+    };
+    const offHud = desktopAPI?.hud?.onState(next => { if (mounted) setHudState(next); });
+    const offLayout = desktopAPI?.windowLayout?.onState?.(applyLayout);
+    void desktopAPI?.hud?.getState().then(next => { if (mounted) setHudState(next); }).catch(() => {});
+    void desktopAPI?.windowLayout?.getMode().then(applyLayout).catch(() => {});
     return () => {
       mounted = false;
       offHud?.();
+      offLayout?.();
     };
   }, []);
 
@@ -180,6 +188,19 @@ export default function TelemetryApp({
       setAlwaysOnTop(await desktopAPI.setAlwaysOnTop(!alwaysOnTop));
     } finally {
       setPinPending(false);
+    }
+  };
+
+  const snapToMumu = async () => {
+    if (!desktopAPI?.windowLayout?.snapToMumu || layoutPending) return;
+    setLayoutPending(true);
+    try {
+      const next = await desktopAPI.windowLayout.snapToMumu();
+      setWindowMode(next.mode === 'rail' ? 'rail' : 'wide');
+      setAlwaysOnTop(next.alwaysOnTop);
+      if (next.placement !== undefined) setMumuPlacement(next.placement ?? null);
+    } finally {
+      setLayoutPending(false);
     }
   };
 
@@ -305,13 +326,32 @@ export default function TelemetryApp({
             <span>导出</span>
           </button>
 
+          {clientSource === 'mumu' && desktopAPI?.windowLayout?.snapToMumu && (
+            <button
+              type="button"
+              className={`lite-tool-btn${mumuPlacement ? ' is-active' : ''}`}
+              disabled={layoutPending}
+              title={mumuPlacement === 'inside-right' ? '重新吸附 MuMu 窗口（右侧空间不足，内侧叠放）' : '吸附定位到 MuMu 窗口右侧'}
+              onClick={() => void snapToMumu()}
+            >
+              <Crosshair size={13} />
+              <span>吸附</span>
+            </button>
+          )}
+
           {(desktopAPI?.windowLayout || onTogglePreviewRail) && (
             <button
               type="button"
               className="lite-tool-btn"
               aria-pressed={windowMode === 'rail'}
               disabled={layoutPending}
-              title={windowMode === 'rail' ? '切回宽屏视图（1180×740）' : '切到 460px 侧边栏贴在游戏旁边（自动置顶）'}
+              title={
+                windowMode === 'rail'
+                  ? '切回宽屏视图（1180×740）'
+                  : clientSource === 'mumu'
+                    ? '切到侧边栏并吸附 MuMu 窗口右侧'
+                    : '切到 460px 侧边栏贴在游戏旁边'
+              }
               onClick={() => void toggleWindowMode()}
             >
               {windowMode === 'rail' ? <Maximize2 size={13} /> : <Minimize2 size={13} />}

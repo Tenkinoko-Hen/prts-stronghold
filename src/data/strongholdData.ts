@@ -1301,8 +1301,8 @@ export const META_COMPS: MetaCompGuide[] = [
           "note": "030作者使用2技能；按敌人类型与承压选择"
         },
         {
-          "name": "假日威龙陈",
-          "tier": "VI",
+          "name": "赤刃明霄陈",
+          "tier": "V",
           "role": "策略外援主C",
           "note": "实际取得后部署，四本不能直购"
         },
@@ -4690,7 +4690,6 @@ export const BAN_SENSITIVE_OPERATORS = [
   { name: '罗比菈塔', role: '坚守与助力底座' },
   { name: '荒芜拉普兰德', role: '叙拉古高阶补强' },
   { name: '赤刃明霄陈', role: '火陈自选外援' },
-  { name: '假日威龙陈', role: '狙击外援' },
   { name: '仇白', role: '炎灵巧叠层' },
   { name: '云迹', role: '低本灵巧与奇迹' },
   { name: '霍尔海雅', role: '精准/奥术叠层核心' },

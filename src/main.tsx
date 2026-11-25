@@ -12,7 +12,7 @@ const root = createRoot(document.getElementById('root')!);
 
 if (searchParams.get('hud') === '1') {
   void import('./desktop/HudStripApp').then(({default: HudStripApp}) => root.render(<HudStripApp />));
-} else if (import.meta.env.DEV && searchParams.has('battle-demo')) {
+} else if (import.meta.env.DEV && (searchParams.has('battle-demo') || searchParams.has('lite-demo'))) {
   void import('./desktop/demo/BattleReportDemo').then(({default: Demo}) => root.render(<Demo />));
 } else if (__PRODUCT_MODE__ === 'telemetry') {
   if (import.meta.env.MODE === 'android' || mobile) {

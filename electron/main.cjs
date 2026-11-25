@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, net, protocol, Tray, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, net, protocol, screen, Tray, Menu } = require('electron');
 const { installBattleReports } = require('./battle-reports.cjs');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
 const { installHudOverlay } = require('./hud-overlay.cjs');
@@ -41,17 +41,57 @@ app.whenReady().then(() => {
     if (relative.startsWith('..') || path.isAbsolute(relative)) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).href);
   });
+  const layoutFile = path.join(app.getPath('userData'), 'window-layout.json');
+  const readWindowLayout = () => {
+    try {
+      if (product.mode !== 'telemetry' || !fs.existsSync(layoutFile)) return { mode: 'wide' };
+      const parsed = JSON.parse(fs.readFileSync(layoutFile, 'utf8'));
+      const mode = parsed && parsed.mode === 'rail' ? 'rail' : 'wide';
+      return {
+        mode,
+        wideBounds: parsed?.wideBounds,
+        railBounds: parsed?.railBounds,
+        wideAlwaysOnTop: typeof parsed?.wideAlwaysOnTop === 'boolean' ? parsed.wideAlwaysOnTop : Boolean(desktop.defaultAlwaysOnTop),
+      };
+    } catch {
+      return { mode: 'wide' };
+    }
+  };
+  const clampBounds = (bounds, fallbackW, fallbackH) => {
+    const ref = bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)
+      ? { x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width || fallbackW), height: Math.round(bounds.height || fallbackH) }
+      : null;
+    const display = ref ? screen.getDisplayMatching(ref) : screen.getPrimaryDisplay();
+    const wa = display.workArea;
+    const width = Math.max(desktop.minWidth, Math.min(wa.width, ref ? ref.width : fallbackW));
+    const height = Math.max(desktop.minHeight, Math.min(wa.height, ref ? ref.height : fallbackH));
+    const x = ref ? Math.max(wa.x, Math.min(wa.x + wa.width - width, ref.x)) : Math.round(wa.x + (wa.width - width) / 2);
+    const y = ref ? Math.max(wa.y, Math.min(wa.y + wa.height - height, ref.y)) : Math.round(wa.y + (wa.height - height) / 2);
+    return { x, y, width, height };
+  };
+  let layoutState = readWindowLayout();
+  const persistWindowLayout = () => {
+    if (product.mode !== 'telemetry') return;
+    try {
+      fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
+      fs.writeFileSync(layoutFile, JSON.stringify(layoutState, null, 2), 'utf8');
+    } catch {
+      // ignore layout write errors
+    }
+  };
+  const initialBounds = layoutState.mode === 'rail'
+    ? clampBounds(layoutState.railBounds, 460, Math.min(840, screen.getPrimaryDisplay().workArea.height - 32))
+    : (layoutState.wideBounds ? clampBounds(layoutState.wideBounds, desktop.width, desktop.height) : null);
+
   mainWindow = new BrowserWindow({
     title: product.windowTitle,
-    width: desktop.width,
-    height: desktop.height,
+    ...(initialBounds || { width: desktop.width, height: desktop.height, center: true }),
     minWidth: desktop.minWidth,
     minHeight: desktop.minHeight,
-    center: true,
     fullscreen: false,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0B0C0E',
+    backgroundColor: '#090B0F',
     icon: brandingAssetPath(app, product, 'app.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -61,7 +101,10 @@ app.whenReady().then(() => {
       sandbox: true,
     },
   });
-  if (desktop.defaultAlwaysOnTop) mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  const initialOnTop = layoutState.mode === 'rail'
+    ? true
+    : (typeof layoutState.wideAlwaysOnTop === 'boolean' ? layoutState.wideAlwaysOnTop : Boolean(desktop.defaultAlwaysOnTop));
+  if (initialOnTop) mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.setMenu(null);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -70,7 +113,61 @@ app.whenReady().then(() => {
   ipcMain.handle('set-always-on-top', (event, flag) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || typeof flag !== 'boolean') return false;
     mainWindow.setAlwaysOnTop(flag, 'screen-saver');
+    if (layoutState.mode === 'wide') {
+      layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      persistWindowLayout();
+    }
     return mainWindow.isAlwaysOnTop();
+  });
+  ipcMain.handle('window-layout-get', (event) => {
+    if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      return { mode: 'wide', alwaysOnTop: false };
+    }
+    return { mode: layoutState.mode, alwaysOnTop: mainWindow.isAlwaysOnTop() };
+  });
+  ipcMain.handle('window-layout-set', (event, nextMode) => {
+    if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      return { mode: layoutState.mode, alwaysOnTop: mainWindow.isAlwaysOnTop() };
+    }
+    const mode = nextMode === 'rail' ? 'rail' : 'wide';
+    if (mode !== layoutState.mode) {
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      const current = mainWindow.getBounds();
+      if (layoutState.mode === 'wide') {
+        layoutState.wideBounds = current;
+        layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      } else {
+        layoutState.railBounds = current;
+      }
+      layoutState.mode = mode;
+      const display = screen.getDisplayMatching(current);
+      const wa = display.workArea;
+      if (mode === 'rail') {
+        const defaultRailW = 460;
+        const defaultRailH = Math.min(840, Math.max(desktop.minHeight, wa.height - 32));
+        const target = layoutState.railBounds
+          ? clampBounds(layoutState.railBounds, defaultRailW, defaultRailH)
+          : { x: wa.x + wa.width - defaultRailW - 12, y: wa.y + Math.round((wa.height - defaultRailH) / 2), width: defaultRailW, height: defaultRailH };
+        mainWindow.setBounds(target, true);
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      } else {
+        const target = clampBounds(layoutState.wideBounds, desktop.width, desktop.height);
+        mainWindow.setBounds(target, true);
+        mainWindow.setAlwaysOnTop(Boolean(layoutState.wideAlwaysOnTop), 'screen-saver');
+      }
+      persistWindowLayout();
+    }
+    return { mode: layoutState.mode, alwaysOnTop: mainWindow.isAlwaysOnTop() };
+  });
+  mainWindow.on('close', () => {
+    if (product.mode !== 'telemetry' || mainWindow.isMinimized()) return;
+    const current = mainWindow.getBounds();
+    if (layoutState.mode === 'rail') layoutState.railBounds = current;
+    else {
+      layoutState.wideBounds = current;
+      layoutState.wideAlwaysOnTop = mainWindow.isAlwaysOnTop();
+    }
+    persistWindowLayout();
   });
 
   const hudOverlay = process.platform === 'win32'

@@ -1,40 +1,40 @@
 {
   "id": "telemetry",
   "mode": "telemetry",
-  "name": "卫戍战报仪",
+  "name": "PRTS Stronghold Lite",
   "shortName": "卫戍战报仪",
-  "codename": "Stronghold Telemetry",
+  "codename": "Stronghold Lite",
   "author": "青逝痕 Tenkinoko 制作",
-  "windowTitle": "卫戍战报仪 · Stronghold Telemetry",
-  "startupHeading": "卫戍战报仪 · Stronghold Telemetry",
-  "description": "《明日方舟》卫戍协议纯净局内战报与离线归档工具。",
+  "windowTitle": "PRTS Stronghold Lite · 卫戍战报仪",
+  "startupHeading": "PRTS STRONGHOLD LITE",
+  "description": "《明日方舟》卫戍协议资深玩家战报仪：无攻略纯数据驾驶舱、当局牌库概率、实时算力遥测与离线战报归档。",
   "faviconFile": "favicon.svg",
   "reportBrand": {
     "name": "卫戍战报仪",
-    "title": "卫戍战报仪 · Stronghold Telemetry",
-    "footer": "卫戍战报仪 · Stronghold Telemetry",
+    "title": "PRTS Stronghold Lite · 卫戍战报仪",
+    "footer": "PRTS Stronghold Lite · 卫戍战报仪",
     "exportPrefix": "卫戍战报仪",
     "mobileAlbum": "卫戍战报仪",
-    "mobileHeaderTitle": "卫戍战报仪 · Stronghold Telemetry",
+    "mobileHeaderTitle": "PRTS Stronghold Lite · 卫戍战报仪",
     "diagnosticsTitle": "卫戍战报仪 · 战报诊断"
   },
   "desktop": {
     "appId": "com.stronghold.telemetry",
-    "productName": "卫戍战报仪",
-    "artifactName": "卫戍战报仪-Windows-x64-${version}.${ext}",
+    "productName": "PRTS Stronghold Lite",
+    "artifactName": "PRTS-Stronghold-Lite-Windows-x64-${version}.${ext}",
     "outputDirTemplate": "release/telemetry-${version}",
     "useIsolatedUserData": true,
     "useTray": true,
-    "defaultAlwaysOnTop": true,
-    "width": 1080,
-    "height": 720,
-    "minWidth": 640,
-    "minHeight": 420,
+    "defaultAlwaysOnTop": false,
+    "width": 1180,
+    "height": 740,
+    "minWidth": 440,
+    "minHeight": 560,
     "workerKind": "report-only",
     "workerName": "Telemetry-Worker",
     "workerRuntimeDir": "work/windows-telemetry/runtime/Telemetry-Worker",
-    "splashTitle": "卫戍战报仪 · Stronghold Telemetry",
-    "splashAccent": "#FF9852"
+    "splashTitle": "PRTS Stronghold Lite · 卫戍战报仪",
+    "splashAccent": "#22D3EE"
   },
   "android": {
     "package": "com.stronghold.telemetry",
@@ -54,7 +54,7 @@
   },
   "publicAssetDirs": {
     "desktop": [
-      "boss-routes",
+      "avatars",
       "fonts"
     ],
     "android": [

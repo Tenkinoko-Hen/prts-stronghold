@@ -1,21 +1,122 @@
 // 青逝痕 Tenkinoko 制作
-import { useEffect, useState } from 'react';
-import { Cpu, Smartphone } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Activity,
+  ChevronDown,
+  Cpu,
+  FileDown,
+  Gauge,
+  Layers,
+  ListTree,
+  Maximize2,
+  Minimize2,
+  Pin,
+  Smartphone,
+  Swords,
+} from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
-import type { HudOverlayState, LanSyncState } from './battleReports';
-import BattleReportsView from './BattleReportsView';
+import {
+  defaultBossRound,
+  readBattleReport,
+  reportProgress,
+  type PreviewRoundFilter,
+} from './battleReportData';
+import { BossDamage } from './BattleReportPanels';
+import { RoundMatrix } from './BattleReportRounds';
+import { SpawnPreview } from './BattleReportSpawns';
+import { BattleReportTelemetry } from './BattleReportTelemetry';
+import { BattleReportDeckPool } from './BattleReportDeckPool';
+import { BattleReportRoster } from './BattleReportRoster';
+import { BattleReportExportDialog } from './BattleReportExportDialog';
+import { NpcapSetupBanner } from './NpcapSetupBanner';
+import { isSoloStageMode } from './combatTelemetry';
+import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
+import {
+  reportWithPlayerNames,
+  setReportPlayerNames,
+  setReportSelfSeat,
+  updateLiveReport,
+  type BattleReportsBridge,
+  type HudOverlayState,
+  type LanSyncState,
+  type NpcapInstallState,
+  type ReportFeed,
+  type ReportRecords,
+  type ReportSeat,
+  type ReportStatus,
+} from './battleReports';
 import { LanSyncDialog } from './LanSyncDialog';
+import { LiteCockpitView, type LiteTab } from './LiteCockpitView';
 import './desktop.css';
+import './battleReports.css';
+import './telemetryLite.css';
 
 const desktopAPI = window.electronAPI;
 
-export default function TelemetryApp() {
+const LITE_TABS: { id: LiteTab; label: string; Icon: typeof Gauge }[] = [
+  { id: 'cockpit', label: '驾驶舱', Icon: Gauge },
+  { id: 'rounds', label: '战报', Icon: Activity },
+  { id: 'deck', label: '牌库', Icon: Layers },
+  { id: 'telemetry', label: '算力', Icon: Cpu },
+  { id: 'boss', label: 'Boss', Icon: Swords },
+  { id: 'preview', label: '出怪', Icon: ListTree },
+];
+
+const SHORT_STATUS: Record<ReportStatus, string> = {
+  starting: '启动中',
+  waiting: '待游戏',
+  connecting: '待对局',
+  listening: 'LIVE',
+  permission: '需管理员',
+  paused: '已暂停',
+  unavailable: '不可用',
+  incompatible: '未识别',
+  failed: '异常',
+};
+
+const ERROR_TEXT: Partial<Record<ReportStatus, string>> = {
+  permission: `实时采集需要以管理员身份运行 ${PRODUCT_BRAND.shortName}；历史战局仍可查阅与导出。`,
+  unavailable: '未能在当前网络上采集；已有历史战局仍可查阅与导出。',
+  incompatible: '当前游戏数据未能识别；已有历史战局仍可查阅与导出。',
+  failed: `本地战报组件未启动，请重启 ${PRODUCT_BRAND.shortName}。`,
+};
+
+const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
+
+export default function TelemetryApp({
+  previewApi,
+  previewRail,
+  onTogglePreviewRail,
+}: {
+  previewApi?: BattleReportsBridge;
+  previewRail?: boolean;
+  onTogglePreviewRail?(): void;
+}) {
+  const reportsApi = previewApi ?? desktopAPI?.battleReports;
+
   const [alwaysOnTop, setAlwaysOnTop] = useState(PRODUCT_BRAND.defaultAlwaysOnTop);
+  const [windowMode, setWindowMode] = useState<'wide' | 'rail'>(previewRail ? 'rail' : 'wide');
   const [pinPending, setPinPending] = useState(false);
-  const [pinError, setPinError] = useState('');
+  const [layoutPending, setLayoutPending] = useState(false);
   const [hudState, setHudState] = useState<HudOverlayState | null>(null);
   const [lanState, setLanState] = useState<LanSyncState | null>(null);
   const [lanOpen, setLanOpen] = useState(false);
+
+  const [records, setRecords] = useState<ReportRecords>({ history: [] });
+  const [openedKey, setOpenedKey] = useState<string | null>(null);
+  const [tab, setTab] = useState<LiteTab>('cockpit');
+  const [status, setStatus] = useState<ReportStatus>('starting');
+  const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(undefined);
+  const [npcapInstall, setNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
+  const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
+  const [bossFilter, setBossFilter] = useState<{ key: string; round: number } | null>(null);
+  const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
+  const [exported, setExported] = useState<ReportSummary | null>(null);
+  const prevLiveKeyRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (previewRail !== undefined) setWindowMode(previewRail ? 'rail' : 'wide');
+  }, [previewRail]);
 
   useEffect(() => {
     let mounted = true;
@@ -23,6 +124,11 @@ export default function TelemetryApp() {
     const offLan = desktopAPI?.lanSync?.onState(next => { if (mounted) setLanState(next); });
     void desktopAPI?.hud?.getState().then(next => { if (mounted) setHudState(next); }).catch(() => {});
     void desktopAPI?.lanSync?.getState().then(next => { if (mounted) setLanState(next); }).catch(() => {});
+    void desktopAPI?.windowLayout?.getMode().then(next => {
+      if (!mounted) return;
+      setWindowMode(next.mode);
+      setAlwaysOnTop(next.alwaysOnTop);
+    }).catch(() => {});
     return () => {
       mounted = false;
       offHud?.();
@@ -30,72 +136,333 @@ export default function TelemetryApp() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!reportsApi) return;
+    let changed = false;
+    let mounted = true;
+    let latest: unknown;
+    let latestRun: number | undefined;
+    const accept = (feed: ReportFeed) => {
+      setStatus(feed.status);
+      if (feed.npcapInstalled !== undefined) setNpcapInstalled(feed.npcapInstalled);
+      if (feed.npcapInstall !== undefined) setNpcapInstall(feed.npcapInstall);
+      if (latest === feed.report && latestRun === feed.reportRun) return;
+      latest = feed.report;
+      latestRun = feed.reportRun;
+      try {
+        const parsed = feed.report === null ? null : readBattleReport(feed.report);
+        setRecords(previous => updateLiveReport(previous, parsed, feed.reportRun, Date.now()));
+      } catch {
+        setStatus('incompatible');
+      }
+    };
+    const remove = reportsApi.onState(feed => { changed = true; accept(feed); });
+    void reportsApi.getState().then(feed => { if (mounted && !changed) accept(feed); }).catch(() => {
+      if (mounted && !changed) setStatus('failed');
+    });
+    return () => { mounted = false; remove(); };
+  }, [reportsApi]);
+
+  // 局末归档后停留复盘不白屏；新局开始自动切回实时局
+  useEffect(() => {
+    const prevKey = prevLiveKeyRef.current;
+    const nextKey = records.live?.key;
+    if (prevKey && !nextKey) {
+      setOpenedKey(current => (current === null || current === prevKey ? prevKey : current));
+    } else if (!prevKey && nextKey) {
+      setOpenedKey(null);
+    } else if (prevKey && nextKey && prevKey !== nextKey) {
+      setOpenedKey(null);
+    }
+    prevLiveKeyRef.current = nextKey;
+  }, [records.live?.key]);
+
   const toggleAlwaysOnTop = async () => {
     if (!desktopAPI || pinPending) return;
     setPinPending(true);
-    setPinError('');
     try {
       setAlwaysOnTop(await desktopAPI.setAlwaysOnTop(!alwaysOnTop));
-    } catch {
-      setPinError('置顶失败，请重试');
     } finally {
       setPinPending(false);
     }
   };
 
+  const toggleWindowMode = async () => {
+    if (onTogglePreviewRail) {
+      onTogglePreviewRail();
+      return;
+    }
+    if (!desktopAPI?.windowLayout || layoutPending) return;
+    setLayoutPending(true);
+    try {
+      const next = await desktopAPI.windowLayout.setMode(windowMode === 'rail' ? 'wide' : 'rail');
+      setWindowMode(next.mode);
+      setAlwaysOnTop(next.alwaysOnTop);
+    } finally {
+      setLayoutPending(false);
+    }
+  };
+
+  const opened = openedKey === records.live?.key ? records.live : records.history.find(item => item.key === openedKey);
+  const entry = opened ?? records.live ?? records.history[0];
+  const report = entry && reportWithPlayerNames(entry);
+  const key = entry?.key ?? '';
+  const replay = Boolean(entry && entry.key !== records.live?.key);
+  const liveView = status === 'listening' && Boolean(records.live && entry?.key === records.live.key);
+  const canExport = Boolean(report && (report.rounds.some(isCombatRound) || (report.telemetry?.operators.length ?? 0) > 0));
+  const soloStage = isSoloStageMode(report?.mode);
+  const activeTab: LiteTab = soloStage ? 'telemetry' : tab;
+  const visibleTabs = soloStage ? LITE_TABS.filter(t => t.id === 'telemetry') : LITE_TABS;
+  const seat = perspective?.key === key ? perspective.seat : report?.self ?? null;
+  const previewRound = previewFilter?.key === key ? previewFilter.round : replay ? 'all' : 'follow';
+  const bossNumber = bossFilter?.key === key ? bossFilter.round : defaultBossRound(report);
+  const liveRound = report?.current || report?.rounds.at(-1)?.number || null;
+
+  const statusTone = replay
+    ? 'replay'
+    : npcapInstalled === false
+      ? 'warn'
+      : liveView
+        ? 'live'
+        : ['permission', 'unavailable', 'incompatible', 'failed'].includes(status)
+          ? 'error'
+          : 'idle';
+
+  const statusText = replay
+    ? '回放'
+    : npcapInstalled === false
+      ? '未装 Npcap'
+      : liveView
+        ? (liveRound !== null ? `LIVE R${String(liveRound).padStart(2, '0')}` : 'LIVE')
+        : SHORT_STATUS[status];
+
+  const openRecord = (recordKey: string | null) => {
+    setOpenedKey(recordKey);
+    setPerspective(null);
+    setBossFilter(null);
+    setPreviewFilter(null);
+  };
+
+  const showPreview = (round: PreviewRoundFilter) => {
+    setPreviewFilter({ key, round });
+    setTab('preview');
+  };
+
+  const selectBossRound = (round: number) => {
+    if (round >= 1 && round <= 15) setBossFilter({ key, round });
+  };
+
   return (
-    <div className="desktop-app relative w-screen h-screen overflow-hidden bg-[#0B0E14] text-[#F1F5F9] select-none">
-      <header className="d-global-header">
-        <span className="d-wordmark font-display">
-          <img src={`${import.meta.env.BASE_URL}${PRODUCT_BRAND.faviconFile}`} width="28" height="28" alt="" />
-          <span>{PRODUCT_BRAND.name}<small> · {PRODUCT_BRAND.codename}</small></span>
+    <div className="lite-app desktop-app" data-window-mode={windowMode} data-active-tab={activeTab}>
+      {/* Row 1: 40px Single-Row Master Instrument Bar */}
+      <header className="lite-topbar">
+        <div className="lite-brand">
+          <span className="lite-brand-chip">LITE</span>
+          <span className="lite-brand-name font-display">{PRODUCT_BRAND.shortName}</span>
+        </div>
+
+        <span className="lite-status-pill" data-tone={statusTone} role="status" title={reportProgress(report, liveView).label}>
+          <span className="lite-dot" aria-hidden="true" />
+          <span>{statusText}</span>
         </span>
-        <div className="flex items-center gap-2.5 shrink-0">
+
+        <nav className="lite-nav" aria-label="战报仪视图">
+          {visibleTabs.map(({ id, label, Icon }) => {
+            const count = id === 'deck'
+              ? report?.deckPool?.operators.length
+              : id === 'telemetry'
+                ? (report?.telemetry?.operators.length || undefined)
+                : undefined;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={activeTab === id}
+                onClick={() => {
+                  if (id !== tab && id === 'preview') setPreviewFilter(null);
+                  setTab(id);
+                }}
+              >
+                <Icon size={13} />
+                <span>{id === 'rounds' && replay ? '回放' : label}</span>
+                {count ? <i>{count}</i> : null}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="lite-tools">
+          <button
+            type="button"
+            className={`lite-tool-btn${replay ? ' is-highlight' : ''}`}
+            disabled={!canExport}
+            title={canExport ? '导出离线战报文档 (HTML/PNG)' : '尚无实战回合可导出'}
+            onClick={() => {
+              if (entry && report && canExport) {
+                setExported(summarizeBattleReport(entry, report, liveView, new Date()));
+              }
+            }}
+          >
+            <FileDown size={13} />
+            <span>导出</span>
+          </button>
+
+          {(desktopAPI?.windowLayout || onTogglePreviewRail) && (
+            <button
+              type="button"
+              className="lite-tool-btn"
+              aria-pressed={windowMode === 'rail'}
+              disabled={layoutPending}
+              title={windowMode === 'rail' ? '恢复宽屏驾驶舱（1180×740）' : '切换 460px 贴边伴随窄栏（自动置顶）'}
+              onClick={() => void toggleWindowMode()}
+            >
+              {windowMode === 'rail' ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+              <span>{windowMode === 'rail' ? '展开' : '窄栏'}</span>
+            </button>
+          )}
+
           {desktopAPI?.hud && (
             <button
               type="button"
-              onClick={() => void desktopAPI.hud?.setOpen(!hudState?.open)}
+              className="lite-tool-btn"
               aria-pressed={Boolean(hudState?.open)}
               title="切换置顶鼠标穿透微缩遥测条（Ctrl+Shift+F10 锁定穿透）"
-              className="d-button d-small"
+              onClick={() => void desktopAPI.hud?.setOpen(!hudState?.open)}
             >
               <Cpu size={13} />
-              <span>{hudState?.open ? '关闭微缩条' : '微缩遥测条'}</span>
+              <span>HUD</span>
             </button>
           )}
+
           {desktopAPI?.lanSync && (
             <button
               type="button"
-              onClick={() => setLanOpen(true)}
+              className="lite-tool-btn"
               aria-pressed={Boolean(lanState?.enabled)}
-              title="PC ↔ 安卓局域网战报同步"
-              className="d-button d-small"
+              title="PC ↔ 手机无线横屏副屏与战报同步"
+              onClick={() => setLanOpen(true)}
             >
               <Smartphone size={13} />
-              <span>{lanState?.enabled ? `手机同步(${lanState.peerCount})` : '手机同步'}</span>
+              <span>{lanState?.enabled ? `副屏(${lanState.peerCount})` : '副屏'}</span>
             </button>
           )}
+
           {desktopAPI && (
             <button
               type="button"
-              onClick={toggleAlwaysOnTop}
-              disabled={pinPending}
+              className="lite-tool-btn"
               aria-pressed={alwaysOnTop}
-              title={pinError || '切换系统窗口置顶'}
-              className="px-3 py-2 text-xs font-bold rounded-lg border border-slate-600 text-amber-300 disabled:opacity-50"
+              disabled={pinPending}
+              title="切换系统窗口置顶"
+              onClick={() => void toggleAlwaysOnTop()}
             >
-              {pinError || (alwaysOnTop ? '已置顶' : '窗口置顶')}
+              <Pin size={13} />
+              <span>{alwaysOnTop ? '已置顶' : '置顶'}</span>
             </button>
           )}
         </div>
       </header>
-      {desktopAPI?.battleReports ? (
-        <BattleReportsView api={desktopAPI.battleReports} visible />
-      ) : (
-        <main className="desktop-page d-muted">
-          请在 Windows 桌面端运行{PRODUCT_BRAND.name}以启用本机实时采集，或在开发模式下打开 <code>?battle-demo</code> 预演。
-        </main>
-      )}
+
+      {/* Row 2: 34px Compact Context Strip (History + Ban Covenants + 4-Seat Roster) */}
+      <div className="lite-subbar d-report-shell">
+        <label className="d-match-select">
+          <select
+            aria-label="选择对局"
+            value={entry && entry.key !== records.live?.key ? entry.key : ''}
+            onChange={e => openRecord(e.target.value || null)}
+          >
+            <option value="">{records.live?.label ?? '实时战报'}（当前）</option>
+            {records.history.map(item => (
+              <option key={item.key} value={item.key}>
+                {item.label} · {dateTime.format(item.seenAt)}{item.report.difficulty ? ` · ${item.report.difficulty}` : ''}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={13} />
+        </label>
+
+        {report?.difficulty && <span className="lite-diff-badge">{report.difficulty}</span>}
+
+        {report && report.bannedCovenants.length > 0 && (
+          <div className="lite-bans" aria-label="本局禁选盟约">
+            <span className="lite-bans-label">BAN</span>
+            {report.bannedCovenants.map(name => (
+              <span key={name} className="lite-ban-chip">{name}</span>
+            ))}
+          </div>
+        )}
+
+        {entry && report && (
+          <BattleReportRoster
+            key={entry.key}
+            entry={entry}
+            report={report}
+            seat={seat}
+            onViewSeat={s => setPerspective({ key, seat: s })}
+            onResetPerspective={() => setPerspective(null)}
+            onSave={names => setRecords(previous => setReportPlayerNames(previous, entry.key, names))}
+            onSetSelfSeat={value => {
+              setRecords(previous => setReportSelfSeat(previous, entry.key, value));
+              setPerspective(null);
+            }}
+          />
+        )}
+      </div>
+
+      {/* Row 3: Scrollable Instrument Viewport */}
+      <main className="lite-main">
+        <div className="lite-main-inner d-report-shell">
+          {!previewApi && ERROR_TEXT[status] && <p className="d-warning d-report-error">{ERROR_TEXT[status]}</p>}
+          {!previewApi && reportsApi && (
+            <NpcapSetupBanner api={reportsApi} npcapInstalled={npcapInstalled} installState={npcapInstall} />
+          )}
+
+          {!reportsApi ? (
+            <section className="lite-card">
+              <div className="lite-empty-inline">
+                请在 Windows 桌面端运行 {PRODUCT_BRAND.name} 以启用本机实时采集，或在开发模式下打开 <code>?lite-demo</code> 预演。
+              </div>
+            </section>
+          ) : (
+            <>
+              {activeTab === 'cockpit' && (
+                <LiteCockpitView
+                  report={report}
+                  seat={seat}
+                  live={liveView}
+                  status={status}
+                  npcapInstalled={npcapInstalled}
+                  history={records.history}
+                  onSelectRecord={openRecord}
+                  onSelectSeat={s => setPerspective({ key, seat: s })}
+                  onJumpTab={setTab}
+                  onOpenHud={desktopAPI?.hud ? () => void desktopAPI.hud?.setOpen(true) : undefined}
+                  onOpenLan={desktopAPI?.lanSync ? () => setLanOpen(true) : undefined}
+                />
+              )}
+              {activeTab === 'rounds' && (
+                <RoundMatrix key={key} report={report} seat={seat} live={liveView} onPreview={() => showPreview('all')} />
+              )}
+              {activeTab === 'deck' && <BattleReportDeckPool key={key} report={report} />}
+              {activeTab === 'telemetry' && <BattleReportTelemetry key={key} report={report} />}
+              {activeTab === 'boss' && (
+                <BossDamage report={report} seat={seat} number={bossNumber} onRound={selectBossRound} reference={null} onPreview={showPreview} />
+              )}
+              {activeTab === 'preview' && (
+                <SpawnPreview
+                  key={key}
+                  report={report}
+                  live={liveView}
+                  filter={previewRound}
+                  onSelect={round => setPreviewFilter({ key, round })}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </main>
+
+      {exported && <BattleReportExportDialog report={exported} onClose={() => setExported(null)} />}
       {desktopAPI?.lanSync && lanState && (
         <LanSyncDialog open={lanOpen} state={lanState} api={desktopAPI.lanSync} onClose={() => setLanOpen(false)} />
       )}

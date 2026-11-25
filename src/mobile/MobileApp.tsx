@@ -92,7 +92,7 @@ export default function MobileApp() {
       <MobileSecondScreen
         lan={lanSync.lan}
         onDisconnect={lanSync.disconnect}
-        productMode="full"
+        productMode={lanSync.lan.payload?.product === 'telemetry' ? 'telemetry' : 'full'}
       />
     );
   }

@@ -49,6 +49,9 @@ test('product manifests isolate stronghold and pure telemetry branding, IDs and 
   assert.equal(stronghold.desktop.workerName, 'PRTS-Worker');
   assert.equal(telemetry.desktop.workerKind, 'report-only');
   assert.ok(!telemetry.publicAssetDirs.desktop.includes('community'));
+  assert.ok(!telemetry.publicAssetDirs.desktop.includes('boss-routes'));
+  assert.ok(!telemetry.publicAssetDirs.desktop.includes('strategies'));
+  assert.ok(telemetry.publicAssetDirs.desktop.includes('avatars'));
   assert.ok(!telemetry.publicAssetDirs.android.includes('boss-routes'));
 });
 

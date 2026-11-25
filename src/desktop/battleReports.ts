@@ -88,10 +88,20 @@ export interface LanSyncBridge {
   onState(callback: (state: LanSyncState) => void): () => void;
 }
 
+export interface WindowLayoutState {
+  mode: 'wide' | 'rail';
+  alwaysOnTop: boolean;
+}
+export interface WindowLayoutBridge {
+  getMode(): Promise<WindowLayoutState>;
+  setMode(mode: 'wide' | 'rail'): Promise<WindowLayoutState>;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
       setAlwaysOnTop(flag: boolean): Promise<boolean>;
+      windowLayout?: WindowLayoutBridge;
       battleReports?: BattleReportsBridge;
       covenantOcr?: CovenantOcrBridge;
       hud?: HudOverlayBridge;

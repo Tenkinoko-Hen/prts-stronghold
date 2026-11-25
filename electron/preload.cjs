@@ -3,6 +3,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', Boolean(flag)),
+  windowLayout: {
+    getMode: () => ipcRenderer.invoke('window-layout-get'),
+    setMode: (mode) => ipcRenderer.invoke('window-layout-set', mode === 'rail' ? 'rail' : 'wide'),
+  },
   ...(process.platform === 'win32' ? {
     battleReports: {
       getState: () => ipcRenderer.invoke('battle-reports-get'),

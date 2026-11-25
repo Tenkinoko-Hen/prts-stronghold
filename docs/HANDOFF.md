@@ -20,7 +20,7 @@
 
 1. **单主线双产品架构**（品牌与配置集中在 `products/`）：
    - `products/stronghold/`（默认完整版）：`PRTS Stronghold`（`com.prts.stronghold` / `com.prts.stronghold.mobile`），含 3 域桌面终端（`01 战术跟打` · `02 实时战报` · `03 战术资料`）+ Android 攻略随行版。
-   - `products/telemetry/`（独立纯净版 · A 模式）：`卫戍战报仪 · Stronghold Telemetry`（`com.stronghold.telemetry`），仅保留战报与 Boss 路线参照。
+   - `products/telemetry/`（独立纯净版 · A 模式 · **PRTS Stronghold Lite**）：`PRTS Stronghold Lite · 卫戍战报仪`（`com.stronghold.telemetry`），面向资深玩家的无攻略战报仪，彻底剥离阵容/站位攻略与 Boss 路线图，仅保留干员头像/字体与全套实时战报核心（40px+34px 双行极简仪器头、`1180×740` 实时驾驶舱、`460px` 一键贴边伴随窄栏 + 窗口形态持久化、当局牌库「追踪我场上干员」与穿透微缩条）。
    - 共享源码禁止硬编码单一产品名，统一经 `src/brand/productBrand.ts`、`products/<id>/product.json` 或 Android 资源读取。
 2. **Windows 桌面采集与启动**：
    - 已彻底移除桌面端 RapidOCR；统一为纯标准库 Python 抓包进程 `PRTS-Worker`（支持实时协议解析、开局 `1/3 确认本局信息` 画面 Windows 原生 OCR 禁选兜底 + TCP 双通道同步、四席编队/策略家/本数解析与 Boss 参战干员映射、零注入 `ReadProcessMemory` 双重逻辑帧守卫算力采样）。
@@ -96,14 +96,20 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25（正式发布 **PRTS Stronghold 2.0.0** 双端包到 GitHub Releases `v2.0.0`，并产出 B站 16:9 横屏与抖音 9:16 竖屏全功能宣传视频）
+- **最后更新**：2026-11-25（完成 **PRTS Stronghold Lite 资深玩家战报仪** PC 端 UI 落地并移除历史来源标注；`v2.0.0` 双端正式包已发布至 GitHub Releases `v2.0.0`）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最近一次正式发布版本（`v2.0.0`）**：
   - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.3 MiB / 240,483,805 字节，SHA-256: `3afecf46…b532542`，已内置最新 `PRTS-Worker` 与 `stronghold_catalog.json`）
   - Android 攻略随行包：`PRTS-Stronghold-2.0.0-Android.apk`（142.1 MiB / 149,025,407 字节，VersionCode `21`，SHA-256: `d417ba79…de8cc871`，v2/v3 签名校验通过；已修复 Android 11–15 冷启动在 `setContentView` 前调用 `getInsetsController()` 导致的闪退）
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
-  - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold` 生成本机 `work/windows-worker/runtime/PRTS-Worker/PRTS-Worker.exe`。
+  - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker。
 - **近期已完成里程碑**：
+  - **PRTS Stronghold Lite（资深玩家战报仪）PC 端完整 UI 落地**（`products/telemetry/` 升级，166/166 测试全绿，双产品构建通过）：
+    - 彻底剥离阵容/站位攻略与 `boss-routes` 路线图（仅保留 `avatars` + `fonts`），视觉切换为低疲劳 PRTS 遥测青 `#22D3EE` + 哑光钢蓝 `#3698CC` 深黑仪器风。
+    - 重构 `TelemetryApp.tsx` 与 `telemetryLite.css` 为 40px+34px 极简双行仪器顶栏，新增默认首页 `LiteCockpitView.tsx`（实时驾驶舱：四席态势条 + 波次出怪雷达 + 近期回合速览 + 场上/心仪牌池盯防 + 实时算力 Top 5 / Boss 削血自动切换，以及待机三段式自检面板）。
+    - `electron/main.cjs` + `preload.cjs` 新增 `windowLayout` IPC，支持一键切换 `1180×740` 宽屏驾驶舱 ↔ `460px` 右侧贴边伴随窄栏（自动置顶并持久化上次窗口形态与位置）。
+    - `BattleReportDeckPool.tsx` 与 `HudStripApp.tsx` 补齐无攻略模式下的「追踪我场上干员」与本席在阵干员自动盯防；`MobileApp.tsx` 配对 PC Lite 时自动切换无线副屏为无攻略纯净态。
+    - 浏览器实测覆盖 `?lite-demo=coop_elim`、`coop_boss`、`standby` 与 `460×820` 窄栏全页无遮挡无横向溢出。
   - **Boss 伤害多图组合看板 + 导出战报文档重构与干员头像内嵌 + 悬浮窗双页模式 + 双端出包 v1.4.23 / v1.4.14**（`e0e78fd`，166/166 测试全绿，双产品构建通过）：
     - `BattleReportPanels.tsx` / `battleReports.css` 重构 `BossDamage` 为 2 层互补图看板：顶部 4 格 KPI 速读 + 按席位归因分段首领削血条（修复未结算时混用旧 `boss_ratio` 导致的占比冲突）；下方双栏组合「SVG 环形占比图 + 紧凑阵亡未参战标签」与「规整刻度微网格参战干员输出排行（带头像与席位同色标识）」。
     - `battleReportExport.ts` / `battleReportPortraits.ts` / `battleReportDocument.ts` / `battleReportDocument.css` 全面重构离线 HTML / PNG 导出文档为 PRTS × 终末地 `// 简报` 工业 BI 版式：新增离线 `data:image/png` 干员头像精灵图拼接（零外链、零 `src=`、100% 满足原 CSP 规范），覆盖席位阵容头像、Boss 干员排行与算力明细；同步新增内嵌 SVG 回合承压柱图与 Boss 分段血条/环形图组合。

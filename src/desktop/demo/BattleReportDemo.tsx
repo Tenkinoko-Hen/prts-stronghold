@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { Columns2, Monitor } from 'lucide-react';
 import BattleReportsView from '../BattleReportsView';
+import TelemetryApp from '../TelemetryApp';
 import HudStripApp from '../HudStripApp';
 import { MobileSecondScreen } from '../../mobile/MobileSecondScreen';
 import { demoReport, type DemoScene } from './battleReportFixture';
@@ -23,14 +24,37 @@ const scenes: Record<DemoScene, string> = {
 };
 
 export default function BattleReportDemo() {
-  const [scene, setScene] = useState<DemoScene>('coop_elim');
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const isLiteDemo = params.has('lite-demo');
+  const liteSceneParam = params.get('lite-demo') || 'coop_elim';
+  const [liteRail, setLiteRail] = useState(params.get('rail') === '1');
+  const [scene, setScene] = useState<DemoScene>(
+    (liteSceneParam in scenes ? liteSceneParam : 'coop_elim') as DemoScene,
+  );
   const [half, setHalf] = useState(false);
   const [secondLive, setSecondLive] = useState(true);
-  const reportObj = useMemo(() => demoReport(scene), [scene]);
+  const isStandby = isLiteDemo && liteSceneParam === 'standby';
+  const reportObj = useMemo(() => (isStandby ? null : demoReport(scene)), [isStandby, scene]);
   const api = useMemo<BattleReportsBridge>(() => {
-    const feed: ReportFeed = { status: 'listening', report: reportObj, reportRun: 1 };
+    const feed: ReportFeed = {
+      status: isStandby ? 'waiting' : 'listening',
+      report: reportObj,
+      reportRun: 1,
+      npcapInstalled: true,
+    };
     return { getState: async () => feed, onState: () => () => {}, setEnabled: async () => feed, showDiagnostics: async () => {} };
-  }, [reportObj]);
+  }, [isStandby, reportObj]);
+
+  if (isLiteDemo) {
+    return (
+      <TelemetryApp
+        key={`${liteSceneParam}:${scene}`}
+        previewApi={api}
+        previewRail={liteRail}
+        onTogglePreviewRail={() => setLiteRail(v => !v)}
+      />
+    );
+  }
 
   return <div className="desktop-app d-report-demo">
     <header className="d-demo-tools"><div className="d-demo-brand"><span>{REPORT_BRAND.name}</span><b>界面效果预演</b></div>

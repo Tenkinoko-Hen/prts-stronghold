@@ -48,7 +48,7 @@ export function readPersistedWishlist(matchKey: string, forceFresh = false): Per
   return empty;
 }
 
-function writePersistedWishlist(matchKey: string, data: PersistedWishlist): void {
+export function writePersistedWishlist(matchKey: string, data: PersistedWishlist): void {
   wishlistMemoryCache.set(matchKey, data);
   try {
     if (typeof localStorage !== 'undefined') {
@@ -201,6 +201,25 @@ export function BattleReportDeckPool({
     || suggestedEquipNames.some(n => pool.equips.some(eq => eq.name === n || n.includes(eq.name))),
   );
 
+  const ownDeployed = (selfSeat !== null ? report.lineups[selfSeat]?.deployed : undefined) ?? [];
+  const nonGoldBoardIds = ownDeployed.length
+    ? pool.operators
+        .filter(op => ownDeployed.some(u => !u.isGolden && u.name === op.name))
+        .map(op => op.charId)
+    : [];
+  const ownBoardCharIds = nonGoldBoardIds.length > 0
+    ? nonGoldBoardIds
+    : ownDeployed.length
+      ? pool.operators.filter(op => ownDeployed.some(u => u.name === op.name)).map(op => op.charId)
+      : [];
+
+  const trackOwnBoardTargets = () => {
+    if (!ownBoardCharIds.length) return;
+    const nextChars = [...new Set([...wishChars, ...ownBoardCharIds])];
+    setWishChars(nextChars);
+    writePersistedWishlist(matchKey, { chars: nextChars, traps: wishTraps });
+  };
+
   const kw = query.trim().toLowerCase();
   const filteredOperators = pool.operators.filter(op =>
     (tierFilter === 'all' || op.tier === tierFilter)
@@ -252,7 +271,7 @@ export function BattleReportDeckPool({
           <span className="d-pool-slot-meta">
             单刷 <b>{summary.charSlots}</b> 干员 + <b>{summary.itemSlots}</b> 装备 · 可刷池 <b>{summary.availablePoolCopies}</b> 张
           </span>
-          {canImportSuggested && (
+          {canImportSuggested ? (
             <button
               type="button"
               className="d-button d-small d-primary"
@@ -261,7 +280,16 @@ export function BattleReportDeckPool({
             >
               <Sparkles size={12} />导入当前阵容核心
             </button>
-          )}
+          ) : ownBoardCharIds.length > 0 ? (
+            <button
+              type="button"
+              className="d-button d-small d-primary"
+              onClick={trackOwnBoardTargets}
+              title="一键将我当前场上在阵干员加入心仪追踪，方便算追三/追金概率"
+            >
+              <Sparkles size={12} />追踪我场上干员 ({ownBoardCharIds.length})
+            </button>
+          ) : null}
           {(wishChars.length > 0 || wishTraps.length > 0) && (
             <button
               type="button"

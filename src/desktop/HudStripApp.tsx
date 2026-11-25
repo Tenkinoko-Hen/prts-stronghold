@@ -217,6 +217,25 @@ export default function HudStripApp({
         return { trackedOps: matched.slice(0, 6), trackedSource: 'comp' };
       }
     }
+    // Lite / no-guide fallback: track own deployed board units (highest tier non-golden first) before generic hot pool
+    const ownDeployed = selfLineup?.deployed ?? [];
+    if (ownDeployed.length > 0) {
+      const preferredNames = [...ownDeployed]
+        .sort((a, b) => Number(a.isGolden) - Number(b.isGolden) || b.tier - a.tier)
+        .map(u => u.name);
+      const boardMatched: DeckPoolOperator[] = [];
+      const seen = new Set<string>();
+      for (const name of preferredNames) {
+        const hit = pool.operators.find(o => !seen.has(o.charId) && o.name === name);
+        if (hit) {
+          seen.add(hit.charId);
+          boardMatched.push(hit);
+        }
+      }
+      if (boardMatched.length > 0) {
+        return { trackedOps: boardMatched.slice(0, 5), trackedSource: 'comp' };
+      }
+    }
     // Fallback: prioritize operators currently in player's shop, depleted alerts, or highest contested tier
     const ranked = [...pool.operators].sort((a, b) => {
       const aShop = selfSeat !== null && a.inShopSeats.includes(selfSeat) ? 1 : 0;
@@ -230,7 +249,7 @@ export default function HudStripApp({
       return b.tier - a.tier || b.takenTotal - a.takenTotal;
     });
     return { trackedOps: ranked.slice(0, 4), trackedSource: 'hot' };
-  }, [liveShopLevel, matchKey, parsed?.deckPool, previewState, selfSeat, state.guide.suggestedOperators, storageTick]);
+  }, [liveShopLevel, matchKey, parsed?.deckPool, previewState, selfLineup?.deployed, selfSeat, state.guide.suggestedOperators, storageTick]);
 
   // 3. Page 1 (牌池+出怪): Aggregated enemy preview for current (or next upcoming) round
   const { waveSpawns, spawnRound, spawnIsNext } = useMemo(() => {

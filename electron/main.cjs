@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, net, protocol, screen, Tray, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, screen, Tray, Menu } = require('electron');
 const { installBattleReports } = require('./battle-reports.cjs');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
 const { installHudOverlay } = require('./hud-overlay.cjs');
@@ -40,6 +40,14 @@ if (!gotSingleInstanceLock) {
     mainWindow.focus();
   });
 }
+
+// 全局异常兜底：防止多屏拔插或极端异步异常导致主进程闪退中断对局查阅
+process.on('uncaughtException', (err) => {
+  console.error('[PRTS Main Guard] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[PRTS Main Guard] Unhandled rejection:', reason);
+});
 
 if (gotSingleInstanceLock) app.whenReady().then(() => {
   const root = path.join(app.getAppPath(), 'dist');
@@ -195,6 +203,30 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
       || Math.abs(prevWin.height - nextWin.height) > 4;
   };
 
+  const safeDisplayWorkArea = (rect) => {
+    try {
+      if (
+        rect
+        && Number.isFinite(rect.x)
+        && Number.isFinite(rect.y)
+        && Number.isFinite(rect.width)
+        && Number.isFinite(rect.height)
+        && rect.width > 0
+        && rect.height > 0
+      ) {
+        return screen.getDisplayMatching({
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        }).workArea;
+      }
+    } catch {
+      // fall through to primary display
+    }
+    return screen.getPrimaryDisplay().workArea;
+  };
+
   let hudOverlay = null;
 
   const snapWindowToMumu = (animate = true) => {
@@ -203,12 +235,10 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     const minW = isLite ? desktop.minWidth : 380;
     const minH = isLite ? desktop.minHeight : 560;
     const drawerWidth = isLite ? 460 : 416;
-    const display = latestMumuWindow
-      ? screen.getDisplayMatching(latestMumuWindow)
-      : screen.getDisplayMatching(mainWindow.getBounds());
+    const workArea = safeDisplayWorkArea(latestMumuWindow || mainWindow.getBounds());
     const result = computeMumuDrawerBounds({
       mumuWindow: latestMumuWindow,
-      workArea: display.workArea,
+      workArea,
       drawerWidth,
       minWidth: minW,
       minHeight: minH,
@@ -318,6 +348,11 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     return sendLayoutState();
   };
 
+  ipcMain.handle('app-relaunch', (event) => {
+    if (!isTrustedMainSender(event)) return;
+    app.relaunch();
+    app.exit(0);
+  });
   ipcMain.handle('set-always-on-top', (event, flag) => {
     if (!isTrustedMainSender(event) || typeof flag !== 'boolean') return false;
     mainWindow.setAlwaysOnTop(flag, 'screen-saver');
@@ -522,7 +557,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
             if (drawerCollapsed && hudOverlay?.getState()?.open && moved) {
               const hudBounds = computeMumuHudBounds({
                 mumuWindow: latestMumuWindow,
-                workArea: screen.getDisplayMatching(latestMumuWindow).workArea,
+                workArea: safeDisplayWorkArea(latestMumuWindow),
               });
               hudOverlay.openAtBounds(hudBounds, { drawerCollapsed: true });
             }
@@ -568,6 +603,45 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     covenantOcr?.dispose();
     battleReports?.dispose();
   });
+  // 渲染进程 OOM / 显卡驱动重置自愈：优先自动重载 2 次，仍异常则提供一键重置布局重启
+  let rendererRecoverCount = 0;
+  let lastRendererCrashAt = 0;
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (mainWindow.isDestroyed() || details?.reason === 'clean-exit') return;
+    const now = Date.now();
+    if (now - lastRendererCrashAt > 60_000) rendererRecoverCount = 0;
+    lastRendererCrashAt = now;
+    if (rendererRecoverCount < 2) {
+      rendererRecoverCount += 1;
+      setTimeout(() => {
+        if (!mainWindow.isDestroyed()) mainWindow.loadURL('prts://app/');
+      }, 250);
+      return;
+    }
+    void dialog.showMessageBox({
+      type: 'warning',
+      title: `${product.name} · 界面异常恢复`,
+      message: '终端渲染进程因显存或系统资源压力中断（《明日方舟》运行不受影响）。',
+      detail: '您可以选择重新加载界面，或重置窗口布局后自动重启本终端。',
+      buttons: ['重新加载界面', '重置布局并重启', '关闭终端'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    }).then(({ response }) => {
+      if (mainWindow.isDestroyed()) return;
+      if (response === 0) {
+        rendererRecoverCount = 0;
+        mainWindow.loadURL('prts://app/');
+      } else if (response === 1) {
+        try { fs.rmSync(layoutFile, { force: true }); } catch {}
+        app.relaunch();
+        app.exit(0);
+      } else {
+        app.quit();
+      }
+    }).catch(() => {});
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     battleReports?.start();

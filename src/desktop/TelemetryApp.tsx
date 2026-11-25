@@ -13,6 +13,7 @@ import {
   Maximize2,
   Minimize2,
   Pin,
+  RotateCcw,
   Swords,
 } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
@@ -105,6 +106,8 @@ export default function TelemetryApp({
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<LiteTab>('cockpit');
   const [status, setStatus] = useState<ReportStatus>('starting');
+  const [failureReason, setFailureReason] = useState('');
+  const [restarting, setRestarting] = useState(false);
   const [clientSource, setClientSource] = useState<ClientSource>('none');
   const [mumuPlacement, setMumuPlacement] = useState<'outside-right' | 'inside-right' | 'screen-right' | null>(null);
   const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(undefined);
@@ -147,6 +150,8 @@ export default function TelemetryApp({
     let latestRun: number | undefined;
     const accept = (feed: ReportFeed) => {
       setStatus(feed.status);
+      setFailureReason(feed.failureReason ?? '');
+      setRestarting(Boolean(feed.restarting));
       if (feed.clientSource !== undefined) setClientSource(feed.clientSource);
       if (feed.npcapInstalled !== undefined) setNpcapInstalled(feed.npcapInstalled);
       if (feed.npcapInstall !== undefined) setNpcapInstall(feed.npcapInstall);
@@ -437,7 +442,30 @@ export default function TelemetryApp({
       {/* Row 3: Scrollable Instrument Viewport */}
       <main className="lite-main">
         <div className="lite-main-inner d-report-shell">
-          {!previewApi && ERROR_TEXT[status] && <p className="d-warning d-report-error">{ERROR_TEXT[status]}</p>}
+          {!previewApi && (restarting || ERROR_TEXT[status]) && (
+            <div className="d-warning d-report-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <span>{failureReason || ERROR_TEXT[status]}</span>
+              {reportsApi && (
+                <span style={{ display: 'inline-flex', gap: '6px', flexShrink: 0 }}>
+                  {!restarting && (
+                    <button
+                      type="button"
+                      className="d-button d-small"
+                      onClick={() => {
+                        if (reportsApi.restart) void reportsApi.restart();
+                        else void reportsApi.setEnabled(true);
+                      }}
+                    >
+                      <RotateCcw size={13} />立即重启采集
+                    </button>
+                  )}
+                  <button type="button" className="d-button d-small" onClick={() => void reportsApi.showDiagnostics()}>
+                    查看诊断
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
           {!previewApi && reportsApi && (
             <NpcapSetupBanner api={reportsApi} npcapInstalled={npcapInstalled} installState={npcapInstall} />
           )}

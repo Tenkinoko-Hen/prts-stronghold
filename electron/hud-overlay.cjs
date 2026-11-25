@@ -105,6 +105,18 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
     hudWindow.webContents.on('will-navigate', (event, url) => {
       if (!url.startsWith('prts://app/')) event.preventDefault();
     });
+    let hudCrashRecoveries = 0;
+    hudWindow.webContents.on('render-process-gone', (_event, details) => {
+      if (!hudWindow || hudWindow.isDestroyed() || details?.reason === 'clean-exit') return;
+      if (hudCrashRecoveries < 2) {
+        hudCrashRecoveries += 1;
+        setTimeout(() => {
+          if (hudWindow && !hudWindow.isDestroyed()) hudWindow.loadURL('prts://app/?hud=1');
+        }, 300);
+      } else {
+        setOpen(false);
+      }
+    });
     hudWindow.on('closed', () => {
       hudWindow = null;
       if (!disposed) {

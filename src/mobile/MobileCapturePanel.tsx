@@ -79,6 +79,7 @@ declare global {
       isRunning(): boolean;
       start(): void;
       stop(): void;
+      restart?(): void;
       reset(): void;
     };
   }
@@ -132,7 +133,14 @@ export function useMobileCaptureSync(
     poll();
   }, [bridge, poll]);
 
-  return { capture, supported: Boolean(bridge), start, stop, poll };
+  const restart = useCallback(() => {
+    if (!bridge) return;
+    if (bridge.restart) bridge.restart();
+    else bridge.start();
+    poll();
+  }, [bridge, poll]);
+
+  return { capture, supported: Boolean(bridge), start, stop, restart, poll };
 }
 
 export function MobileCaptureToggle({
@@ -140,11 +148,13 @@ export function MobileCaptureToggle({
   supported,
   onStart,
   onStop,
+  onRestart,
 }: {
   capture: MobileCaptureState | null;
   supported: boolean;
   onStart(): void;
   onStop(): void;
+  onRestart?(): void;
 }) {
   if (!supported) return null;
   const running = Boolean(capture?.running);
@@ -177,7 +187,19 @@ export function MobileCaptureToggle({
         </button>
       </div>
       {capture?.status === 'error' && capture.message && (
-        <p className="m-capture-err"><AlertTriangle size={12} /> {capture.message}</p>
+        <div className="m-capture-err" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 160 }}>
+            <AlertTriangle size={12} /> {capture.message}
+          </span>
+          <button
+            type="button"
+            className="m-capture-start"
+            style={{ minHeight: 24, padding: '2px 8px', fontSize: 10.5 }}
+            onClick={onRestart || onStart}
+          >
+            一键重连
+          </button>
+        </div>
       )}
     </section>
   );

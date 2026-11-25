@@ -23,11 +23,15 @@ export interface ReportFeed {
   mumuWindow?: MumuWindowBounds | null;
   npcapInstalled?: boolean;
   npcapInstall?: NpcapInstallState;
+  failureReason?: string;
+  autoRestartCount?: number;
+  restarting?: boolean;
 }
 export interface BattleReportsBridge {
   getState(): Promise<ReportFeed>;
   showDiagnostics(): Promise<void>;
   setEnabled(enabled: boolean): Promise<ReportFeed>;
+  restart?(): Promise<ReportFeed>;
   installNpcap?(): Promise<ReportFeed>;
   recheckNpcap?(): Promise<ReportFeed>;
   openNpcapPage?(): Promise<boolean>;

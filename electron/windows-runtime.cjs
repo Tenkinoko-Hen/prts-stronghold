@@ -6,9 +6,10 @@ function windowsWorkerPath(app, product) {
   const workerName = product?.desktop?.workerName || 'PRTS-Worker';
   const runtimeDir = product?.desktop?.workerRuntimeDir || 'work/windows-worker/runtime/PRTS-Worker';
   if (app.isPackaged) {
-    const workerExe = path.join(process.resourcesPath, 'worker', `${workerName}.exe`);
+    const resRoot = process.resourcesPath || app.getAppPath();
+    const workerExe = path.join(resRoot, 'worker', `${workerName}.exe`);
     if (fs.existsSync(workerExe)) return workerExe;
-    return path.join(process.resourcesPath, 'ocr', `${workerName}.exe`);
+    return path.join(resRoot, 'ocr', `${workerName}.exe`);
   }
   return path.join(app.getAppPath(), ...runtimeDir.split('/'), `${workerName}.exe`);
 }

@@ -397,8 +397,218 @@ test('windows portable launcher patches away CopyFiles double-copy and uses vers
   assert.ok(!/^\s*CopyFiles\b/m.test(startupNsh), 'must not call SHFileOperation CopyFiles');
   assert.ok(startupNsh.includes('GetDiskFreeSpaceExW'));
   assert.ok(startupNsh.includes('.prts-ready'));
+  assert.ok(startupNsh.includes('ffmpeg.dll'), 'verifies core Chromium runtime DLL before trusting cache');
+  assert.ok(startupNsh.includes('$9 < 3500') && startupNsh.includes('Delete "$INSTDIR\\.prts-ready"'), 'auto-invalidates cache marker when Electron crashes within 3.5s');
 
   const mainSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.cjs'), 'utf8');
   assert.ok(mainSource.includes('app.requestSingleInstanceLock()'));
   assert.ok(mainSource.includes("app.on('second-instance'"));
+  assert.ok(mainSource.includes("render-process-gone"), 'recovers automatically on renderer crash');
+  assert.ok(mainSource.includes("process.on('uncaughtException'"), 'prevents unhandled main-process crash popups');
+  assert.ok(mainSource.includes('safeDisplayWorkArea'), 'guards screen display rect queries');
+
+  const hudSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'hud-overlay.cjs'), 'utf8');
+  assert.ok(hudSource.includes("render-process-gone"), 'HUD overlay recovers or closes cleanly without blocking game');
+});
+
+test('worker supervisor auto-restarts on startup timeout and crash, then recovers cleanly via 1-click restart', async () => {
+  const published = [];
+  const handlers = new Map();
+  const children = [];
+
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: 'prts://app/' },
+    send: () => {},
+  });
+
+  const br = installBattleReports({
+    app: { isPackaged: false, getAppPath: () => path.resolve(__dirname, '..') },
+    mainWindow: fakeMain,
+    ipcMain: {
+      handle: (name, fn) => handlers.set(name, fn),
+      removeHandler: (name) => handlers.delete(name),
+    },
+    product: loadProduct('stronghold'),
+    onPublish: (state) => published.push({ ...state }),
+    screenApi: null,
+    startupTimeoutMs: 35,
+    restartBaseDelayMs: 15,
+    maxAutoRestarts: 2,
+    healthyResetMs: 40,
+    spawnFn: () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        killed: false,
+        kill() { this.killed = true; },
+      });
+      children.push(child);
+      return child;
+    },
+  });
+
+  try {
+    // 1. Child #1 hangs during startup -> startupTimeoutMs triggers auto-restart #1
+    br.start();
+    assert.equal(children.length, 1);
+    await new Promise(r => setTimeout(r, 65));
+    assert.equal(children[0].killed, true, 'hung child #1 should be terminated');
+    assert.equal(children.length, 2, 'supervisor should spawn child #2');
+    assert.ok(published.some(s => s.restarting === true && s.autoRestartCount === 1));
+
+    // 2. Child #2 logs a stderr error and crashes -> triggers auto-restart #2
+    children[1].stderr.write('RuntimeError: raw socket bind failed\n');
+    await new Promise(r => setTimeout(r, 10));
+    children[1].emit('close', 1);
+    await new Promise(r => setTimeout(r, 45));
+    assert.equal(children.length, 3, 'supervisor should spawn child #3');
+    assert.ok(published.some(s => s.restarting === true && s.autoRestartCount === 2));
+
+    // 3. Child #3 also crashes -> exhausts maxAutoRestarts (2) -> enters failed with clear Chinese prompt
+    children[2].stderr.write('WinError 10013 socket conflict\n');
+    await new Promise(r => setTimeout(r, 10));
+    children[2].emit('close', 1);
+    const failedState = published.at(-1);
+    assert.equal(failedState.status, 'failed');
+    assert.equal(failedState.restarting, false);
+    assert.ok(failedState.failureReason.includes('立即重启采集'), `unexpected failureReason: ${failedState.failureReason}`);
+    assert.ok(failedState.failureReason.includes('WinError 10013'), `should include stderr tail: ${failedState.failureReason}`);
+
+    // 4. User clicks 1-click restart (battle-reports-restart IPC) -> resets counter and recovers to listening
+    const senderEvent = { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame };
+    const restarted = handlers.get('battle-reports-restart')(senderEvent);
+    assert.equal(children.length, 4, 'manual 1-click restart spawns child #4');
+    assert.equal(restarted.status, 'starting');
+    assert.equal(restarted.restarting, false);
+    assert.equal(restarted.failureReason, '');
+
+    children[3].stdout.write(JSON.stringify({ kind: 'status', status: 'listening' }) + '\n');
+    await new Promise(r => setTimeout(r, 55));
+    const healthy = published.at(-1);
+    assert.equal(healthy.status, 'listening');
+    assert.equal(healthy.autoRestartCount, 0);
+    assert.equal(healthy.restarting, false);
+    assert.equal(healthy.failureReason, '');
+  } finally {
+    br.dispose();
+  }
+});
+
+test('worker supervisor fails fast without useless retries when antivirus quarantines PRTS-Worker.exe (ENOENT)', () => {
+  const published = [];
+  let spawnCalls = 0;
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: 'prts://app/' },
+    send: () => {},
+  });
+
+  const br = installBattleReports({
+    app: { isPackaged: true, getAppPath: () => path.resolve(__dirname, '..') },
+    mainWindow: fakeMain,
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    product: loadProduct('stronghold'),
+    onPublish: (state) => published.push({ ...state }),
+    screenApi: null,
+    restartBaseDelayMs: 10,
+    maxAutoRestarts: 3,
+    spawnFn: () => {
+      spawnCalls += 1;
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {},
+      });
+      process.nextTick(() => {
+        const err = Object.assign(new Error('spawn PRTS-Worker.exe ENOENT'), { code: 'ENOENT' });
+        child.emit('error', err);
+      });
+      return child;
+    },
+  });
+
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      try {
+        assert.equal(spawnCalls, 1, 'ENOENT should not loop retries');
+        const last = published.at(-1);
+        assert.equal(last.status, 'failed');
+        assert.equal(last.restarting, false);
+        assert.equal(last.autoRestartCount, 0);
+        assert.ok(last.failureReason.includes('PRTS-Worker.exe'));
+        assert.ok(last.failureReason.includes('信任区'));
+        br.dispose();
+        resolve();
+      } catch (err) {
+        br.dispose();
+        reject(err);
+      }
+    }, 45);
+    br.start();
+  });
+});
+
+test('corrupted worker stdout chunks and extreme window coordinates never throw or break state', async () => {
+  const published = [];
+  let fakeChild;
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: 'prts://app/' },
+    send: () => {},
+  });
+
+  const br = installBattleReports({
+    app: { isPackaged: false, getAppPath: () => path.resolve(__dirname, '..') },
+    mainWindow: fakeMain,
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    product: loadProduct('stronghold'),
+    onPublish: (state) => published.push({ ...state }),
+    screenApi: null,
+    spawnFn: () => {
+      fakeChild = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {},
+      });
+      return fakeChild;
+    },
+  });
+
+  try {
+    br.start();
+    // Feed corrupted JSON, primitives, arrays, partial split chunks, and valid status
+    fakeChild.stdout.write('not-json-at-all\nnull\n[]\n{"kind":"unknown"}\n{"kind":"status","status":"bogus"}\n');
+    fakeChild.stdout.write('{"kind":"status","stat');
+    fakeChild.stdout.write('us":"listening"}\n');
+    await new Promise(r => setTimeout(r, 20));
+    assert.equal(published.at(-1).status, 'listening');
+
+    // Extreme / malformed MuMu window rects
+    assert.deepEqual(
+      parseSourceMessage({ kind: 'source', client: 'mumu', mumuWindow: { x: NaN, y: 0, width: -50, height: 0 } }),
+      { clientSource: 'mumu', mumuWindow: null },
+    );
+    const extremeDrawer = computeMumuDrawerBounds({
+      mumuWindow: { x: -5000, y: -3000, width: 99999, height: 99999 },
+      workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+    });
+    assert.ok(extremeDrawer.bounds.width >= 390 && extremeDrawer.bounds.width <= 1920);
+    assert.ok(extremeDrawer.bounds.height >= 500 && extremeDrawer.bounds.height <= 1040);
+
+    const extremeHud = computeMumuHudBounds({
+      mumuWindow: { x: 99999, y: 99999, width: 200, height: 100 },
+      workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+    });
+    assert.ok(extremeHud.x >= 0 && extremeHud.x + extremeHud.width <= 1920);
+    assert.ok(extremeHud.y >= 0 && extremeHud.y + extremeHud.height <= 1040);
+  } finally {
+    br.dispose();
+  }
 });

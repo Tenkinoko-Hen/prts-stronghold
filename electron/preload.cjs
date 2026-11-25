@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', Boolean(flag)),
+  relaunchApp: () => ipcRenderer.invoke('app-relaunch'),
   windowLayout: {
     getMode: () => ipcRenderer.invoke('window-layout-get'),
     setMode: (mode) => ipcRenderer.invoke('window-layout-set', mode === 'rail' ? 'rail' : mode === 'mumu-drawer' ? 'mumu-drawer' : 'wide'),
@@ -20,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       getState: () => ipcRenderer.invoke('battle-reports-get'),
       showDiagnostics: () => ipcRenderer.invoke('battle-reports-diagnostics'),
       setEnabled: (enabled) => ipcRenderer.invoke('battle-reports-enable', enabled),
+      restart: () => ipcRenderer.invoke('battle-reports-restart'),
       installNpcap: () => ipcRenderer.invoke('battle-reports-install-npcap'),
       recheckNpcap: () => ipcRenderer.invoke('battle-reports-recheck-npcap'),
       openNpcapPage: () => ipcRenderer.invoke('battle-reports-open-npcap'),

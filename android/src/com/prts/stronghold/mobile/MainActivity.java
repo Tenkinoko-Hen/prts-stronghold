@@ -80,6 +80,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        OverlayService.installProcessCrashGuard();
         currentInstance = this;
         if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_SECOND_SCREEN, false)) {
             OverlayService.stopActive();
@@ -396,7 +397,11 @@ public class MainActivity extends Activity {
 
         guideControls = controls;
         root.addView(controls);
-        guide = GuideWebView.create(this);
+        guide = GuideWebView.create(this, false, () -> {
+            if (isFinishing() || isDestroyed()) return;
+            Toast.makeText(this, "系统内存回收了页面，正在自动重新加载…", Toast.LENGTH_SHORT).show();
+            showGuide();
+        });
         root.addView(guide, new LinearLayout.LayoutParams(-1, 0, 1));
     }
 

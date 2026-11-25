@@ -88,6 +88,8 @@ function normalizeOpName(raw: string): string {
 export interface MumuDrawerAppProps {
   records: ReportRecords;
   reportStatus: ReportStatus;
+  failureReason?: string;
+  restarting?: boolean;
   clientSource: ClientSource;
   mumuWindow?: MumuWindowBounds | null;
   placement?: 'outside-right' | 'inside-right' | 'screen-right' | null;
@@ -119,6 +121,8 @@ export interface MumuDrawerAppProps {
 export default function MumuDrawerApp({
   records,
   reportStatus,
+  failureReason,
+  restarting,
   clientSource,
   placement,
   npcapInstalled,
@@ -313,18 +317,22 @@ export default function MumuDrawerApp({
     ? `R${liveRound ?? currentRound} · ${liveShopLevel}本`
     : 'MuMu 待进局';
 
-  const footerTone = npcapInstalled === false
+  const footerTone = npcapInstalled === false || restarting || reportStatus === 'failed' || reportStatus === 'permission'
     ? 'warn'
     : clientSource === 'mumu' && reportStatus === 'listening'
       ? 'live'
       : 'idle';
   const footerText = npcapInstalled === false
     ? '待装 Npcap（仅采基础结算）'
-    : clientSource === 'mumu'
-      ? (reportStatus === 'listening' ? 'MuMu 监听中' : reportStatus === 'permission' ? '需管理员权限' : 'MuMu 待进局')
-      : reportStatus === 'listening'
-        ? '协议监听中'
-        : '待进局';
+    : restarting
+      ? (failureReason || '采集自动重连中…')
+      : reportStatus === 'failed'
+        ? '采集中断（不影响游戏）'
+        : clientSource === 'mumu'
+          ? (reportStatus === 'listening' ? 'MuMu 监听中' : reportStatus === 'permission' ? '需管理员权限' : 'MuMu 待进局')
+          : reportStatus === 'listening'
+            ? '协议监听中'
+            : '待进局';
 
   const toggleBanCovenant = (name: string) => {
     onChangeBanState(prev => ({
@@ -976,6 +984,16 @@ export default function MumuDrawerApp({
           <span>{footerText}</span>
         </span>
         <div className="mumu-foot-actions">
+          {reportStatus === 'failed' && reportsApi?.restart && (
+            <button
+              type="button"
+              className="mumu-foot-btn is-active"
+              onClick={() => void reportsApi.restart?.()}
+              title={failureReason || '一键重启本地战报采集进程'}
+            >
+              重启采集
+            </button>
+          )}
           {window.electronAPI?.hud && (
             <button
               type="button"

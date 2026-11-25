@@ -328,22 +328,29 @@ export default function App() {
   }, [activeComp, banState.bannedCovenants, currentRound, selectedCompId, suggestedOperatorNames]);
 
   const telemetryTone = banSync.npcapInstalled === false ? 'warn'
-    : banSync.status === 'listening' ? 'live'
-      : ['permission', 'unavailable', 'incompatible', 'failed'].includes(banSync.status) ? 'error'
-        : 'idle';
+    : latestFeed?.restarting ? 'warn'
+      : banSync.status === 'listening' ? 'live'
+        : ['permission', 'unavailable', 'incompatible', 'failed'].includes(banSync.status) ? 'error'
+          : 'idle';
   const telemetryLabel = banSync.npcapInstalled === false ? '未装 Npcap'
-    : banSync.status === 'listening'
-      ? (banSync.liveRound !== null ? `记录中 · R${String(banSync.liveRound).padStart(2, '0')}` : '记录中 · 待开局')
-      : banSync.status === 'connecting' ? '待进局'
-        : banSync.status === 'waiting' ? '待游戏启动'
-          : banSync.status === 'permission' ? '需管理员'
-            : banSync.status === 'paused' ? '已暂停' : '等待开局';
+    : latestFeed?.restarting ? '自动重连中…'
+      : banSync.status === 'listening'
+        ? (banSync.liveRound !== null ? `记录中 · R${String(banSync.liveRound).padStart(2, '0')}` : '记录中 · 待开局')
+        : banSync.status === 'connecting' ? '待进局'
+          : banSync.status === 'waiting' ? '待游戏启动'
+            : banSync.status === 'permission' ? '需管理员'
+              : banSync.status === 'failed' ? '采集中断 · 点此恢复'
+                : banSync.status === 'incompatible' ? '待适配新版'
+                  : banSync.status === 'unavailable' ? '环境受限'
+                    : banSync.status === 'paused' ? '已暂停' : '等待开局';
 
   if (windowMode === 'mumu-drawer') {
     return (
       <MumuDrawerApp
         records={records}
         reportStatus={reportStatus}
+        failureReason={latestFeed?.failureReason}
+        restarting={latestFeed?.restarting}
         clientSource={clientSource}
         mumuWindow={mumuWindow}
         placement={mumuPlacement}
@@ -556,6 +563,8 @@ export default function App() {
                 status: reportStatus,
                 npcapInstalled,
                 npcapInstall,
+                failureReason: latestFeed?.failureReason,
+                restarting: latestFeed?.restarting,
               }}
             />
           </Suspense>

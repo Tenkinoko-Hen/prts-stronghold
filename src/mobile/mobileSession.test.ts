@@ -125,3 +125,44 @@ test('本机 VPN 抓包自动同步 26 项 Ban 选、回合推进与新局自动
   assert.deepEqual({}, session.ownedOperators);
   assert.deepEqual({}, session.rounds);
 });
+
+test('极端损坏缓存与非法输入在 restoreSession / restoreFavorites / mobileReducer 下永不崩溃', () => {
+  const corruptedInputs: Array<string | null> = [
+    null,
+    '',
+    'null',
+    'true',
+    '12345',
+    '"string-only"',
+    '[]',
+    '{"step":123,"compId":{},"bans":null,"rounds":"bad","ownedOperators":[]}',
+    JSON.stringify({
+      step: 'guide',
+      compId: META_COMPS[0].id,
+      bans: { bannedCovenants: [null, 42, {}, '炎', '炎'], bannedOperators: [false, '塔露拉'] },
+      rounds: { [META_COMPS[0].id]: Number.NaN, [META_COMPS[1].id]: -999 },
+      ownedOperators: { [META_COMPS[0].id]: null },
+    }),
+  ];
+
+  for (const raw of corruptedInputs) {
+    const s = restoreSession(raw);
+    assert.ok(['ban', 'plans', 'guide', 'library'].includes(s.step));
+    assert.ok(Array.isArray(s.bans.bannedCovenants));
+    assert.ok(Array.isArray(s.bans.bannedOperators));
+    const f = restoreFavorites(raw);
+    assert.ok(Array.isArray(f));
+  }
+
+  let s = mobileReducer(emptySession(), { type: 'choose', id: META_COMPS[0].id });
+  s = mobileReducer(s, { type: 'round', round: Number.NaN });
+  assert.ok(s.rounds[META_COMPS[0].id] === undefined || (s.rounds[META_COMPS[0].id] >= 1 && s.rounds[META_COMPS[0].id] <= 15));
+  s = mobileReducer(s, {
+    type: 'applyCaptureSync',
+    matchSerial: 99,
+    bansConfirmed: true,
+    bannedCovenants: Array.from({ length: 80 }, (_, i) => (i % 2 === 0 ? '炎' : `未知_${i}`)),
+    round: 999,
+  });
+  assert.deepEqual(['炎'], s.bans.bannedCovenants);
+});

@@ -152,6 +152,20 @@ public class OverlayService extends Service {
     private Button alphaButton;
     private int usableWidth;
     private int usableHeight;
+    private int webViewRecoverCount = 0;
+    private long lastWebViewCrashMs = 0;
+    private static volatile boolean crashGuardInstalled = false;
+
+    static void installProcessCrashGuard() {
+        if (crashGuardInstalled) return;
+        crashGuardInstalled = true;
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            // 无论发生任何致命异常，先毫秒级关闭 VPN TUN，确保《明日方舟》立即切回系统直连不断网
+            try { StrongholdVpnService.emergencyCloseStatic(); } catch (Throwable ignored) {}
+            if (prev != null) prev.uncaughtException(thread, error);
+        });
+    }
 
     static void stopActive() { if (active != null) { active.dispose(); active.stopSelf(); active = null; } }
     static void hideForScan() { MAIN.post(() -> { if (active != null) { active.collapseToBall(); if (active.ball != null) active.setBallScanning(true); } }); }
@@ -268,6 +282,7 @@ public class OverlayService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        installProcessCrashGuard();
         active = this;
         manager = (WindowManager) getSystemService(WINDOW_SERVICE);
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
@@ -1675,8 +1690,35 @@ public class OverlayService extends Service {
         toolbarChip(toolbar, "×", "退出悬浮助手", 0xfff87171, v -> { dispose(); stopSelf(); });
 
         panel.addView(toolbar);
-        web = GuideWebView.create(this, true);
+        attachFreshWebView();
+    }
+
+    private void attachFreshWebView() {
+        if (panel == null) return;
+        if (web != null) {
+            try { panel.removeView(web); } catch (RuntimeException ignored) {}
+            try { web.destroy(); } catch (RuntimeException ignored) {}
+            web = null;
+        }
+        web = GuideWebView.create(this, true, this::handleOverlayWebViewGone);
         panel.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
+    }
+
+    private void handleOverlayWebViewGone() {
+        if (panel == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastWebViewCrashMs > 60_000L) webViewRecoverCount = 0;
+        lastWebViewCrashMs = now;
+        if (webViewRecoverCount < 3) {
+            webViewRecoverCount++;
+            attachFreshWebView();
+            if (expanded) {
+                Toast.makeText(this, "系统内存紧张，悬浮跟打页已自动恢复", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            collapseToBall();
+            Toast.makeText(this, "系统可用内存不足，已自动收起为轻量悬浮球（迷你条仍可使用）", Toast.LENGTH_LONG).show();
+        }
     }
 
     private String alphaLabel() {

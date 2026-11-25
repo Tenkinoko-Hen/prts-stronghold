@@ -5,9 +5,11 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -26,11 +28,15 @@ final class GuideWebView {
     private GuideWebView() {}
 
     static WebView create(Context context) {
-        return create(context, false);
+        return create(context, false, null);
+    }
+
+    static WebView create(Context context, boolean overlay) {
+        return create(context, overlay, null);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    static WebView create(Context context, boolean overlay) {
+    static WebView create(Context context, boolean overlay, final Runnable onRendererGone) {
         WebView view = new WebView(context);
         view.setBackgroundColor(0xff0b0d11);
         WebSettings settings = view.getSettings();
@@ -70,6 +76,13 @@ final class GuideWebView {
                     headers.put("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'");
                     return new WebResourceResponse(mime, "UTF-8", 200, "OK", headers, context.getAssets().open(path.substring(1)));
                 } catch (IOException ignored) { return empty(404, "Not Found"); }
+            }
+            @Override public boolean onRenderProcessGone(WebView web, RenderProcessGoneDetail detail) {
+                // 返回 true 拦截系统默认崩溃，防止《明日方舟》高内存压力回收 WebView 渲染进程时连带杀掉悬浮球与抓包服务
+                if (onRendererGone != null) {
+                    new Handler(Looper.getMainLooper()).post(onRendererGone);
+                }
+                return true;
             }
             private WebResourceResponse empty(int status, String reason) { return new WebResourceResponse("text/plain", "UTF-8", status, reason, null, new ByteArrayInputStream(new byte[0])); }
         });
@@ -179,6 +192,9 @@ final class GuideWebView {
         }
         @JavascriptInterface public void stop() {
             main.post(() -> StrongholdVpnService.stopActive(context));
+        }
+        @JavascriptInterface public void restart() {
+            main.post(() -> StrongholdVpnService.restartActive(context));
         }
         @JavascriptInterface public void reset() {
             BattleCaptureState.resetMatch();

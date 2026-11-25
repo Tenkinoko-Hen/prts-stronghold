@@ -181,6 +181,7 @@ export default function MobileApp() {
           supported={captureSync.supported}
           onStart={captureSync.start}
           onStop={captureSync.stop}
+          onRestart={captureSync.restart}
         />
         {!overlay && <MobileLanPanel
           sharedLan={lanSync.lan}

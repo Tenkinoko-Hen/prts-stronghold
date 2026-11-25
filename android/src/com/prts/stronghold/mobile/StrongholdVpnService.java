@@ -46,17 +46,20 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public final class StrongholdVpnService extends VpnService {
     static final String ACTION_START = "com.prts.stronghold.mobile.VPN_START";
     static final String ACTION_STOP = "com.prts.stronghold.mobile.VPN_STOP";
+    static final String ACTION_RESTART = "com.prts.stronghold.mobile.VPN_RESTART";
 
     private static final String CHANNEL_ID = "prts_vpn_capture";
     private static final int NOTIFICATION_ID = 4102;
     private static final int MTU = 1500;
     private static final int MSS = 1400;
     private static final int MAX_TCP_INFLIGHT = 32768;
+    private static final long TCP_CONNECT_TIMEOUT_MS = 10_000L;
     private static final long TCP_IDLE_MS = 180_000L;
     private static final long TCP_CLOSING_MS = 15_000L;
     private static final long UDP_IDLE_MS = 45_000L;
     private static final long RTO_BASE_MS = 400L;
     private static final int MAX_RETRIES = 8;
+    private static final int MAX_CONSECUTIVE_UPSTREAM_FAILURES = 6;
 
     private static final String[] ARKNIGHTS_PACKAGES = {
         "com.hypergryph.arknights",
@@ -81,6 +84,38 @@ public final class StrongholdVpnService extends VpnService {
     private final Map<SessionKey, UdpSession> udpSessions = new HashMap<>();
     private final Random random = new Random();
     private final ByteBuffer ioBuf = ByteBuffer.allocate(16384);
+    private int consecutiveUpstreamFailures = 0;
+
+    /** 极端崩溃兜底：第一时间关闭 TUN 描述符，毫秒级恢复《明日方舟》系统直连，绝不断网。 */
+    static void emergencyCloseStatic() {
+        StrongholdVpnService s = active;
+        if (s != null) {
+            s.running = false;
+            ParcelFileDescriptor fd = s.tunFd;
+            s.tunFd = null;
+            if (fd != null) {
+                try { fd.close(); } catch (Throwable ignored) {}
+            }
+        }
+    }
+
+    static void restartActive(Context context) {
+        if (context == null) return;
+        Context app = context.getApplicationContext();
+        stopActive(app);
+        try {
+            if (VpnService.prepare(app) == null) {
+                Intent start = new Intent(app, StrongholdVpnService.class).setAction(ACTION_START);
+                if (Build.VERSION.SDK_INT >= 26) app.startForegroundService(start);
+                else app.startService(start);
+            } else {
+                app.startActivity(new Intent(app, VpnPermissionActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS));
+            }
+        } catch (RuntimeException error) {
+            BattleCaptureState.setStatus(false, "error", "无法自动重连本机抓包（游戏直连不受影响），请从主页重新开启");
+        }
+    }
 
     static void stopActive(Context context) {
         StrongholdVpnService s = active;
@@ -98,6 +133,13 @@ public final class StrongholdVpnService extends VpnService {
             shutdownTunnel("已停止本机实时抓包");
             stopSelf();
             return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_RESTART.equals(intent.getAction())) {
+            shutdownTunnel(null);
+            StrongholdEnemyCatalog.ensureLoaded(getApplicationContext());
+            startForegroundNotification();
+            startTunnel();
+            return START_STICKY;
         }
         if (running) {
             return START_STICKY;
@@ -244,10 +286,10 @@ public final class StrongholdVpnService extends VpnService {
 
     private void runTunReader() {
         byte[] buf = new byte[32768];
-        while (running) {
-            FileInputStream in = tunIn;
-            if (in == null) break;
-            try {
+        try {
+            while (running) {
+                FileInputStream in = tunIn;
+                if (in == null) break;
                 int len = in.read(buf);
                 if (len <= 0) {
                     if (len < 0) break;
@@ -258,8 +300,13 @@ public final class StrongholdVpnService extends VpnService {
                 inboundPackets.offer(copy);
                 Selector sel = selector;
                 if (sel != null) sel.wakeup();
-            } catch (IOException ignored) {
-                break;
+            }
+        } catch (Throwable ignored) {
+            // 读取异常或正常关闭
+        } finally {
+            if (running) {
+                shutdownTunnel("本机抓包通道已自动切回系统直连（不影响游戏运行），可点击一键重连");
+                stopSelf();
             }
         }
     }
@@ -295,7 +342,12 @@ public final class StrongholdVpnService extends VpnService {
                     periodicMaintenance(now);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Throwable error) {
+            // 任何未预期异常（含 OOM）立即释放 TUN 描述符恢复游戏直连，绝不黑洞丢包
+            if (running) {
+                shutdownTunnel("抓包引擎遇到异常已自动切回游戏直连保障不断线，可点「一键重连」恢复");
+                stopSelf();
+            }
         } finally {
             closeAllSessions();
         }
@@ -394,6 +446,7 @@ public final class StrongholdVpnService extends VpnService {
                 if (!protect(ch.socket())) {
                     ch.close();
                     sendRstForPacket(pkt);
+                    noteUpstreamFailure();
                     return;
                 }
                 boolean inspect = pkt.dstPort != 80 && pkt.dstPort != 443;
@@ -403,12 +456,14 @@ public final class StrongholdVpnService extends VpnService {
                 boolean connected = ch.connect(new InetSocketAddress(PacketCodec.toInetAddress(pkt.dstIp), pkt.dstPort));
                 tcpSessions.put(key, session);
                 if (connected) {
+                    consecutiveUpstreamFailures = 0;
                     onTcpConnected(session);
                 } else {
                     session.selectionKey = ch.register(selector, SelectionKey.OP_CONNECT, session);
                 }
             } catch (IOException ignored) {
                 sendRstForPacket(pkt);
+                noteUpstreamFailure();
             }
             return;
         }
@@ -458,10 +513,26 @@ public final class StrongholdVpnService extends VpnService {
         session.clientAckedSeq = session.serverIsn;
     }
 
+    private void noteUpstreamFailure() {
+        consecutiveUpstreamFailures++;
+        if (consecutiveUpstreamFailures >= MAX_CONSECUTIVE_UPSTREAM_FAILURES && running) {
+            consecutiveUpstreamFailures = 0;
+            // 连续无法保护/直连上游说明系统 VPN 路由冲突或断网，立即关闭 TUN 让游戏走系统直连不断线
+            BattleCaptureState.setStatus(
+                false,
+                "error",
+                "检测到网络切换或加速器冲突，已自动切回游戏直连保障不断线；网络恢复后可点「一键重连」"
+            );
+            shutdownTunnel(null);
+            stopSelf();
+        }
+    }
+
     private void handleTcpChannelEvent(TcpSession session, SelectionKey key) {
         try {
             if (key.isConnectable()) {
                 if (session.channel.finishConnect()) {
+                    consecutiveUpstreamFailures = 0;
                     onTcpConnected(session);
                 }
                 return;
@@ -473,6 +544,7 @@ public final class StrongholdVpnService extends VpnService {
                 readDownstream(session);
             }
         } catch (IOException ignored) {
+            if (session.state == TcpSession.STATE_CONNECTING) noteUpstreamFailure();
             closeTcpSession(session, true);
         }
     }
@@ -646,6 +718,12 @@ public final class StrongholdVpnService extends VpnService {
                     }
                     retransmitHead(s, now);
                 }
+            }
+            if (s.state == TcpSession.STATE_CONNECTING && now - s.lastActiveAt > TCP_CONNECT_TIMEOUT_MS) {
+                if (toCloseTcp == null) toCloseTcp = new ArrayList<>();
+                toCloseTcp.add(s);
+                noteUpstreamFailure();
+                continue;
             }
             long idleLimit = (s.clientFinReceived || s.serverFinSent) ? TCP_CLOSING_MS : TCP_IDLE_MS;
             if (now - s.lastActiveAt > idleLimit) {

@@ -114,7 +114,19 @@ function diagnosticsDialogTitle(product) {
   return product?.reportBrand?.diagnosticsTitle || 'PRTS · 战报诊断';
 }
 
-function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, spawnFn, screenApi }) {
+function installBattleReports({
+  app,
+  mainWindow,
+  ipcMain,
+  product,
+  onPublish,
+  spawnFn,
+  screenApi,
+  startupTimeoutMs = 25_000,
+  restartBaseDelayMs = 1_500,
+  maxAutoRestarts = 3,
+  healthyResetMs = 20_000,
+}) {
   const spawnWorker = spawnFn || spawn;
   let state = {
     status: 'starting',
@@ -124,10 +136,17 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
     mumuWindow: null,
     npcapInstalled: hasNpcap(),
     npcapInstall: { status: 'idle', message: '' },
+    failureReason: '',
+    autoRestartCount: 0,
+    restarting: false,
   };
   let run = 0;
   let worker;
   let startupTimer;
+  let restartTimer;
+  let healthyTimer;
+  let autoRestartCount = 0;
+  let lastStderrErrors = [];
   let diagnostics;
   let details;
   let bossDetails, unknownDetails, lastBossSummary;
@@ -168,42 +187,117 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
     const previous = worker;
     worker = undefined;
     clearTimeout(startupTimer);
+    clearTimeout(restartTimer);
+    clearTimeout(healthyTimer);
     if (previous) {
-      previous.stdin.destroy();
-      previous.kill();
+      try { previous.stdin.destroy(); } catch {}
+      try { previous.kill(); } catch {}
     }
     if (state.clientSource !== 'none' || state.mumuWindow !== null) {
       if (disposed) {
-        state = { ...state, clientSource: 'none', mumuWindow: null };
+        state = { ...state, clientSource: 'none', mumuWindow: null, restarting: false };
       } else {
-        publish({ clientSource: 'none', mumuWindow: null });
+        publish({ clientSource: 'none', mumuWindow: null, restarting: false });
       }
     }
   }
 
-  function start() {
+  function buildFailureAdvice(errCode, timedOut) {
+    if (errCode === 'ENOENT') {
+      return '未找到战报采集进程（PRTS-Worker.exe），可能被 Windows Defender / 360 / 火绒误隔离。请将程序目录加入信任区后点击「立即重启采集」；离线攻略功能不受影响。';
+    }
+    if (errCode === 'EACCES' || errCode === 'EPERM') {
+      return '战报采集进程启动被系统权限拦截，请右键「以管理员身份运行」本应用，或检查安全软件拦截记录。';
+    }
+    if (timedOut) {
+      return '系统高负载下采集进程响应超时，已尝试自动恢复仍未就绪；游戏运行不受影响，可点击「立即重启采集」重试。';
+    }
+    const tail = lastStderrErrors.at(-1);
+    return tail
+      ? `采集进程异常退出（${tail}）。点击「立即重启采集」可一键恢复，离线攻略仍可正常使用。`
+      : '本地战报采集进程意外中断（游戏本体不受影响），点击「立即重启采集」即可恢复。';
+  }
+
+  function start(isAutoRetry = false) {
     if (disposed || worker) return state;
+    clearTimeout(restartTimer);
+    if (!isAutoRetry) {
+      autoRestartCount = 0;
+    }
     const { command, args, cwd } = windowsWorkerLaunch(app, product);
-    const child = spawnWorker(command, [...args, '--battle-report'], {
-      cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    let child;
+    try {
+      child = spawnWorker(command, [...args, '--battle-report'], {
+        cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (spawnErr) {
+      const code = spawnErr && typeof spawnErr === 'object' ? spawnErr.code : '';
+      return publish({
+        status: 'failed',
+        restarting: false,
+        autoRestartCount,
+        failureReason: buildFailureAdvice(code, false),
+      });
+    }
     worker = child;
     diagnostics = undefined;
     details = undefined;
     bossDetails = lastBossSummary = undefined;
     unknownDetails = undefined;
     backend = traffic = undefined;
+    lastStderrErrors = [];
     const childRun = ++run;
     let pending = '';
-    const fail = () => {
-      if (worker !== child) return;
+    let settledFailure = false;
+
+    const fail = (errOrReason) => {
+      if (worker !== child || settledFailure) return;
+      settledFailure = true;
+      const errCode = errOrReason && typeof errOrReason === 'object' ? errOrReason.code : '';
+      const timedOut = errOrReason === 'timeout';
       stop();
-      if (!['permission', 'unavailable', 'incompatible'].includes(state.status)) publish({ status: 'failed' });
+      if (disposed || ['permission', 'unavailable', 'incompatible', 'paused'].includes(state.status)) {
+        return;
+      }
+      // 缺失可执行文件或权限拒绝无法靠重试自愈，直接给出明确排障提示
+      if (errCode === 'ENOENT' || errCode === 'EACCES' || errCode === 'EPERM') {
+        publish({
+          status: 'failed',
+          restarting: false,
+          autoRestartCount,
+          failureReason: buildFailureAdvice(errCode, false),
+        });
+        return;
+      }
+      if (autoRestartCount < maxAutoRestarts) {
+        autoRestartCount += 1;
+        const delay = restartBaseDelayMs * Math.pow(2, autoRestartCount - 1);
+        publish({
+          status: 'starting',
+          restarting: true,
+          autoRestartCount,
+          failureReason: `采集组件意外中断，正在自动重启（${autoRestartCount}/${maxAutoRestarts}）…`,
+        });
+        restartTimer = setTimeout(() => {
+          if (!disposed && !worker && state.status !== 'paused') {
+            start(true);
+          }
+        }, delay);
+        if (typeof restartTimer.unref === 'function') restartTimer.unref();
+        return;
+      }
+      publish({
+        status: 'failed',
+        restarting: false,
+        autoRestartCount,
+        failureReason: buildFailureAdvice(errCode, timedOut),
+      });
     };
-    child.on('error', fail);
-    child.on('close', fail);
-    child.stdin.on('error', fail);
-    child.stderr.on('error', fail);
+
+    child.on('error', (err) => fail(err));
+    child.on('close', () => fail('closed'));
+    child.stdin.on('error', () => fail('stdin'));
+    child.stderr.on('error', () => fail('stderr'));
     createInterface({ input: child.stderr }).on('line', line => {
       if (worker !== child) return;
       if (DIAGNOSTICS.test(line)) {
@@ -214,6 +308,10 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
       else if (UNKNOWN_DETAILS.test(line)) unknownDetails = parseUnknownDetails(line);
       else if (/^PRTS_REPORT_BYTES(?: [0-9]{1,16}){2}$/.test(line)) traffic = line.split(' ').slice(1).map(Number);
       else if (/^PRTS_CAPTURE_SOURCE (winsock|npcap|mixed)$/.test(line)) backend = line.split(' ')[1];
+      else if (line && line.trim() && !line.startsWith('PRTS_')) {
+        lastStderrErrors.push(line.trim().slice(0, 140));
+        if (lastStderrErrors.length > 6) lastStderrErrors.shift();
+      }
     });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => {
@@ -221,14 +319,25 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
       pending += chunk;
       let newline;
       while ((newline = pending.indexOf('\n')) !== -1) {
-        if (newline > MAX_REPORT) return fail();
+        if (newline > MAX_REPORT) return fail('overflow');
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
         let message;
         try { message = JSON.parse(line); } catch { continue; }
         if (message?.kind === 'status' && WORKER_STATUSES.has(message.status)) {
           clearTimeout(startupTimer);
-          publish({ status: message.status });
+          clearTimeout(healthyTimer);
+          if (['waiting', 'connecting', 'listening'].includes(message.status)) {
+            healthyTimer = setTimeout(() => {
+              if (worker === child) autoRestartCount = 0;
+            }, healthyResetMs);
+            if (typeof healthyTimer.unref === 'function') healthyTimer.unref();
+          }
+          publish({
+            status: message.status,
+            restarting: false,
+            failureReason: '',
+          });
         } else if (message?.kind === 'source') {
           const parsedSource = parseSourceMessage(message, screenApi);
           if (parsedSource) publish(parsedSource);
@@ -238,11 +347,27 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
           publish({ report: message.report, reportRun: childRun });
         }
       }
-      if (pending.length > MAX_REPORT) fail();
+      if (pending.length > MAX_REPORT) fail('overflow');
     });
-    startupTimer = setTimeout(fail, 12_000);
-    startupTimer.unref();
-    return publish({ status: 'starting', report: null, reportRun: childRun, clientSource: 'none', mumuWindow: null });
+    startupTimer = setTimeout(() => fail('timeout'), startupTimeoutMs);
+    if (typeof startupTimer.unref === 'function') startupTimer.unref();
+    return publish({
+      status: 'starting',
+      restarting: isAutoRetry,
+      autoRestartCount,
+      failureReason: isAutoRetry ? state.failureReason : '',
+      report: isAutoRetry ? state.report : null,
+      reportRun: childRun,
+      clientSource: 'none',
+      mumuWindow: null,
+    });
+  }
+
+  function manualRestart() {
+    if (disposed) return state;
+    stop();
+    autoRestartCount = 0;
+    return start(false);
   }
 
   function showDiagnostics() {
@@ -351,10 +476,12 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
     'battle-reports-enable': (enabled) => {
       if (typeof enabled !== 'boolean') throw new Error('Invalid capture request');
       if (enabled && worker && ['permission', 'unavailable', 'incompatible'].includes(state.status)) stop();
-      if (enabled) return start();
+      if (enabled) return start(false);
       stop();
-      return publish({ status: 'paused' });
+      autoRestartCount = 0;
+      return publish({ status: 'paused', restarting: false, failureReason: '' });
     },
+    'battle-reports-restart': () => manualRestart(),
     'battle-reports-install-npcap': async () => {
       if (installingNpcap) return state;
       if (hasNpcap()) return hotSwitchToNpcap('Npcap 已安装，已切换至驱动采集通道。');
@@ -408,7 +535,8 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, sp
     });
   }
   return {
-    start,
+    start: () => start(false),
+    restart: manualRestart,
     dispose() {
       disposed = true;
       if (!mainWindow.isDestroyed()) mainWindow.removeListener('focus', onWindowFocus);

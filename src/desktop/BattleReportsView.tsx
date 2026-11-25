@@ -1,6 +1,6 @@
 // 青逝痕 Tenkinoko 制作
 import { useEffect, useRef, useState } from 'react';
-import { Activity, BarChart3, ChevronDown, FileDown, Layers, ListTree, Radio, Swords } from 'lucide-react';
+import { Activity, BarChart3, ChevronDown, FileDown, Layers, ListTree, Radio, RotateCcw, Swords } from 'lucide-react';
 import { BossRoutes } from '../components/BossRoutes';
 import { ImageLightboxModal } from '../components/ImageLightboxModal';
 import { DesktopDialog } from './DesktopDialog';
@@ -59,6 +59,8 @@ export default function BattleReportsView({
     status: ReportStatus;
     npcapInstalled?: boolean;
     npcapInstall?: NpcapInstallState;
+    failureReason?: string;
+    restarting?: boolean;
   };
 }) {
   const [localRecords, setLocalRecords] = useState<ReportRecords>({ history: [] });
@@ -66,6 +68,8 @@ export default function BattleReportsView({
   const [tab, setTab] = useState<Tab>('rounds');
   const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
   const [localStatus, setLocalStatus] = useState<ReportStatus>('starting');
+  const [localFailureReason, setLocalFailureReason] = useState('');
+  const [localRestarting, setLocalRestarting] = useState(false);
   const [localNpcapInstalled, setLocalNpcapInstalled] = useState<boolean | undefined>(undefined);
   const [localNpcapInstall, setLocalNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
   const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
@@ -78,6 +82,8 @@ export default function BattleReportsView({
   const records = shared ? shared.records : localRecords;
   const setRecords = shared ? shared.setRecords : setLocalRecords;
   const status = shared ? shared.status : localStatus;
+  const failureReason = shared ? (shared.failureReason ?? '') : localFailureReason;
+  const restarting = shared ? Boolean(shared.restarting) : localRestarting;
   const npcapInstalled = shared ? shared.npcapInstalled : localNpcapInstalled;
   const npcapInstall = shared ? shared.npcapInstall : localNpcapInstall;
 
@@ -89,6 +95,8 @@ export default function BattleReportsView({
     let latestRun: number | undefined;
     const accept = (feed: ReportFeed) => {
       setLocalStatus(feed.status);
+      setLocalFailureReason(feed.failureReason ?? '');
+      setLocalRestarting(Boolean(feed.restarting));
       if (feed.npcapInstalled !== undefined) setLocalNpcapInstalled(feed.npcapInstalled);
       if (feed.npcapInstall !== undefined) setLocalNpcapInstall(feed.npcapInstall);
       if (latest === feed.report && latestRun === feed.reportRun) return;
@@ -186,7 +194,28 @@ export default function BattleReportsView({
           onSave={names => setRecords(previous => setReportPlayerNames(previous, entry.key, names))}
           onSetSelfSeat={value => { setRecords(previous => setReportSelfSeat(previous, entry.key, value)); setPerspective(null); }} />}
       </header>
-      {!sourceLabel && ['failed', 'permission', 'unavailable', 'incompatible'].includes(status) && <p className="d-warning d-report-error">{STATUS[status]}</p>}
+      {!sourceLabel && (restarting || ['failed', 'permission', 'unavailable', 'incompatible'].includes(status)) && (
+        <div className="d-warning d-report-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+          <span>{failureReason || STATUS[status]}</span>
+          <span style={{ display: 'inline-flex', gap: '6px', flexShrink: 0 }}>
+            {!restarting && (
+              <button
+                type="button"
+                className="d-button d-small"
+                onClick={() => {
+                  if (api.restart) void api.restart();
+                  else void api.setEnabled(true);
+                }}
+              >
+                <RotateCcw size={13} />立即重启采集
+              </button>
+            )}
+            <button type="button" className="d-button d-small" onClick={() => void api.showDiagnostics()}>
+              查看诊断
+            </button>
+          </span>
+        </div>
+      )}
       {!sourceLabel && <NpcapSetupBanner api={api} npcapInstalled={npcapInstalled} installState={npcapInstall} />}
       <nav className="d-report-tabs" aria-label="战报视图">
         {visibleTabs.map(name => { const Icon = TAB_ICONS[name]; return <button key={name} type="button"

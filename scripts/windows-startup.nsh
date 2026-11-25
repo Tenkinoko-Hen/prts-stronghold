@@ -151,6 +151,7 @@ FunctionEnd
   ; Fast path: reuse verified versioned cache (0 ms unpack, avoids antivirus re-scan & mid-game I/O stalls).
   IfFileExists "$INSTDIR\.prts-ready" 0 prts_need_unpack
   IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 prts_need_unpack
+  IfFileExists "$INSTDIR\ffmpeg.dll" 0 prts_need_unpack
   IfFileExists "$INSTDIR\resources\app.asar" prts_app_ready prts_need_unpack
 
 prts_need_unpack:
@@ -253,11 +254,15 @@ Function PrtsRunApp
     System::Call 'kernel32::SetEvent(p $prtsSplashUnpacked)'
   ${EndIf}
   StrCpy $R1 '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" $R0'
+  System::Call 'kernel32::GetTickCount()i.r8'
   Call PrtsLaunchProcess
   ${If} $R5 == 0
+    ${If} $prtsCacheRoot != ""
+      Delete "$INSTDIR\.prts-ready"
+    ${EndIf}
     Call PrtsCloseSplash
     SetSilent normal
-    MessageBox MB_OK|MB_ICONSTOP "无法启动主程序，可能被安全软件（Windows Defender / 360 / 火绒）拦截。$\r$\n$\r$\n请将本程序加入信任区后重试。"
+    MessageBox MB_OK|MB_ICONSTOP "无法启动主程序，可能被安全软件（Windows Defender / 360 / 火绒）拦截。$\r$\n$\r$\n已自动标记下次启动重新释放缓存；请将本程序加入信任区后重试。"
     SetErrorLevel 1
     Return
   ${EndIf}
@@ -284,10 +289,21 @@ prts_wait_frame:
 prts_hide_startup:
   Call PrtsCloseSplash
   System::Call 'kernel32::WaitForSingleObject(p R5,i -1)i'
+  System::Call 'kernel32::GetTickCount()i.r9'
   System::Call 'kernel32::GetExitCodeProcess(p R5,*i .r0)i.r1'
   System::Call 'kernel32::CloseHandle(p R5)'
   StrCmp $1 0 0 +2
     StrCpy $0 1
+  ; Self-healing cache guard: if Electron crashed almost immediately (< 3.5s) with non-zero exit code,
+  ; invalidate .prts-ready so the next launch automatically performs a clean re-extraction.
+  ${If} $0 != 0
+  ${AndIf} $prtsCacheRoot != ""
+    IntOp $9 $9 - $8
+    ${If} $9 >= 0
+    ${AndIf} $9 < 3500
+      Delete "$INSTDIR\.prts-ready"
+    ${EndIf}
+  ${EndIf}
   SetErrorLevel $0
 FunctionEnd
 

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   Ban,
   ChevronRight,
   Compass,
@@ -39,16 +40,16 @@ import type { BattleBanSyncState } from './battleBanSync';
 import {
   defaultBossRound,
   REPORT_ROUNDS,
-  REPORT_SEATS,
   type PreviewRoundFilter,
 } from './battleReportData';
 import { BattleReportDeckPool, buildDeckMatchKey, readPersistedWishlist, WISHLIST_STORAGE_PREFIX } from './BattleReportDeckPool';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
-import { BossDamage, seatDisplayText } from './BattleReportPanels';
+import { BossDamage } from './BattleReportPanels';
 import { RoundMatrix } from './BattleReportRounds';
 import { EnemyAvatar, SpawnPreview } from './BattleReportSpawns';
 import { BattleReportTelemetry, CompactOperatorBadge } from './BattleReportTelemetry';
+import { SeatTelemetryStrip } from './SeatTelemetryStrip';
 import {
   reportWithPlayerNames,
   type BattleReportsBridge,
@@ -278,34 +279,40 @@ export default function MumuDrawerApp({
   }, [liveShopLevel, matchKey, report?.deckPool, selfSeat, suggestedOperatorNames, wishTick]);
 
   const waveWarning = useMemo(() => {
+    type WaveItem = { id: string; name: string; count: number | null; boss?: true };
     if (!report || report.preview.length === 0) return null;
     const planRows = report.preview.filter(p => p.kind === 'plan');
     const sourceRows = planRows.length > 0 ? planRows : report.preview;
+    const byRound = new Map<number, Map<string, WaveItem>>();
+    for (const sp of sourceRows) {
+      const bucket = byRound.get(sp.round) ?? new Map<string, WaveItem>();
+      const k = `${sp.boss ? '1' : '0'}:${sp.id}:${sp.name}`;
+      const prev = bucket.get(k);
+      if (!prev) bucket.set(k, { id: sp.id, name: sp.name, count: sp.count, boss: sp.boss });
+      else if (sp.count !== null) prev.count = (prev.count ?? 0) + sp.count;
+      byRound.set(sp.round, bucket);
+    }
+    const allWaveRounds = [...byRound.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([r, m]) => ({
+        round: r,
+        items: [...m.values()].sort(
+          (a, b) => Number(Boolean(b.boss)) - Number(Boolean(a.boss)) || (b.count ?? 0) - (a.count ?? 0),
+        ),
+      }));
     const refRound = liveRound ?? currentRound;
     const curRoundObj = report.rounds.find(r => r.number === refRound);
     const settled = curRoundObj?.phase === 'settle' || curRoundObj?.phase === 'end';
-    const targetRound = settled && refRound < 15 && sourceRows.some(p => p.round === refRound + 1)
+    const targetRound = settled && refRound < 15 && byRound.has(refRound + 1)
       ? refRound + 1
-      : sourceRows.some(p => p.round === refRound)
+      : byRound.has(refRound)
         ? refRound
-        : (sourceRows.find(p => p.round >= refRound)?.round ?? sourceRows[0].round);
-    const merged = new Map<string, { id: string; name: string; count: number | null; boss?: true }>();
-    for (const sp of sourceRows.filter(p => p.round === targetRound)) {
-      const k = `${sp.boss ? '1' : '0'}:${sp.id}:${sp.name}`;
-      const prev = merged.get(k);
-      if (!prev) merged.set(k, { id: sp.id, name: sp.name, count: sp.count, boss: sp.boss });
-      else if (sp.count !== null) prev.count = (prev.count ?? 0) + sp.count;
-    }
-    const items = [...merged.values()].sort(
-      (a, b) => Number(Boolean(b.boss)) - Number(Boolean(a.boss)) || (b.count ?? 0) - (a.count ?? 0),
-    );
-    const totalCount = items.reduce((sum, item) => sum + (item.count ?? 0), 0);
+        : (allWaveRounds.find(w => w.round >= refRound)?.round ?? allWaveRounds[0]?.round ?? refRound);
+    const upcoming = allWaveRounds.filter(w => w.round >= targetRound).slice(0, 2);
+    const waves = upcoming.length > 0 ? upcoming : allWaveRounds.slice(-2);
     return {
-      round: targetRound,
-      isNext: targetRound > refRound,
-      items: items.slice(0, 10),
-      totalCount,
-      hasBoss: items.some(i => i.boss) || report.bossRounds.includes(targetRound),
+      waves,
+      totalWaves: allWaveRounds.length,
     };
   }, [currentRound, liveRound, report]);
 
@@ -442,6 +449,20 @@ export default function MumuDrawerApp({
         ))}
       </nav>
 
+      {placement === 'inside-right' && (
+        <div className="mumu-inside-alert" role="status">
+          <span>
+            <AlertTriangle size={11} />
+            当前内侧叠放于 MuMu 右侧（空间不足）
+          </span>
+          {onCollapseToHud && (
+            <button type="button" onClick={onCollapseToHud}>
+              挡商店时收起至HUD ▸
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 3. Scrollable Content Area */}
       <main className="mumu-body">
         {activeTab === 'overview' && (
@@ -464,83 +485,32 @@ export default function MumuDrawerApp({
               </p>
             </button>
 
-            {/* 四席态势 2×2 */}
-            <section className="mumu-card" aria-label="四席态势">
-              <header className="mumu-card-head">
-                <span className="mumu-card-title">
-                  <b className="mumu-slash">//</b>
-                  {solo ? '单兵态势' : '四席态势'}
-                </span>
-                {report && seat !== null && seat !== report.self && !solo && (
-                  <button
-                    type="button"
-                    className="mumu-link-btn"
-                    onClick={() => setPerspective(null)}
-                  >
-                    回自己视角
-                  </button>
-                )}
-              </header>
-
-              {!report ? (
+            {/* 四席态势 2×2（统一无「稳」双轨 兜/漏 + 实时已激活盟约 + 累计/单轮切换） */}
+            {!report ? (
+              <section className="mumu-card" aria-label="四席态势">
+                <header className="mumu-card-head">
+                  <span className="mumu-card-title">
+                    <b className="mumu-slash">//</b>四席态势
+                  </span>
+                </header>
                 <p className="mumu-muted">
-                  等待 MuMu 进入卫戍对局，进局后将自动同步四席血量、商店本数与实况战报。
+                  等待 MuMu 进入卫戍对局，进局后自动同步四席双轨兜漏、血量、本数与实时已激活盟约。
                 </p>
-              ) : (
-                <div className="mumu-seats-grid" data-solo={solo}>
-                  {(solo ? ([1] as const) : REPORT_SEATS).map(s => {
-                    const lineup = report.lineups[s];
-                    const hp = report.hp[s];
-                    const elimRound = report.eliminated[s];
-                    const eliminated = elimRound !== undefined;
-                    const isSelf = s === report.self;
-                    const isViewing = s === seat;
-                    const hpPct = hp !== undefined ? Math.max(0, Math.min(100, (hp / 30) * 100)) : 0;
-                    const curRoundRow = liveRound ? report.rounds.find(r => r.number === liveRound) : undefined;
-                    const rLeak = curRoundRow?.leaks[s];
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        className="mumu-seat-card"
-                        data-self={isSelf}
-                        data-viewing={isViewing}
-                        data-eliminated={eliminated}
-                        onClick={() => {
-                          if (solo) return;
-                          setPerspective(prev => (prev?.key === entryKey && prev.seat === s ? null : { key: entryKey, seat: s }));
-                        }}
-                      >
-                        <div className="mumu-seat-top">
-                          <span className="mumu-seat-name">
-                            <span>{seatDisplayText(s, report)}</span>
-                            {isSelf && <b className="mumu-seat-tag">我</b>}
-                            {!isSelf && isViewing && <b className="mumu-seat-tag is-view">视角</b>}
-                          </span>
-                          <span className="mumu-seat-tier">
-                            {eliminated ? `R${elimRound} 淘汰` : lineup?.shopLevel ? `${lineup.shopLevel}本` : '—'}
-                          </span>
-                        </div>
-
-                        {!eliminated && (
-                          <>
-                            <div className="mumu-seat-metrics">
-                              <span>♡ {hp ?? '—'}</span>
-                              <span>
-                                {rLeak !== undefined ? (rLeak === 0 ? '零漏' : `漏 ${rLeak}`) : `${lineup?.deployedCount ?? 0} 人`}
-                              </span>
-                            </div>
-                            <span className="mumu-seat-hp-track" data-low={hp !== undefined && hp <= 6}>
-                              <i style={{ width: `${hp !== undefined ? hpPct : 100}%` }} />
-                            </span>
-                          </>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+              </section>
+            ) : (
+              <SeatTelemetryStrip
+                report={report}
+                focusSeat={seat}
+                onSelectSeat={s => {
+                  if (solo) return;
+                  setPerspective(prev => (prev?.key === entryKey && prev.seat === s ? null : { key: entryKey, seat: s }));
+                }}
+                onResetPerspective={() => setPerspective(null)}
+                layout="grid-2x2"
+                compact
+                title={solo ? '单兵态势' : '四席态势'}
+              />
+            )}
 
             {/* 心仪牌池实时追踪 */}
             <section className="mumu-card" aria-label="心仪牌池实时追踪">
@@ -614,36 +584,62 @@ export default function MumuDrawerApp({
               />
             )}
 
-            <section className="mumu-card" aria-label="本波出怪预警">
+            <section className="mumu-card" aria-label="未来两波出怪预警">
               <header className="mumu-card-head">
                 <span className="mumu-card-title">
                   <b className="mumu-slash">//</b>
-                  {waveWarning
-                    ? `R${waveWarning.round} ${waveWarning.isNext ? '下波出怪预警' : '本波出怪预警'}`
-                    : '本波出怪预警'}
+                  {waveWarning && waveWarning.waves.length >= 2
+                    ? `未来两波出怪 (R${waveWarning.waves[0].round} + R${waveWarning.waves[1].round})`
+                    : waveWarning && waveWarning.waves.length === 1
+                      ? `R${waveWarning.waves[0].round} 本波出怪预警`
+                      : '未来两波出怪预警'}
                 </span>
-                {waveWarning && (
-                  <span className="mumu-muted">
-                    {waveWarning.hasBoss ? '含首领压力' : `${waveWarning.totalCount} 只`}
-                  </span>
+                {waveWarning && waveWarning.totalWaves > 0 && (
+                  <button
+                    type="button"
+                    className="mumu-link-btn"
+                    onClick={() => {
+                      setActiveTab('report');
+                      setReportSubTab('preview');
+                    }}
+                  >
+                    完整({waveWarning.totalWaves}) <ChevronRight size={11} />
+                  </button>
                 )}
               </header>
 
-              {!waveWarning || waveWarning.items.length === 0 ? (
-                <p className="mumu-muted">开战或收到预告包后在此提示本波敌人构成与压力。</p>
+              {!waveWarning || waveWarning.waves.length === 0 ? (
+                <p className="mumu-muted">开战或收到预告包后在此提示未来两波敌人实机图标与压力。</p>
               ) : (
-                <div className="mumu-spawn-chips">
-                  {waveWarning.items.map(sp => (
-                    <span
-                      key={`${sp.id}:${sp.name}`}
-                      className="mumu-spawn-chip"
-                      data-boss={Boolean(sp.boss)}
-                    >
-                      <EnemyAvatar id={sp.id} size={16} />
-                      <span>{sp.name}</span>
-                      {sp.count !== null && <b>×{sp.count}</b>}
-                    </span>
-                  ))}
+                <div className="mumu-dual-waves">
+                  {waveWarning.waves.map((w, idx) => {
+                    const isBoss = w.round >= 14 || w.items.some(i => i.boss);
+                    return (
+                      <div
+                        key={w.round}
+                        className="mumu-wave-line"
+                        data-boss={isBoss}
+                        data-primary={idx === 0}
+                      >
+                        <span className="mumu-wave-badge">
+                          {idx === 0 ? `下波R${String(w.round).padStart(2, '0')}` : `预R${String(w.round).padStart(2, '0')}`}
+                        </span>
+                        <div className="mumu-spawn-chips">
+                          {w.items.slice(0, 6).map(sp => (
+                            <span
+                              key={`${w.round}:${sp.id}:${sp.name}`}
+                              className="mumu-spawn-chip"
+                              data-boss={Boolean(sp.boss)}
+                            >
+                              <EnemyAvatar id={sp.id} size={15} />
+                              <span>{sp.name}</span>
+                              {sp.count !== null && <b>×{sp.count}</b>}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </section>

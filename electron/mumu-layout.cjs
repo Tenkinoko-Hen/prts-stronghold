@@ -89,8 +89,8 @@ function computeMumuDrawerBounds({
 function computeMumuHudBounds({
   mumuWindow,
   workArea,
-  hudWidth = 440,
-  hudHeight = 176,
+  hudWidth = 460,
+  hudHeight = 188,
 } = {}) {
   const wa = normalizeWorkArea(workArea);
   const width = Math.min(Math.round(hudWidth), wa.width);

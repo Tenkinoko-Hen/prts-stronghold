@@ -22,6 +22,7 @@ import {
   computeWishlistSummary,
   hypergeometricAtLeastOne,
 } from './deckPoolMath';
+import { computeSeatCovenants, shortCovenantName, visibleSeatCovenants } from './covenantBonds';
 import { buildSmoothSplinePath, formatAxisNumber, niceTicks } from './prtsChartKit';
 import { resolveEquipIconIndex } from './EquipIcon';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
@@ -268,4 +269,64 @@ test('coop_elim tracks eliminated seat, clean board lineup, and deck pool hyperg
     }),
     false,
   );
+});
+
+test('computeSeatCovenants deduplicates deployed copies, applies transfer equip +1, and handles soloShip=1', () => {
+  assert.deepEqual(computeSeatCovenants(undefined, null), []);
+  assert.equal(shortCovenantName('卡西米尔'), '卡西');
+  assert.equal(shortCovenantName('精准'), '精准');
+
+  const pool = readDeckPool({
+    mode_id: 'mode_multi_hard',
+    is_single: false,
+    operators: [
+      { char_id: 'char_a', name: '干员A', tier: 3, bonds: ['egirShip', 'preciShip'], total_copies: 10, taken_total: 2, remaining: 8 },
+      { char_id: 'char_b', name: '干员B', tier: 4, bonds: ['egirShip', 'preciShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_solo', name: '孤狼', tier: 5, bonds: ['soloShip'], total_copies: 8, taken_total: 1, remaining: 7 },
+    ],
+    equips: [
+      { trap_id: 'trap_egir', chess_id: 'chess_trap_egir', name: '阿戈尔之徽', tier: 4, item_type: 'EQUIP', give_bond_id: 'egirShip', taken_total: 1 },
+    ],
+  });
+  assert.ok(pool);
+
+  const lineups = readSeatLineups({
+    1: {
+      round: 7,
+      shop_level: 4,
+      piece_count: 4,
+      deployed_count: 4,
+      deployed: [
+        { inst_id: 1, chess_id: 'c_a1', char_id: 'char_a', name: '干员A', tier: 3, is_golden: false },
+        { inst_id: 2, chess_id: 'c_a2', char_id: 'char_a', name: '干员A', tier: 3, is_golden: false }, // duplicate copy on board!
+        { inst_id: 3, chess_id: 'c_b1', char_id: 'char_b', name: '干员B', tier: 4, is_golden: false },
+        { inst_id: 4, chess_id: 'c_s1', char_id: 'char_solo', name: '孤狼', tier: 5, is_golden: true },
+      ],
+      bench: [],
+      equips: [
+        { inst_id: 99, identifier: 99, chess_id: 'chess_trap_egir', trap_id: 'trap_egir', name: '阿戈尔之徽', tier: 4, is_golden: false, item_type: 'EQUIP' },
+      ],
+      shop_goods: [],
+      squad: [],
+    },
+  });
+
+  const bonds = computeSeatCovenants(lineups[1], pool);
+  const egir = bonds.find(b => b.name === '阿戈尔');
+  const preci = bonds.find(b => b.name === '精准');
+  const solo = bonds.find(b => b.name === '独行');
+  assert.ok(egir && preci && solo);
+  // 2 unique egir operators + 1 transfer equip = 3 (>= threshold 3 -> active!)
+  assert.equal(egir.count, 3);
+  assert.equal(egir.active, true);
+  // 2 unique preci operators (duplicate char_a ignored!) -> 2 (>= threshold 2 -> active!)
+  assert.equal(preci.count, 2);
+  assert.equal(preci.active, true);
+  // 1 soloShip operator -> active when count === 1
+  assert.equal(solo.count, 1);
+  assert.equal(solo.active, true);
+
+  const capped = visibleSeatCovenants(lineups[1], pool, 2);
+  assert.equal(capped.shown.length, 2);
+  assert.equal(capped.hiddenCount, 1);
 });

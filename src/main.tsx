@@ -19,14 +19,17 @@ function mountWithGuard(element: React.ReactNode, compact = false) {
 
 function mountLoadFailure(err: unknown) {
   const msg = err instanceof Error ? err.message : '前端模块加载失败';
+  const isLite = typeof __PRODUCT_MODE__ !== 'undefined' && __PRODUCT_MODE__ === 'telemetry';
+  const accent = isLite ? '#22d3ee' : '#ffe600';
+  const fg = isLite ? '#061318' : '#0b0d11';
   root.render(
     <div style={{ padding: 20, background: '#090c11', color: '#f1f5f9', minHeight: '100dvh', fontFamily: 'system-ui, sans-serif' }}>
-      <strong style={{ color: '#ffe600' }}>组件加载异常（游戏运行不受影响）</strong>
+      <strong style={{ color: accent }}>组件加载异常（游戏运行不受影响）</strong>
       <p style={{ fontSize: 12, color: '#94a3b8', margin: '8px 0 12px' }}>{msg}</p>
       <button
         type="button"
         onClick={() => window.location.reload()}
-        style={{ padding: '6px 12px', background: '#ffe600', color: '#0b0d11', border: 0, fontWeight: 700, cursor: 'pointer' }}
+        style={{ padding: '6px 12px', background: accent, color: fg, border: 0, fontWeight: 700, cursor: 'pointer' }}
       >
         重新加载界面
       </button>

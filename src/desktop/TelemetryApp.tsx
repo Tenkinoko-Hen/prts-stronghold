@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   AppWindow,
   BarChart3,
   ChevronDown,
@@ -12,6 +13,7 @@ import {
   ListTree,
   Maximize2,
   Minimize2,
+  PanelTopClose,
   Pin,
   RotateCcw,
   Swords,
@@ -116,6 +118,7 @@ export default function TelemetryApp({
   const [bossFilter, setBossFilter] = useState<{ key: string; round: number } | null>(null);
   const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
   const [exported, setExported] = useState<ReportSummary | null>(null);
+  const [bansExpanded, setBansExpanded] = useState(false);
   const prevLiveKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -207,6 +210,11 @@ export default function TelemetryApp({
     } finally {
       setLayoutPending(false);
     }
+  };
+
+  const collapseToHud = () => {
+    if (!desktopAPI?.windowLayout?.collapseToHud) return;
+    void desktopAPI.windowLayout.collapseToHud();
   };
 
   const toggleWindowMode = async () => {
@@ -366,6 +374,18 @@ export default function TelemetryApp({
             </button>
           )}
 
+          {desktopAPI?.windowLayout?.collapseToHud && (clientSource === 'mumu' || windowMode === 'rail') && (
+            <button
+              type="button"
+              className="lite-tool-btn is-active"
+              title="收起侧栏至模拟器顶部微缩悬浮条（点悬浮条「侧栏」随时展开）"
+              onClick={collapseToHud}
+            >
+              <PanelTopClose size={13} />
+              <span>收起至HUD</span>
+            </button>
+          )}
+
           {desktopAPI?.hud && (
             <button
               type="button"
@@ -416,11 +436,22 @@ export default function TelemetryApp({
         {report?.difficulty && <span className="lite-diff-badge">{report.difficulty}</span>}
 
         {report && report.bannedCovenants.length > 0 && (
-          <div className="lite-bans" aria-label="本局禁选盟约">
-            <span className="lite-bans-label">BAN</span>
-            {report.bannedCovenants.map(name => (
-              <span key={name} className="lite-ban-chip">{name}</span>
-            ))}
+          <div className="lite-bans" data-expanded={bansExpanded} aria-label="本局禁选盟约">
+            <button
+              type="button"
+              className="lite-bans-toggle"
+              aria-expanded={bansExpanded}
+              onClick={() => setBansExpanded(v => !v)}
+              title="点击展开或收起本局禁选盟约"
+            >
+              禁选 {report.bannedCovenants.length} 项 {bansExpanded ? '▴' : '▾'}
+            </button>
+            <div className="lite-bans-list">
+              <span className="lite-bans-label">BAN</span>
+              {report.bannedCovenants.map(name => (
+                <span key={name} className="lite-ban-chip">{name}</span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -440,6 +471,20 @@ export default function TelemetryApp({
           />
         )}
       </div>
+
+      {mumuPlacement === 'inside-right' && (
+        <div className="lite-inside-alert" role="status">
+          <span>
+            <AlertTriangle size={12} />
+            当前内侧叠放于 MuMu 右侧（桌面空间不足）
+          </span>
+          {desktopAPI?.windowLayout?.collapseToHud && (
+            <button type="button" onClick={collapseToHud}>
+              挡商店时点此收起至HUD ▸
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Row 3: Scrollable Instrument Viewport */}
       <main className="lite-main">
@@ -490,6 +535,7 @@ export default function TelemetryApp({
                   history={records.history}
                   onSelectRecord={openRecord}
                   onSelectSeat={s => setPerspective({ key, seat: s })}
+                  onResetPerspective={() => setPerspective(null)}
                   onJumpTab={setTab}
                   onOpenHud={desktopAPI?.hud ? () => void desktopAPI.hud?.setOpen(true) : undefined}
                 />

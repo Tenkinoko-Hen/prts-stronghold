@@ -132,7 +132,6 @@ public class OverlayService extends Service {
     private LinearLayout leakFooterRow;
     private TextView leakFooterTag;
     private LinearLayout leakEnemyChips;
-    private TextView leakLegendView;
 
     // Body C: Boss MMO DPS 榜
     private LinearLayout dpsContainer;
@@ -382,9 +381,11 @@ public class OverlayService extends Service {
         ball = new TextView(this);
         ball.setTextSize(11f);
         ball.setTypeface(null, 1);
-        ball.setTextColor(0xffffe600);
+        int brandCol = isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600;
+        int brandStroke = isLiteTelemetryMode() ? 0x9922d3ee : 0x99ffe600;
+        ball.setTextColor(brandCol);
         ball.setGravity(Gravity.CENTER);
-        ball.setBackground(background(0xe80b0d11, 26, 0x99ffe600));
+        ball.setBackground(background(0xe80b0d11, 26, brandStroke));
         setBallScanning(false);
         ball.setElevation(dp(8));
         ballParams = params(dp(48), dp(48), false, true);
@@ -520,14 +521,16 @@ public class OverlayService extends Service {
             ball.setForeground(null);
             ball.setContentDescription(getString(R.string.ball_scan_desc));
         } else if (pendingRound >= 1 && pendingRound <= 15) {
+            boolean lite = isLiteTelemetryMode();
             ball.setText(String.format(Locale.US, "R%02d", pendingRound));
-            ball.setTextColor(0xffffe600);
-            ball.setBackground(background(0xe80b0d11, 26, 0xbbffe600));
+            ball.setTextColor(lite ? 0xff22d3ee : 0xffffe600);
+            ball.setBackground(background(0xe80b0d11, 26, lite ? 0xbb22d3ee : 0xbbffe600));
             ball.setForeground(null);
             ball.setContentDescription(getString(R.string.ball_desc));
         } else {
+            boolean lite = isLiteTelemetryMode();
             ball.setText("");
-            ball.setBackground(background(0xe80b0d11, 26, 0x88ffe600));
+            ball.setBackground(background(0xe80b0d11, 26, lite ? 0x8822d3ee : 0x88ffe600));
             int inset = getResources().getInteger(R.integer.ball_icon_inset_dp);
             ball.setForeground(new InsetDrawable(getDrawable(R.drawable.ic_overlay_ball), dp(inset)));
             ball.setContentDescription(getString(R.string.ball_desc));
@@ -536,14 +539,15 @@ public class OverlayService extends Service {
 
     private int preferredStripWidth() {
         boolean landscape = usableWidth > usableHeight;
-        if (isLiteTelemetryMode()) {
+        boolean compact2x2 = isLiteTelemetryMode() || "leak".equals(stripTab);
+        if (compact2x2) {
             if (landscape) {
-                return Math.min(dp(360), Math.max(dp(304), usableWidth - dp(180)));
+                return Math.min(dp(376), Math.max(dp(308), usableWidth - dp(164)));
             }
-            return Math.min(dp(324), Math.max(dp(268), usableWidth - dp(24)));
+            return Math.min(dp(336), Math.max(dp(268), usableWidth - dp(22)));
         }
         if (landscape) {
-            return Math.min(dp(476), Math.max(dp(344), usableWidth - dp(120)));
+            return Math.min(dp(468), Math.max(dp(344), usableWidth - dp(120)));
         }
         return Math.min(dp(404), Math.max(dp(280), usableWidth - dp(20)));
     }
@@ -564,8 +568,8 @@ public class OverlayService extends Service {
     private void createStrip() {
         strip = new LinearLayout(this);
         strip.setOrientation(LinearLayout.VERTICAL);
-        strip.setPadding(dp(8), dp(5), dp(8), dp(6));
-        strip.setBackground(background(0xf20b0d11, 4, 0xffffe600));
+        strip.setPadding(dp(6), dp(4), dp(6), dp(5));
+        strip.setBackground(background(0xf20b0d11, 4, isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600));
         strip.setElevation(dp(9));
 
         // ===== Row 1: Top Header Bar =====
@@ -611,7 +615,7 @@ public class OverlayService extends Service {
             leakCumulative = true;
             refreshStripAndBallContent();
         });
-        stripScopeRoundBtn = capsuleChip("单回合", v -> {
+        stripScopeRoundBtn = capsuleChip("单轮", v -> {
             leakCumulative = false;
             if (leakSelectedRound < 1 || leakSelectedRound > 15) {
                 leakSelectedRound = Math.max(1, effectiveCurrentRound());
@@ -691,7 +695,7 @@ public class OverlayService extends Service {
         capLp.leftMargin = dp(3);
         stripActions.addView(stripModeCapsule, capLp);
 
-        miniStripButton(stripActions, "穿透", 0xffffe600, v -> setStripLocked(true));
+        miniStripButton(stripActions, "穿透", isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600, v -> setStripLocked(true));
         miniStripButton(stripActions, "展开", 0xffe2e8f0, v -> expand());
         miniStripButton(stripActions, "球", 0xff94a3b8, v -> collapseToBall());
         topRow.addView(stripActions);
@@ -805,13 +809,14 @@ public class OverlayService extends Service {
         leakFooterRow = new LinearLayout(this);
         leakFooterRow.setOrientation(LinearLayout.HORIZONTAL);
         leakFooterRow.setGravity(Gravity.CENTER_VERTICAL);
-        leakFooterRow.setPadding(dp(5), dp(3), dp(5), dp(3));
-        leakFooterRow.setBackgroundColor(0x14ffffff);
+        leakFooterRow.setPadding(dp(5), dp(2), dp(5), dp(2));
+        leakFooterRow.setBackground(background(0x18ff4d4f, 2, 0x44ff4d4f));
+        leakFooterRow.setVisibility(View.GONE);
         LinearLayout.LayoutParams lfLp = new LinearLayout.LayoutParams(-1, -2);
-        lfLp.topMargin = dp(4);
+        lfLp.topMargin = dp(3);
 
         leakFooterTag = new TextView(this);
-        leakFooterTag.setTextSize(9.5f);
+        leakFooterTag.setTextSize(9f);
         leakFooterTag.setTypeface(null, Typeface.BOLD);
         leakFooterTag.setTextColor(0xfffb923c);
         leakFooterTag.setSingleLine(true);
@@ -827,14 +832,6 @@ public class OverlayService extends Service {
         leakEnemyChips.setGravity(Gravity.CENTER_VERTICAL);
         leakScroll.addView(leakEnemyChips, new FrameLayout.LayoutParams(-2, -2));
         leakFooterRow.addView(leakScroll, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        leakLegendView = new TextView(this);
-        leakLegendView.setTextSize(9f);
-        leakLegendView.setSingleLine(true);
-        leakLegendView.setText(buildLeakLegend());
-        LinearLayout.LayoutParams legLp = new LinearLayout.LayoutParams(-2, -2);
-        legLp.leftMargin = dp(6);
-        leakFooterRow.addView(leakLegendView, legLp);
 
         leakContainer.addView(leakFooterRow, lfLp);
         strip.addView(leakContainer);
@@ -917,13 +914,14 @@ public class OverlayService extends Service {
         positionStripDefault();
         makeDraggable(strip, strip, stripParams, false, this::syncUnlockChipPosition);
 
+        int unlockCol = isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600;
         unlockChip = new TextView(this);
         unlockChip.setText("解锁");
         unlockChip.setTextSize(10.5f);
         unlockChip.setTypeface(null, Typeface.BOLD);
-        unlockChip.setTextColor(0xffffe600);
+        unlockChip.setTextColor(unlockCol);
         unlockChip.setGravity(Gravity.CENTER);
-        unlockChip.setBackground(background(0xee0b0d11, 3, 0xffffe600));
+        unlockChip.setBackground(background(0xee0b0d11, 3, unlockCol));
         unlockChip.setContentDescription("解锁触控穿透迷你条");
         unlockParams = params(dp(38), dp(26), false, true);
         unlockChip.setOnClickListener(v -> setStripLocked(false));
@@ -932,12 +930,12 @@ public class OverlayService extends Service {
 
     private TextView leakSummaryPill(LinearLayout parent, boolean gapLeft) {
         TextView tv = new TextView(this);
-        tv.setTextSize(10f);
+        tv.setTextSize(9f);
         tv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tv.setSingleLine(true);
-        tv.setPadding(dp(6), dp(2), dp(6), dp(2));
+        tv.setPadding(dp(4), dp(1), dp(4), dp(1));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        if (gapLeft) lp.leftMargin = dp(4);
+        if (gapLeft) lp.leftMargin = dp(3);
         parent.addView(tv, lp);
         return tv;
     }
@@ -1182,23 +1180,24 @@ public class OverlayService extends Service {
             if (row.assisted > maxMetric) maxMetric = row.assisted;
         }
 
-        // Lite 360dp 窄版 HUD 采用 2x2 紧凑双排；全量宽版沿用 4 列横排
-        leakGrid.setOrientation(liteMode ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        // Full 与 Lite 在「漏兜」态统一采用 2x2 紧凑宽卡（彻底解决 Full 4列窄卡昵称截成 2 字与盟约挤压问题）
+        boolean twoByTwo = leakSnap.seats.size() > 1;
+        leakGrid.setOrientation(twoByTwo ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         LinearLayout currentRow = null;
 
         for (int i = 0; i < leakSnap.seats.size(); i++) {
             BattleCaptureState.SeatLeakRow row = leakSnap.seats.get(i);
-            if (liteMode && i % 2 == 0) {
+            if (twoByTwo && i % 2 == 0) {
                 currentRow = new LinearLayout(this);
                 currentRow.setOrientation(LinearLayout.HORIZONTAL);
                 LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-1, -2);
-                if (i > 0) rLp.topMargin = dp(4);
+                if (i > 0) rLp.topMargin = dp(3);
                 leakGrid.addView(currentRow, rLp);
             }
 
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(dp(5), dp(4), dp(5), dp(4));
+            card.setPadding(dp(5), dp(3), dp(5), dp(3));
             int selfBg = liteMode ? 0x1a22d3ee : 0x1affe600;
             int selfBorder = liteMode ? 0x9922d3ee : 0x99ffe600;
             int cardBg = row.isSelf ? selfBg : (row.escaped > 0 ? 0x1aff4d4f : 0xff131a24);
@@ -1206,7 +1205,7 @@ public class OverlayService extends Service {
             card.setBackground(background(cardBg, 3, cardBorder));
 
             LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1f);
-            if (liteMode) {
+            if (twoByTwo) {
                 if (i % 2 == 1) cardLp.leftMargin = dp(4);
             } else if (i > 0) {
                 cardLp.leftMargin = dp(4);
@@ -1268,17 +1267,17 @@ public class OverlayService extends Service {
                     String shortName = bs.name.length() > 3 ? bs.name.substring(0, 2) : bs.name;
                     appendColored(bondSb, shortName + bs.count, bs.active ? 0xff67e8f9 : 0xff94a3b8);
                     shown++;
-                    if (shown >= (liteMode ? 3 : 2)) break;
+                    if (shown >= 3) break;
                 }
                 if (shown > 0) {
                     TextView bondTv = new TextView(this);
                     bondTv.setText(bondSb);
-                    bondTv.setTextSize(8.5f);
+                    bondTv.setTextSize(8f);
                     bondTv.setTypeface(null, Typeface.BOLD);
                     bondTv.setSingleLine(true);
                     bondTv.setEllipsize(TextUtils.TruncateAt.END);
                     LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-1, -2);
-                    bLp.topMargin = dp(2);
+                    bLp.topMargin = dp(1);
                     card.addView(bondTv, bLp);
                 }
             }
@@ -1318,41 +1317,45 @@ public class OverlayService extends Service {
                 leakNum
             ));
 
-            if (liteMode && currentRow != null) {
+            if (twoByTwo && currentRow != null) {
                 currentRow.addView(card, cardLp);
             } else {
                 leakGrid.addView(card, cardLp);
             }
         }
 
-        // Lite 360dp 窄版 HUD：下方紧接「未来两波怪潮预计（下波 + 再下波实机图标）」
+        // Lite 窄版 HUD：下方单行双拼并排展示「下波 R+1 ｜ 预 R+2」（纵向省出 32dp，不压第 2 排高台格）
         leakNextWavesBox.removeAllViews();
         if (liteMode && snap != null && snap.nextTwoWaves != null && !snap.nextTwoWaves.isEmpty()) {
             leakNextWavesBox.setVisibility(View.VISIBLE);
-            for (int wIdx = 0; wIdx < Math.min(2, snap.nextTwoWaves.size()); wIdx++) {
+            LinearLayout dualWaveRow = new LinearLayout(this);
+            dualWaveRow.setOrientation(LinearLayout.HORIZONTAL);
+            dualWaveRow.setGravity(Gravity.CENTER_VERTICAL);
+            int waveLimit = Math.min(2, snap.nextTwoWaves.size());
+            for (int wIdx = 0; wIdx < waveLimit; wIdx++) {
                 BattleCaptureState.RoundWave w = snap.nextTwoWaves.get(wIdx);
                 boolean isBossWave = w.round >= 14;
-                LinearLayout wRow = new LinearLayout(this);
-                wRow.setOrientation(LinearLayout.HORIZONTAL);
-                wRow.setGravity(Gravity.CENTER_VERTICAL);
-                wRow.setPadding(dp(5), dp(3), dp(5), dp(3));
+                LinearLayout wCell = new LinearLayout(this);
+                wCell.setOrientation(LinearLayout.HORIZONTAL);
+                wCell.setGravity(Gravity.CENTER_VERTICAL);
+                wCell.setPadding(dp(4), dp(2), dp(4), dp(2));
                 int wBg = isBossWave ? 0x22ff4d4f : (wIdx == 0 ? 0x1a22d3ee : 0xff0d1520);
                 int wBorder = isBossWave ? 0x88ff4d4f : (wIdx == 0 ? 0x6622d3ee : 0xff223044);
-                wRow.setBackground(background(wBg, 2, wBorder));
-                LinearLayout.LayoutParams wrLp = new LinearLayout.LayoutParams(-1, -2);
-                if (wIdx > 0) wrLp.topMargin = dp(3);
+                wCell.setBackground(background(wBg, 2, wBorder));
+                LinearLayout.LayoutParams wcLp = new LinearLayout.LayoutParams(0, -2, 1f);
+                if (wIdx > 0) wcLp.leftMargin = dp(4);
 
                 TextView tag = new TextView(this);
-                tag.setText(String.format(Locale.US, "%s R%02d", wIdx == 0 ? "下波" : "预", w.round));
-                tag.setTextSize(8.5f);
+                tag.setText(String.format(Locale.US, "%sR%02d", wIdx == 0 ? "下" : "预", w.round));
+                tag.setTextSize(8f);
                 tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
                 tag.setTextColor(isBossWave ? 0xffffffff : (wIdx == 0 ? 0xff061018 : 0xff7dd3fc));
-                tag.setPadding(dp(4), dp(1), dp(4), dp(1));
+                tag.setPadding(dp(3), dp(1), dp(3), dp(1));
                 int tagBg = isBossWave ? 0xffff4d4f : (wIdx == 0 ? 0xff22d3ee : 0xff1e3a5f);
                 tag.setBackground(background(tagBg, 2, tagBg));
                 LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-2, -2);
-                tLp.rightMargin = dp(5);
-                wRow.addView(tag, tLp);
+                tLp.rightMargin = dp(4);
+                wCell.addView(tag, tLp);
 
                 HorizontalScrollView hsv = new HorizontalScrollView(this);
                 hsv.setHorizontalScrollBarEnabled(false);
@@ -1360,34 +1363,33 @@ public class OverlayService extends Service {
                 LinearLayout chips = new LinearLayout(this);
                 chips.setOrientation(LinearLayout.HORIZONTAL);
                 chips.setGravity(Gravity.CENTER_VERTICAL);
-                for (int j = 0; j < Math.min(6, w.enemies.size()); j++) {
-                    chips.addView(buildEnemyChip(w.enemies.get(j), isBossWave ? 0xfffca5a5 : 0xfffde047, 0xff243347, 14));
+                int maxE = waveLimit >= 2 ? Math.min(4, w.enemies.size()) : Math.min(6, w.enemies.size());
+                for (int j = 0; j < maxE; j++) {
+                    chips.addView(buildEnemyChip(w.enemies.get(j), isBossWave ? 0xfffca5a5 : 0xfffde047, 0xff243347, 13));
                 }
                 hsv.addView(chips, new FrameLayout.LayoutParams(-2, -2));
-                wRow.addView(hsv, new LinearLayout.LayoutParams(0, -2, 1f));
-                leakNextWavesBox.addView(wRow, wrLp);
+                wCell.addView(hsv, new LinearLayout.LayoutParams(0, -2, 1f));
+                dualWaveRow.addView(wCell, wcLp);
             }
+            leakNextWavesBox.addView(dualWaveRow, new LinearLayout.LayoutParams(-1, -2));
         } else {
             leakNextWavesBox.setVisibility(View.GONE);
         }
 
-        // Bottom leaked enemy real-icon strip
+        // Bottom leaked enemy real-icon strip (零漏时自动折叠隐藏，省出 26dp 纵向空间)
         leakEnemyChips.removeAllViews();
-        leakFooterTag.setText(leakSnap.round == 0
-            ? String.format(Locale.US, "累计高漏(%d)", leakSnap.totalLeaks)
-            : String.format(Locale.US, "R%02d 漏怪(%d)", leakSnap.round, leakSnap.totalLeaks));
-        if (leakSnap.enemies != null && !leakSnap.enemies.isEmpty()) {
+        boolean hasLeakedEnemies = leakSnap.enemies != null && !leakSnap.enemies.isEmpty();
+        if (hasLeakedEnemies) {
+            leakFooterRow.setVisibility(View.VISIBLE);
+            leakFooterTag.setText(leakSnap.round == 0
+                ? String.format(Locale.US, "累计高漏(%d)", leakSnap.totalLeaks)
+                : String.format(Locale.US, "R%02d漏怪(%d)", leakSnap.round, leakSnap.totalLeaks));
             int maxKinds = Math.min(6, leakSnap.enemies.size());
             for (int i = 0; i < maxKinds; i++) {
-                leakEnemyChips.addView(buildEnemyChip(leakSnap.enemies.get(i), 0xffff7875, 0x77ff4d4f, 15));
+                leakEnemyChips.addView(buildEnemyChip(leakSnap.enemies.get(i), 0xffff7875, 0x77ff4d4f, 14));
             }
         } else {
-            TextView empty = new TextView(this);
-            empty.setText(vpnRunning ? "本段零漏怪记录" : "开启主页「本机抓包」自动统计 4 人漏兜");
-            empty.setTextSize(9.5f);
-            empty.setTextColor(0xff94a3b8);
-            empty.setSingleLine(true);
-            leakEnemyChips.addView(empty);
+            leakFooterRow.setVisibility(View.GONE);
         }
     }
 
@@ -1405,7 +1407,7 @@ public class OverlayService extends Service {
         rowView.setOrientation(LinearLayout.HORIZONTAL);
         rowView.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-1, -2);
-        rLp.topMargin = dp(3);
+        rLp.topMargin = dp(2);
         rowView.setLayoutParams(rLp);
 
         TextView tag = new TextView(this);
@@ -1427,7 +1429,7 @@ public class OverlayService extends Service {
         addBarSegment(track, primaryVal, primaryColor);
         addBarSegment(track, secondaryVal, secondaryColor);
         addBarSegment(track, rem, 0x00000000);
-        rowView.addView(track, new LinearLayout.LayoutParams(0, dp(6), 1f));
+        rowView.addView(track, new LinearLayout.LayoutParams(0, dp(5), 1f));
 
         TextView num = new TextView(this);
         num.setText(rightText);
@@ -1972,6 +1974,8 @@ public class OverlayService extends Service {
         }
 
         if (stripMode && strip.isAttachedToWindow()) {
+            stripParams.width = preferredStripWidth();
+            clamp(stripParams);
             try {
                 manager.updateViewLayout(strip, stripParams);
                 syncUnlockChipPosition();
@@ -2038,13 +2042,15 @@ public class OverlayService extends Service {
         toolbar.setBackgroundColor(0xff0d1118);
         toolbar.setPadding(dp(8), dp(2), dp(4), dp(2));
 
+        boolean lite = isLiteTelemetryMode();
+        int brandCol = lite ? 0xff22d3ee : 0xffffe600;
         TextView badge = new TextView(this);
-        badge.setText("PRTS");
+        badge.setText(lite ? "LITE" : "PRTS");
         badge.setTextSize(10f);
         badge.setTypeface(null, 1);
-        badge.setTextColor(0xff0b0d11);
+        badge.setTextColor(lite ? 0xff061318 : 0xff0b0d11);
         badge.setPadding(dp(5), dp(1), dp(5), dp(1));
-        badge.setBackground(background(0xffffe600, 2, 0xffffe600));
+        badge.setBackground(background(brandCol, 2, brandCol));
         toolbar.addView(badge);
 
         TextView grip = new TextView(this);
@@ -2057,7 +2063,7 @@ public class OverlayService extends Service {
         makeDraggable(grip, panel, panelParams, false, null);
 
         alphaButton = toolbarChip(toolbar, alphaLabel(), "切换悬浮窗透明度", 0xff00e5ff, v -> cycleAlpha());
-        toolbarChip(toolbar, "迷你条", "切换顶部战术迷你条（支持点击穿透）", 0xffffe600, v -> enterStrip(false));
+        toolbarChip(toolbar, "迷你条", "切换顶部战术迷你条（支持点击穿透）", brandCol, v -> enterStrip(false));
         sizeButton = toolbarChip(toolbar, "↔", "切换宽窄抽屉", 0xffdbe4ef, v -> {
             compactPanel = !compactPanel;
             sizePanel();

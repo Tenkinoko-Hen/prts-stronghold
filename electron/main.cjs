@@ -291,6 +291,13 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
           mumuPlacement = null;
           autoEnteredMumu = false;
           autoEnteredFromMode = null;
+          drawerCollapsed = false;
+          if (hudOpenedByCollapse) {
+            hudOpenedByCollapse = false;
+            hudOverlay?.setOpen(false);
+          } else {
+            hudOverlay?.setDrawerCollapsed(false);
+          }
           if (isManual && latestClientSource === 'mumu') {
             manualOverride = true;
           }
@@ -402,7 +409,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     return sendLayoutState();
   });
   ipcMain.handle('window-layout-collapse-mumu', (event) => {
-    if (!isTrustedMainSender(event) || product.mode !== 'full') return getLayoutPublicState();
+    if (!isTrustedMainSender(event)) return getLayoutPublicState();
     drawerCollapsed = true;
     const display = latestMumuWindow
       ? screen.getDisplayMatching(latestMumuWindow)
@@ -440,6 +447,8 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
       hudOverlay?.setDrawerCollapsed(false);
     }
     if (product.mode === 'full' && layoutState.mode === 'mumu-drawer') {
+      snapWindowToMumu(false);
+    } else if (product.mode === 'telemetry' && layoutState.mode === 'rail' && latestClientSource === 'mumu') {
       snapWindowToMumu(false);
     }
     sendLayoutState();
@@ -492,7 +501,15 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
               sendLayoutState();
             }
           } else {
-            sendLayoutState();
+            manualOverride = false;
+            if (layoutState.mode !== 'rail') {
+              switchLayoutMode('rail', { isManual: true, snapMumu: latestClientSource === 'mumu' });
+            } else if (latestClientSource === 'mumu') {
+              snapWindowToMumu(true);
+              sendLayoutState();
+            } else {
+              sendLayoutState();
+            }
           }
         },
       })
@@ -520,16 +537,34 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
               const moved = mumuWindowMovedSignificantly(prevWin, latestMumuWindow);
               if (autoMumuEnabled && !manualOverride && (!autoEnteredMumu || layoutState.mode !== 'rail')) {
                 switchLayoutMode('rail', { isAuto: true, snapMumu: true });
-              } else if (layoutState.mode === 'rail' && !manualOverride && moved) {
+              } else if (layoutState.mode === 'rail' && !drawerCollapsed && !manualOverride && moved) {
                 snapWindowToMumu(false);
                 sendLayoutState();
               } else if (prevSource !== latestClientSource || moved) {
                 sendLayoutState();
               }
+              if (drawerCollapsed && hudOverlay?.getState()?.open && moved) {
+                const hudBounds = computeMumuHudBounds({
+                  mumuWindow: latestMumuWindow,
+                  workArea: safeDisplayWorkArea(latestMumuWindow),
+                });
+                hudOverlay.openAtBounds(hudBounds, { drawerCollapsed: true });
+              }
             } else {
               manualOverride = false;
               mumuPlacement = null;
               if (autoEnteredMumu) {
+                if (drawerCollapsed) {
+                  drawerCollapsed = false;
+                  if (hudOpenedByCollapse) {
+                    hudOpenedByCollapse = false;
+                    hudOverlay?.setOpen(false);
+                  } else {
+                    hudOverlay?.setDrawerCollapsed(false);
+                  }
+                  if (mainWindow.isMinimized()) mainWindow.restore();
+                  if (!mainWindow.isVisible()) mainWindow.show();
+                }
                 const restoreWide = autoEnteredFromMode === 'wide' && layoutState.mode === 'rail';
                 autoEnteredMumu = false;
                 autoEnteredFromMode = null;

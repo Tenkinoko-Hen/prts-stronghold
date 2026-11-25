@@ -19,8 +19,8 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   background: var(--lite-canvas);
   color: var(--lite-text);
   font-size: 13px;
@@ -219,6 +219,25 @@
   gap: 4px;
   min-width: 0;
 }
+.lite-bans-toggle {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+  font: 700 11px/1.2 var(--font-mono);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.lite-bans-list {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
 .lite-bans-label {
   font: 700 11px/1 var(--font-mono);
   color: var(--lite-red);
@@ -233,7 +252,6 @@
   font-weight: 650;
   border-radius: 2px;
 }
-
 .lite-diff-badge {
   font: 600 11px/1 var(--font-mono);
   color: var(--lite-muted);
@@ -243,8 +261,43 @@
   border-radius: 2px;
 }
 
+.lite-inside-alert {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(245, 158, 11, 0.14);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 650;
+}
+.lite-inside-alert > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lite-inside-alert > button {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid rgba(34, 211, 238, 0.55);
+  background: rgba(34, 211, 238, 0.14);
+  color: #67e8f9;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
 /* 3. Main Scroll Surface */
 .lite-main {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   background: var(--lite-canvas);
@@ -809,16 +862,15 @@
   }
   .lite-nav button svg { display: none; }
   .lite-subbar { padding: 4px 8px; gap: 4px 6px; }
+  .lite-bans-toggle { display: inline-flex; }
+  .lite-bans:not([data-expanded="true"]) .lite-bans-list { display: none; }
+  .lite-bans[data-expanded="true"] .lite-bans-list { width: 100%; padding-top: 2px; }
   .lite-subbar .d-report-roster { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
   .lite-subbar .d-report-roster::-webkit-scrollbar { display: none; }
   .lite-app[data-active-tab="cockpit"] .lite-subbar .d-report-roster { display: none; }
   .lite-main-inner { padding: 8px 8px 16px; gap: 8px; }
-  .lite-seats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .lite-seat-tile { padding: 6px 8px; }
-  .lite-seat-top { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .lite-seat-top .d-report-seat { max-width: 100%; overflow: hidden; }
-  .lite-seat-top .d-report-seat-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; }
-  .lite-seat-tier { max-width: 100%; }
+  .lite-main-inner .d-unified-seats { padding: 7px 8px; gap: 6px; }
+  .lite-main-inner .d-unified-seats[data-layout="auto-4col"] .d-unified-seats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .lite-wave-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .lite-round-line { grid-template-columns: 34px 72px minmax(0, 1fr); }
   .lite-rpair { display: none; }

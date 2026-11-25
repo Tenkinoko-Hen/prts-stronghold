@@ -147,12 +147,18 @@ test('极端损坏缓存与非法输入在 restoreSession / restoreFavorites / m
 
   for (const raw of corruptedInputs) {
     const s = restoreSession(raw);
-    assert.ok(['ban', 'plans', 'guide', 'library'].includes(s.step));
+    assert.ok(['ban', 'plans', 'guide', 'report', 'library'].includes(s.step));
     assert.ok(Array.isArray(s.bans.bannedCovenants));
     assert.ok(Array.isArray(s.bans.bannedOperators));
     const f = restoreFavorites(raw);
     assert.ok(Array.isArray(f));
   }
+
+  const reportStepSession = restoreSession(JSON.stringify({ step: 'report', compId: null, bans: { bannedCovenants: ['炎'], bannedOperators: [] } }));
+  assert.equal(reportStepSession.step, 'report');
+  assert.deepEqual(reportStepSession.bans.bannedCovenants, ['炎']);
+  const switchedToReport = mobileReducer(emptySession(), { type: 'step', step: 'report' });
+  assert.equal(switchedToReport.step, 'report');
 
   let s = mobileReducer(emptySession(), { type: 'choose', id: META_COMPS[0].id });
   s = mobileReducer(s, { type: 'round', round: Number.NaN });

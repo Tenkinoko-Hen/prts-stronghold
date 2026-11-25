@@ -118,6 +118,19 @@
   background: rgba(34, 211, 238, 0.08);
   border-color: rgba(34, 211, 238, 0.6);
 }
+.mlite-full-brand .mlite-seat-card.is-self {
+  background: rgba(255, 230, 0, 0.08);
+  border-color: rgba(255, 230, 0, 0.6);
+}
+.mlite-full-brand .mlite-me-tag,
+.mlite-full-brand .mlite-seg button.is-active {
+  background: #ffe600;
+  color: #0b0d11;
+}
+.mlite-full-brand .mlite-stepper button,
+.mlite-full-brand .mlite-panel-head {
+  color: #ffe600;
+}
 .mlite-seat-card.is-escaped {
   background: rgba(255, 77, 79, 0.09);
   border-color: rgba(255, 77, 79, 0.58);

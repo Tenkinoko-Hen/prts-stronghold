@@ -1,6 +1,6 @@
 // 青逝痕 Tenkinoko 制作
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Crosshair, RotateCcw, ShieldBan, Star, Wifi, X } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Crosshair, RotateCcw, ShieldBan, Star, Wifi, X } from 'lucide-react';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATORS, META_COMPS } from '../data/strongholdData';
 import { getRecommendedPaceForRound, rankCompsByBanState } from '../utils/tacticalLogic';
 import { MOBILE_FAVORITES_KEY, MOBILE_SESSION_KEY, mobileReducer, restoreFavorites, restoreSession, toggleFavoriteId } from './mobileSession';
@@ -8,6 +8,7 @@ import { MobileReference } from './MobileReference';
 import { CovenantScanner, useCovenantScanner } from './CovenantScanner';
 import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
+import MatchReport from './MatchReport';
 import { isSecondScreenActive, MobileLanPanel, useMobileLanSync } from './MobileLanPanel';
 import { MobileCaptureToggle, useMobileCaptureSync } from './MobileCapturePanel';
 import { MobileSecondScreen } from './MobileSecondScreen';
@@ -16,6 +17,7 @@ import { StrategyBadge } from '../components/StrategyBadge';
 import { OperatorAvatar } from '../components/OperatorAvatar';
 import { summarizeBlockedReasons } from '../components/guidePresentation';
 import './mobile.css';
+import './telemetryMobile.css';
 
 export default function MobileApp() {
   const [session, dispatch] = useReducer(mobileReducer, null, () => {
@@ -33,6 +35,8 @@ export default function MobileApp() {
   const [help, setHelp] = useState(false);
   const [lanModal, setLanModal] = useState(false);
   const [correcting, setCorrecting] = useState(false);
+  const [reportCum, setReportCum] = useState(true);
+  const [reportRound, setReportRound] = useState(1);
   const overlay = new URLSearchParams(window.location.search).get('overlay') === '1';
   const scrollRef = useRef<HTMLElement>(null);
   const roundSyncProgress = useRef<RoundSyncProgress>({ id: '', handled: '', synchronized: false, pending: null });
@@ -168,7 +172,7 @@ export default function MobileApp() {
     );
   }
   return <div className={`mobile-app ${overlay ? 'is-overlay' : ''}${guiding ? ' is-guiding' : ''}`}>
-    {!guiding && <header className="m-workbar"><strong>{session.step === 'ban' ? '识别与推荐' : session.step === 'plans' ? '选择方案' : '随行资料库'}</strong>
+    {!guiding && <header className="m-workbar"><strong>{session.step === 'ban' ? '识别与推荐' : session.step === 'plans' ? '选择方案' : session.step === 'report' ? '局内战报与导出' : '随行资料库'}</strong>
       {overlay && lanSync.supported && <button className={`m-icon-button m-lan-trigger${lanSync.lan?.status === 'connected' ? ' is-connected' : ''}`} aria-label="无线副屏配对" title="无线副屏配对" onClick={() => setLanModal(true)}><Wifi size={16} /></button>}
       <button className="m-icon-button" aria-label="开始新局" title="开始新局" onClick={() => setResetPrompt(true)}><RotateCcw size={16} /></button><button className="m-icon-button" aria-label="使用帮助" onClick={() => setHelp(true)}><CircleHelp size={17} /></button>
     </header>}
@@ -298,11 +302,152 @@ export default function MobileApp() {
           onOpenImage={openImage}
         />
       </>}
+      {session.step === 'report' && (() => {
+        const cap = captureSync.capture;
+        const capRound = Math.max(1, Math.min(15, cap?.round || round || 1));
+        const capRounds = cap?.rounds ?? [];
+        const effRound = reportCum ? 0 : Math.max(1, Math.min(capRound, reportRound));
+        const baseSeats = cap?.seats ?? [];
+        const dispSeats = reportCum || baseSeats.length === 0
+          ? baseSeats
+          : baseSeats.map(s => {
+              const cell = capRounds.find(r => r.round === effRound)?.seats.find(c => c.seat === s.seat);
+              return {
+                ...s,
+                leaked: cell?.leaked ?? 0,
+                assisted: cell?.assisted ?? 0,
+                covered: cell?.covered ?? 0,
+                escaped: cell?.escaped ?? 0,
+              };
+            });
+        const maxM = Math.max(1, ...dispSeats.map(s => Math.max(s.leaked, s.assisted)));
+        const curRec = capRounds.find(r => r.round === effRound);
+        const totLeak = reportCum ? (cap?.leak?.cumLeaks ?? cap?.leak?.totalLeaks ?? 0) : (curRec?.totalLeaks ?? 0);
+        const totAssist = reportCum ? (cap?.leak?.cumAssisted ?? cap?.leak?.assistKills ?? 0) : (curRec?.totalAssisted ?? 0);
+        const totEsc = reportCum ? (cap?.leak?.cumEscaped ?? cap?.leak?.uncoveredLeaks ?? 0) : (curRec?.totalEscaped ?? 0);
+        return (
+          <div className="mlite-full-brand" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <MobileCaptureToggle
+              capture={cap}
+              supported={captureSync.supported}
+              onStart={captureSync.start}
+              onStop={captureSync.stop}
+              onRestart={captureSync.restart}
+            />
+            {dispSeats.length > 0 && (
+              <>
+                <div className="mlite-scope-bar">
+                  <div className="mlite-scope-left">
+                    <div className="mlite-seg" role="group" aria-label="统计范围">
+                      <button type="button" className={reportCum ? 'is-active' : ''} onClick={() => setReportCum(true)}>累计</button>
+                      <button type="button" className={!reportCum ? 'is-active-round' : ''} onClick={() => { setReportCum(false); setReportRound(capRound); }}>单回合</button>
+                    </div>
+                    <div className="mlite-stepper">
+                      <button type="button" aria-label="上一回合" onClick={() => { if (reportCum) { setReportCum(false); setReportRound(capRound); } else setReportRound(p => Math.max(1, p - 1)); }}><ChevronLeft size={12} /></button>
+                      <span>{reportCum ? `R1-${String(capRound).padStart(2, '0')}` : `R${String(effRound).padStart(2, '0')}`}</span>
+                      <button type="button" aria-label="下一回合" onClick={() => { if (reportCum) { setReportCum(false); setReportRound(capRound); } else setReportRound(p => Math.min(capRound, p + 1)); }}><ChevronRight size={12} /></button>
+                    </div>
+                  </div>
+                  <div className="mlite-top-pills">
+                    <span className={`mlite-pill${totLeak > 0 ? ' is-leak' : ''}`}>漏 {totLeak}</span>
+                    <span className={`mlite-pill${totAssist > 0 ? ' is-assist' : ''}`}>兜 {totAssist}</span>
+                    <span className={`mlite-pill${totEsc > 0 ? ' is-escape' : ''}`}>{totEsc > 0 ? `逃 ${totEsc}` : '零逃'}</span>
+                  </div>
+                </div>
+                <section className="mlite-seat-grid" aria-label="4人实时兜漏与盟约态势">
+                  {dispSeats.map(s => {
+                    const aPct = (s.assisted / maxM) * 100;
+                    const cPct = (s.covered / maxM) * 100;
+                    const ePct = (s.escaped / maxM) * 100;
+                    const visibleBonds = (s.bonds ?? []).filter(b => b.active || b.count >= 2).slice(0, 4);
+                    return (
+                      <div key={s.seat} className={`mlite-seat-card${s.isSelf ? ' is-self' : ''}${s.escaped > 0 ? ' is-escaped' : ''}`}>
+                        <div className="mlite-seat-top">
+                          <span className="mlite-seat-name">
+                            {s.isSelf && <b className="mlite-me-tag">我</b>}
+                            {s.name}
+                          </span>
+                          <span className="mlite-hp-tier">
+                            <b style={{ color: s.hp >= 0 && s.hp <= 5 ? '#ff7875' : '#34d399' }}>♥{s.hp >= 0 ? s.hp : '—'}</b>
+                            {s.shopLevel > 0 && <span className="mlite-tier-badge">{s.shopLevel}本</span>}
+                          </span>
+                        </div>
+                        {visibleBonds.length > 0 && (
+                          <div className="mlite-bonds-row">
+                            {visibleBonds.map(b => (
+                              <span key={b.name} className={`mlite-bond-chip${b.active ? ' is-active' : ''}`}>{b.name}{b.count}</span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="mlite-track-row">
+                          <span style={{ color: s.assisted > 0 ? '#00e5ff' : '#64748b' }}>兜</span>
+                          <div className="mlite-track">{aPct > 0 && <span style={{ width: `${aPct}%`, background: '#00e5ff' }} />}</div>
+                          <span className="mlite-track-num" style={{ color: s.assisted > 0 ? '#67e8f9' : '#475569' }}>{s.assisted > 0 ? `+${s.assisted}` : '0'}</span>
+                        </div>
+                        <div className="mlite-track-row">
+                          <span style={{ color: s.escaped > 0 ? '#ff6b6b' : s.leaked > 0 ? '#fbbf24' : '#64748b' }}>漏</span>
+                          <div className="mlite-track">
+                            {cPct > 0 && <span style={{ width: `${cPct}%`, background: '#fb923c' }} />}
+                            {ePct > 0 && <span style={{ width: `${ePct}%`, background: '#ff4d4f' }} />}
+                          </div>
+                          <span className="mlite-track-num">
+                            {s.leaked === 0 ? <span style={{ color: '#475569' }}>0</span> : s.escaped === 0 ? <span style={{ color: '#fbbf24' }}>{s.leaked}</span> : <><span style={{ color: '#fbbf24' }}>{s.leaked}</span><span style={{ color: '#ff8080', marginLeft: 2 }}>逃{s.escaped}</span></>}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </section>
+                {capRounds.length > 0 && (
+                  <section className="mlite-panel" aria-label="本局回合漏兜矩阵">
+                    <div className="mlite-panel-head">
+                      <span>// 本局 R01–R{String(capRound).padStart(2, '0')} 回合漏兜矩阵</span>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>漏{cap?.leak?.cumLeaks ?? 0} · 兜{cap?.leak?.cumAssisted ?? 0} · 逃{cap?.leak?.cumEscaped ?? 0}</span>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="mlite-matrix-table">
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left' }}>回合</th>
+                            {baseSeats.map(s => (
+                              <th key={s.seat} style={{ color: s.isSelf ? '#ffe600' : undefined }}>{s.isSelf ? '我·' : ''}{s.name.slice(0, 5)}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...capRounds].reverse().map(r => (
+                            <tr key={r.round}>
+                              <td style={{ textAlign: 'left', fontWeight: 800, color: r.totalEscaped > 0 ? '#ff8080' : '#cbd5e1' }}>R{String(r.round).padStart(2, '0')}</td>
+                              {r.seats.map(cell => (
+                                <td key={cell.seat}>
+                                  {cell.assisted === 0 && cell.leaked === 0 ? (
+                                    <span style={{ color: '#475569' }}>0</span>
+                                  ) : (
+                                    <span style={{ display: 'inline-flex', gap: 4, justifyContent: 'center' }}>
+                                      {cell.assisted > 0 && <b style={{ color: '#67e8f9' }}>兜+{cell.assisted}</b>}
+                                      {cell.leaked > 0 && <b style={{ color: cell.escaped > 0 ? '#ff8080' : '#fbbf24' }}>漏{cell.leaked}{cell.escaped > 0 ? `(逃${cell.escaped})` : ''}</b>}
+                                    </span>
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+            <MatchReport />
+          </div>
+        );
+      })()}
       {session.step === 'library' && <MobileReference onOpenImage={openImage} />}
     </main>
     {guiding && <div className="m-round-controls"><button className="m-secondary chamfer-box" aria-label="上一回合" disabled={round <= 1} onClick={() => manualRound(round - 1)}><ArrowLeft size={17} /><span>上一回合</span></button><button className="m-primary chamfer-box" aria-label="下一回合" disabled={round >= 15} onClick={() => manualRound(round + 1)}><span>{round === 15 ? '已到终盘' : '下一回合'}</span><ArrowRight size={17} /></button></div>}
     <nav className="m-bottom-nav" aria-label="手机导航">{([
-      ['ban', '识别', ShieldBan], ['plans', '方案', Crosshair], ['guide', '跟进', Check], ['library', '资料', BookOpen],
+      ['ban', '识别', ShieldBan], ['plans', '方案', Crosshair], ['guide', '跟进', Check], ['report', '战报', Activity], ['library', '资料', BookOpen],
     ] as const).map(([step, title, Icon]) => (
       <button
         key={step}

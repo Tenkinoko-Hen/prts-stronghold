@@ -1,5 +1,6 @@
 // 青逝痕 Tenkinoko 制作
 import React from 'react';
+import { PRODUCT_BRAND } from '../brand/productBrand';
 
 interface Props {
   children: React.ReactNode;
@@ -80,6 +81,11 @@ export class AppErrorBoundary extends React.Component<Props, State> {
     const { error } = this.state;
     if (!error) return this.props.children;
 
+    const isLite = PRODUCT_BRAND.mode === 'telemetry';
+    const brandAccent = isLite ? '#22d3ee' : '#ffe600';
+    const brandFg = isLite ? '#061318' : '#0b0d11';
+    const guardLabel = `${PRODUCT_BRAND.shortName} 守护`;
+
     if (this.props.compact) {
       return (
         <div
@@ -90,6 +96,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
             padding: '8px 10px',
             background: 'rgba(18, 12, 14, 0.96)',
             border: '1px solid #ff4d4f',
+            borderLeft: `3px solid ${brandAccent}`,
             color: '#f1f5f9',
             fontFamily: 'system-ui, "Microsoft YaHei UI", sans-serif',
             fontSize: '11px',
@@ -108,7 +115,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
             <button
               type="button"
               onClick={this.handleRetry}
-              style={{ padding: '2px 8px', background: '#ffe600', color: '#0b0d11', border: 'none', borderRadius: '2px', fontWeight: 700, fontSize: '10.5px', cursor: 'pointer' }}
+              style={{ padding: '2px 8px', background: brandAccent, color: brandFg, border: 'none', borderRadius: '2px', fontWeight: 700, fontSize: '10.5px', cursor: 'pointer' }}
             >
               立即恢复
             </button>
@@ -149,19 +156,19 @@ export class AppErrorBoundary extends React.Component<Props, State> {
             width: '100%',
             background: '#111620',
             border: '1px solid #2b3648',
-            borderLeft: '3px solid #ffe600',
+            borderLeft: `3px solid ${brandAccent}`,
             borderRadius: '4px',
             padding: '16px 18px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <span style={{ background: '#ffe600', color: '#0b0d11', fontWeight: 800, fontSize: '11px', padding: '1px 6px', borderRadius: '2px' }}>
-              PRTS 守护
+            <span style={{ background: brandAccent, color: brandFg, fontWeight: 800, fontSize: '11px', padding: '1px 6px', borderRadius: '2px' }}>
+              {guardLabel}
             </span>
             <strong style={{ fontSize: '15px' }}>界面遇到异常已自动拦截</strong>
           </div>
           <p style={{ fontSize: '12.5px', color: '#cbd5e1', lineHeight: 1.6, margin: '0 0 10px' }}>
-            《明日方舟》游戏本体与网络连接<strong>完全不受影响</strong>。你可以点击下方按钮立即恢复界面；若因旧版缓存数据不兼容导致重复报错，可一键清理缓存重载（收藏阵容会保留）。
+            《明日方舟》游戏本体与网络连接<strong>完全不受影响</strong>。你可以点击下方按钮立即恢复界面；若因旧版缓存数据不兼容导致重复报错，可一键清理缓存重载{isLite ? '' : '（收藏阵容会保留）'}。
           </p>
           <div
             style={{
@@ -182,7 +189,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
             <button
               type="button"
               onClick={this.handleRetry}
-              style={{ padding: '7px 14px', background: '#ffe600', color: '#0b0d11', border: 'none', borderRadius: '2px', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer' }}
+              style={{ padding: '7px 14px', background: brandAccent, color: brandFg, border: 'none', borderRadius: '2px', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer' }}
             >
               立即恢复界面
             </button>

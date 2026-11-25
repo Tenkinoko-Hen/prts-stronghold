@@ -346,8 +346,8 @@ test('mumu-layout computes outside-right, inside-right 28%, screen-right fallbac
     mumuWindow: { x: 100, y: 40, width: 1280, height: 720 },
     workArea,
   });
-  assert.equal(hud.width, 440);
-  assert.equal(hud.height, 176);
+  assert.equal(hud.width, 460);
+  assert.equal(hud.height, 188);
   assert.ok(hud.x >= 100 && hud.x + hud.width <= 1920);
   assert.ok(hud.y >= 40 && hud.y + hud.height <= 1040);
 

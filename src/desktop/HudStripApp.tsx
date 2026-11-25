@@ -1,5 +1,5 @@
 // 青逝痕 Tenkinoko 制作
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Lock, PanelRightOpen, Skull, Unlock, X } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
@@ -21,6 +21,7 @@ import { seatDisplayText } from './BattleReportPanels';
 import { EnemyAvatar } from './BattleReportSpawns';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { formatTelemetryRate, formatTelemetryTotal, isSoloMode, type DeckPoolOperator } from './combatTelemetry';
+import { visibleSeatCovenants, type SeatCovenantStatus } from './covenantBonds';
 import { computeOperatorOdds } from './deckPoolMath';
 import { PRTS_CHART } from './prtsChartKit';
 import type { HudOverlayState } from './battleReports';
@@ -53,6 +54,7 @@ interface SeatLeakCard {
   assisted: number;
   covered: number;
   escaped: number;
+  bonds: { shown: SeatCovenantStatus[]; hiddenCount: number };
 }
 
 interface BossTeamRow {
@@ -129,6 +131,10 @@ export default function HudStripApp({
   previewState?: HudOverlayState;
   initialPage?: HudNormalPage;
 }) {
+  const isLiteBrand = PRODUCT_BRAND.mode === 'telemetry';
+  const brandAccent = isLiteBrand ? '#22d3ee' : '#ffe600';
+  const brandFg = isLiteBrand ? '#061318' : '#0b0d11';
+
   const hudApi = previewState ? undefined : window.electronAPI?.hud;
   const [state, setState] = useState<HudOverlayState>(
     previewState ?? {
@@ -364,7 +370,7 @@ export default function HudStripApp({
     if (saved.chars.length > 0) {
       const idSet = new Set(saved.chars);
       const matched = pool.operators.filter(o => idSet.has(o.charId));
-      if (matched.length > 0) return { trackedOps: matched.slice(0, 6), trackedSource: 'wishlist' };
+      if (matched.length > 0) return { trackedOps: matched.slice(0, 4), trackedSource: 'wishlist' };
     }
     const suggested = state.guide.suggestedOperators ?? [];
     if (suggested.length > 0) {
@@ -380,7 +386,7 @@ export default function HudStripApp({
           matched.push(found);
         }
       }
-      if (matched.length > 0) return { trackedOps: matched.slice(0, 6), trackedSource: 'comp' };
+      if (matched.length > 0) return { trackedOps: matched.slice(0, 4), trackedSource: 'comp' };
     }
     const ownDeployed = selfLineup?.deployed ?? [];
     if (ownDeployed.length > 0) {
@@ -396,7 +402,7 @@ export default function HudStripApp({
           boardMatched.push(hit);
         }
       }
-      if (boardMatched.length > 0) return { trackedOps: boardMatched.slice(0, 5), trackedSource: 'comp' };
+      if (boardMatched.length > 0) return { trackedOps: boardMatched.slice(0, 4), trackedSource: 'comp' };
     }
     const ranked = [...pool.operators].sort((a, b) => {
       const aShop = selfSeat !== null && a.inShopSeats.includes(selfSeat) ? 1 : 0;
@@ -412,12 +418,12 @@ export default function HudStripApp({
     return { trackedOps: ranked.slice(0, 4), trackedSource: 'hot' };
   }, [liveShopLevel, matchKey, parsed?.deckPool, previewState, selfLineup?.deployed, selfSeat, state.guide.suggestedOperators, storageTick]);
 
-  // 4. Intel Tab: Next/Current Wave Enemy Icons + Full All-Waves Schedule (R01-R15)
-  const { waveSpawns, spawnRound, spawnIsNext, allWaveRounds } = useMemo(() => {
+  // 4. Intel Tab: Dual-Wave Same-Row Forecast (下波 R+1 | 预 R+2) + Full All-Waves Schedule (R01-R15)
+  const { nextTwoWaves, spawnRound, spawnIsNext, allWaveRounds } = useMemo(() => {
     type WaveItem = { id: string; name: string; count: number | null; boss?: true };
     if (!parsed || parsed.preview.length === 0) {
       return {
-        waveSpawns: [] as WaveItem[],
+        nextTwoWaves: [] as Array<{ round: number; enemies: WaveItem[] }>,
         spawnRound: roundNo,
         spawnIsNext: false,
         allWaveRounds: [] as Array<{ round: number; enemies: WaveItem[] }>,
@@ -447,16 +453,17 @@ export default function HudStripApp({
       : byRound.has(roundNo)
         ? roundNo
         : (allWaveRounds.find(w => w.round >= roundNo)?.round ?? allWaveRounds[0]?.round ?? roundNo);
-    const chosenEnemies = allWaveRounds.find(w => w.round === chosenRound)?.enemies ?? [];
+    const upcoming = allWaveRounds.filter(w => w.round >= chosenRound).slice(0, 2);
+    const nextTwoWaves = upcoming.length > 0 ? upcoming : allWaveRounds.slice(-2);
     return {
-      waveSpawns: chosenEnemies.slice(0, 8),
+      nextTwoWaves,
       spawnRound: chosenRound,
       spawnIsNext: chosenRound > roundNo,
       allWaveRounds,
     };
   }, [activeRound?.phase, parsed, roundNo]);
 
-  // 5. Leak/Assist Tab (漏兜): 4-player chart + leaked enemy real icons (Cumulative OR Single Round)
+  // 5. Leak/Assist Tab (漏兜): 2×2 wide cards + active covenants + auto-collapsed zero-leak footer
   const leakData = useMemo(() => {
     if (!parsed) {
       return { cards: [] as SeatLeakCard[], enemies: [] as EnemyOutcome[], totalLeaks: 0, totalAssisted: 0, totalEscaped: 0 };
@@ -500,6 +507,7 @@ export default function HudStripApp({
       assisted: assistedMap[seat],
       covered: coveredMap[seat],
       escaped: escapedMap[seat],
+      bonds: visibleSeatCovenants(parsed.lineups[seat], parsed.deckPool, 3),
     }));
 
     return {
@@ -528,12 +536,12 @@ export default function HudStripApp({
       ? 'team'
       : dpsSub;
 
-  // Unified color theme matching mobile v3.1 (Yellow = Intel, Cyan = Cumulative Leak, Orange = Single/Escaped Leak, Crimson = Boss DPS)
+  // Brand-aligned theme (Full: #ffe600 Industrial Yellow, Lite: #22d3ee Electric Cyan)
   const themeAccent = effectiveTab === 'dps'
     ? '#ff4d4f'
     : effectiveTab === 'leak'
-      ? (!leakCumulative || leakData.totalEscaped > 0 ? '#ff7a00' : '#00e5ff')
-      : '#ffe600';
+      ? (!leakCumulative || leakData.totalEscaped > 0 ? '#ff7a00' : (isLiteBrand ? '#22d3ee' : '#00e5ff'))
+      : brandAccent;
   const shellBg = effectiveTab === 'dps'
     ? (state.locked ? 'rgba(24, 10, 13, 0.84)' : 'rgba(20, 10, 14, 0.96)')
     : effectiveTab === 'leak' && (!leakCumulative || leakData.totalEscaped > 0)
@@ -543,7 +551,7 @@ export default function HudStripApp({
   const maxOpDamage = Math.max(1, ...opRows.map(o => o.damage));
   const maxTeamDamage = Math.max(1, ...bossTeamData.rows.map(r => r.damage));
   const emptyAlertCount = parsed?.deckPool ? trackedOps.filter(o => o.remaining === 0).length : 0;
-  const fullGuideText = PRODUCT_BRAND.mode === 'full' && state.guide.paceTip ? state.guide.paceTip : '';
+  const fullGuideText = !isLiteBrand && state.guide.paceTip ? state.guide.paceTip : '';
 
   const maxSelectableRound = Math.max(1, Math.min(15, parsed?.current || parsed?.rounds.at(-1)?.number || roundNo || 15));
   const stepLeakRound = (delta: number) => {
@@ -574,8 +582,8 @@ export default function HudStripApp({
   return (
     <div
       style={{
-        width: previewState ? '440px' : '100vw',
-        height: previewState ? '176px' : '100vh',
+        width: previewState ? '460px' : '100vw',
+        height: previewState ? '188px' : '100vh',
         boxSizing: 'border-box',
         padding: '3px 4px',
         background: 'transparent',
@@ -615,7 +623,7 @@ export default function HudStripApp({
             style={{
               padding: '0 5px',
               background: themeAccent,
-              color: effectiveTab === 'dps' ? '#ffffff' : '#0b0d11',
+              color: effectiveTab === 'dps' ? '#ffffff' : brandFg,
               fontFamily: 'var(--font-mono)',
               fontWeight: 800,
               fontSize: '10px',
@@ -650,8 +658,8 @@ export default function HudStripApp({
               } as React.CSSProperties}
             >
               {([
-                ['intel', '情报', '#ffe600', '#0b0d11'],
-                ...(!soloMode ? [['leak', currentRoundLeakCount > 0 ? `漏兜·${currentRoundLeakCount}` : '漏兜', currentRoundLeakCount > 0 ? '#ff7a00' : '#00e5ff', '#0b0d11'] as const] : []),
+                ['intel', '情报', brandAccent, brandFg],
+                ...(!soloMode ? [['leak', currentRoundLeakCount > 0 ? `漏兜·${currentRoundLeakCount}` : '漏兜', currentRoundLeakCount > 0 ? '#ff7a00' : (isLiteBrand ? '#22d3ee' : '#00e5ff'), '#0b0d11'] as const] : []),
                 ...(isBossContext ? [['dps', 'DPS', '#ff4d4f', '#ffffff'] as const] : []),
               ] as ReadonlyArray<readonly [HudTab, string, string, string]>).map(([id, label, activeBg, activeFg]) => {
                 const active = effectiveTab === id;
@@ -691,21 +699,21 @@ export default function HudStripApp({
                 <button
                   type="button"
                   onClick={() => void hudApi?.expandDrawer?.()}
-                  title="展开右侧 MuMu 战术抽屉"
+                  title={isLiteBrand ? '展开右侧 MuMu 战报窄栏' : '展开右侧 MuMu 战术抽屉'}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '2px',
                     padding: '1px 4px',
                     fontSize: '9.5px',
-                    color: '#00e5ff',
-                    border: '1px solid rgba(0,229,255,0.45)',
-                    background: 'rgba(0,229,255,0.12)',
+                    color: '#22d3ee',
+                    border: '1px solid rgba(34,211,238,0.5)',
+                    background: 'rgba(34,211,238,0.12)',
                     borderRadius: '2px',
                     cursor: 'pointer',
                   }}
                 >
-                  <PanelRightOpen size={9.5} />抽屉
+                  <PanelRightOpen size={9.5} />{isLiteBrand ? '侧栏' : '抽屉'}
                 </button>
               )}
               <button
@@ -718,9 +726,9 @@ export default function HudStripApp({
                   gap: '2px',
                   padding: '1px 4px',
                   fontSize: '9.5px',
-                  color: '#ffe600',
-                  border: '1px solid rgba(255,230,0,0.45)',
-                  background: 'rgba(255,230,0,0.1)',
+                  color: brandAccent,
+                  border: `1px solid ${isLiteBrand ? 'rgba(34,211,238,0.45)' : 'rgba(255,230,0,0.45)'}`,
+                  background: isLiteBrand ? 'rgba(34,211,238,0.10)' : 'rgba(255,230,0,0.10)',
                   borderRadius: '2px',
                   cursor: 'pointer',
                 }}
@@ -761,12 +769,11 @@ export default function HudStripApp({
           {!parsed ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', color: '#94a3b8', fontSize: '11px', gap: '5px' }}>
               <Unlock size={11} />
-              等待对局实时信号 · 自动同步牌池、出怪图标、4 人漏兜与 Boss DPS
+              等待对局实时信号 · 自动同步牌池、双波出怪、4 人漏兜盟约与 Boss DPS
             </div>
           ) : effectiveTab === 'dps' ? (
             /* ===== TAB 3: Boss MMO Damage Meter & Live DPS ([4人榜 | 干员DPS]) ===== */
             <div style={{ flex: '1 0 auto', padding: '4px 7px 5px', display: 'flex', flexDirection: 'column', gap: '3.5px' }}>
-              {/* Boss HP Bar + [4人榜 | 干员DPS] Switch */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minHeight: '20px' }}>
                 {bossTeamData.bossEnemyId && <EnemyAvatar id={bossTeamData.bossEnemyId} size={18} />}
                 <div
@@ -852,7 +859,6 @@ export default function HudStripApp({
                 )}
               </div>
 
-              {/* MMO Horizontal Ranking Bars */}
               {effectiveDpsSub === 'team' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   {(() => {
@@ -860,7 +866,9 @@ export default function HudStripApp({
                     return bossTeamData.rows.map(row => {
                       const pct = row.damage > 0 ? Math.max(4, (row.damage / maxTeamDamage) * 100) : 0;
                       const barBg = row.isSelf
-                        ? 'linear-gradient(90deg, rgba(138, 115, 8, 0.88), rgba(212, 177, 6, 0.78))'
+                        ? (isLiteBrand
+                          ? 'linear-gradient(90deg, rgba(14, 116, 144, 0.88), rgba(34, 211, 238, 0.72))'
+                          : 'linear-gradient(90deg, rgba(138, 115, 8, 0.88), rgba(212, 177, 6, 0.78))')
                         : peerBarPalettes[Math.min(peerIdx++, peerBarPalettes.length - 1)];
                       return (
                         <div
@@ -869,7 +877,7 @@ export default function HudStripApp({
                             position: 'relative',
                             height: '22px',
                             background: '#11161f',
-                            border: `1px solid ${row.isSelf ? 'rgba(255, 230, 0, 0.62)' : '#232d3d'}`,
+                            border: `1px solid ${row.isSelf ? `${brandAccent}99` : '#232d3d'}`,
                             borderRadius: '2px',
                             overflow: 'hidden',
                             display: 'flex',
@@ -882,11 +890,11 @@ export default function HudStripApp({
                           {pct > 0 && (
                             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: barBg }} />
                           )}
-                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 800, color: row.rank === 1 ? '#ffe600' : row.isSelf ? '#fef08a' : '#94a3b8', minWidth: '18px' }}>
+                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 800, color: row.rank === 1 ? '#ffe600' : row.isSelf ? brandAccent : '#94a3b8', minWidth: '18px' }}>
                             #{row.rank}
                           </span>
                           {row.isSelf && (
-                            <small style={{ position: 'relative', padding: '0 3px', fontSize: '8.5px', fontWeight: 800, background: '#ffe600', color: '#0b0d11', borderRadius: '1px' }}>
+                            <small style={{ position: 'relative', padding: '0 3px', fontSize: '8.5px', fontWeight: 800, background: brandAccent, color: brandFg, borderRadius: '1px' }}>
                               我
                             </small>
                           )}
@@ -961,10 +969,9 @@ export default function HudStripApp({
               )}
             </div>
           ) : effectiveTab === 'leak' ? (
-            /* ===== TAB 2: 漏兜 4 人可视化柱图 + [累计 | 单回合] + 漏怪实机图标 ===== */
-            <div style={{ flex: '1 0 auto', padding: '4px 7px 5px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {/* Sub-bar: [累计 | 单回合] + ◀ R08 ▶ + Summary */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minHeight: '20px' }}>
+            /* ===== TAB 2: 漏兜 2×2 紧凑宽卡（含 4 人已激活盟约）+ 零漏自动折叠底栏 ===== */
+            <div style={{ flex: '1 0 auto', padding: '4px 7px 5px', display: 'flex', flexDirection: 'column', gap: '3.5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minHeight: '19px' }}>
                 <div
                   style={{
                     display: 'inline-flex',
@@ -981,12 +988,12 @@ export default function HudStripApp({
                     onClick={() => setLeakCumulative(true)}
                     style={{
                       padding: '1px 5px',
-                      fontSize: '9.5px',
+                      fontSize: '9px',
                       fontWeight: 700,
                       border: 'none',
                       borderRadius: '1px',
                       cursor: state.locked ? 'default' : 'pointer',
-                      background: leakCumulative ? '#00e5ff' : 'transparent',
+                      background: leakCumulative ? (isLiteBrand ? '#22d3ee' : '#00e5ff') : 'transparent',
                       color: leakCumulative ? '#0b0d11' : '#94a3b8',
                     }}
                   >
@@ -998,7 +1005,7 @@ export default function HudStripApp({
                     onClick={() => { setLeakCumulative(false); setLeakSelectedRound(roundNo); }}
                     style={{
                       padding: '1px 5px',
-                      fontSize: '9.5px',
+                      fontSize: '9px',
                       fontWeight: 700,
                       border: 'none',
                       borderRadius: '1px',
@@ -1017,25 +1024,25 @@ export default function HudStripApp({
                       type="button"
                       onClick={() => stepLeakRound(-1)}
                       title="上一回合"
-                      style={{ display: 'inline-grid', placeItems: 'center', width: '18px', height: '18px', padding: 0, background: '#161c26', border: '1px solid #2a3444', color: '#ffe600', borderRadius: '2px', cursor: 'pointer' }}
+                      style={{ display: 'inline-grid', placeItems: 'center', width: '17px', height: '17px', padding: 0, background: '#161c26', border: '1px solid #2a3444', color: brandAccent, borderRadius: '2px', cursor: 'pointer' }}
                     >
-                      <ChevronLeft size={11} />
+                      <ChevronLeft size={10.5} />
                     </button>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#e2e8f0', minWidth: '34px', textAlign: 'center' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9.5px', fontWeight: 700, color: '#e2e8f0', minWidth: '34px', textAlign: 'center' }}>
                       {leakCumulative ? `R1-${roundNo}` : `R${String(leakSelectedRound).padStart(2, '0')}`}
                     </span>
                     <button
                       type="button"
                       onClick={() => stepLeakRound(1)}
                       title="下一回合"
-                      style={{ display: 'inline-grid', placeItems: 'center', width: '18px', height: '18px', padding: 0, background: '#161c26', border: '1px solid #2a3444', color: '#ffe600', borderRadius: '2px', cursor: 'pointer' }}
+                      style={{ display: 'inline-grid', placeItems: 'center', width: '17px', height: '17px', padding: 0, background: '#161c26', border: '1px solid #2a3444', color: brandAccent, borderRadius: '2px', cursor: 'pointer' }}
                     >
-                      <ChevronRight size={11} />
+                      <ChevronRight size={10.5} />
                     </button>
                   </div>
                 )}
 
-                <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '9.5px', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
                   <span
                     style={{
                       padding: '1px 5px',
@@ -1072,8 +1079,8 @@ export default function HudStripApp({
                 </div>
               </div>
 
-              {/* 4-Column Equal-Width Player Dual-Track Bar Cards (兜 vs 漏) */}
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, leakData.cards.length)}, minmax(0, 1fr))`, gap: '4px' }}>
+              {/* 2×2 Wide Player Cards (닉네임 + ♥HP + 本数 + 实时盟约 + 双轨 兜/漏) */}
+              <div style={{ display: 'grid', gridTemplateColumns: soloMode ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '4px' }}>
                 {(() => {
                   const maxMetric = Math.max(1, ...leakData.cards.map(c => Math.max(c.leaked, c.assisted)));
                   return leakData.cards.map(card => {
@@ -1086,92 +1093,125 @@ export default function HudStripApp({
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: '3.5px',
-                          padding: '4px 5px',
+                          gap: '2.5px',
+                          padding: '3.5px 6px',
                           background: card.eliminated
                             ? 'rgba(18, 22, 30, 0.55)'
                             : card.isSelf
-                              ? 'rgba(255, 230, 0, 0.09)'
+                              ? (isLiteBrand ? 'rgba(34, 211, 238, 0.09)' : 'rgba(255, 230, 0, 0.09)')
                               : card.escaped > 0
                                 ? 'rgba(255, 77, 79, 0.11)'
                                 : '#131a24',
-                          border: `1px solid ${card.isSelf ? 'rgba(255, 230, 0, 0.52)' : card.escaped > 0 ? 'rgba(255, 77, 79, 0.5)' : '#263142'}`,
+                          border: `1px solid ${card.isSelf ? `${brandAccent}88` : card.escaped > 0 ? 'rgba(255, 77, 79, 0.5)' : '#263142'}`,
                           borderRadius: '2px',
                           opacity: card.eliminated ? 0.58 : 1,
                           fontVariantNumeric: 'tabular-nums',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
-                          {card.isSelf && (
-                            <small style={{ padding: '0 2.5px', fontSize: '8px', fontWeight: 800, background: '#ffe600', color: '#0b0d11', borderRadius: '1px', flexShrink: 0 }}>
-                              我
-                            </small>
-                          )}
-                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', fontWeight: card.isSelf ? 700 : 600, color: card.isSelf ? '#fff8b0' : '#e2e8f0' }}>
-                            {card.label}
-                          </span>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
-                          {card.eliminated ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#f87171', fontWeight: 700 }}>
-                              <Skull size={9} />R{card.elimRound}出局
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0, flex: 1 }}>
+                            {card.isSelf && (
+                              <small style={{ padding: '0 2.5px', fontSize: '8px', fontWeight: 800, background: brandAccent, color: brandFg, borderRadius: '1px', flexShrink: 0 }}>
+                                我
+                              </small>
+                            )}
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', fontWeight: card.isSelf ? 700 : 600, color: card.isSelf ? (isLiteBrand ? '#a5f3fc' : '#fff8b0') : '#e2e8f0' }}>
+                              {card.label}
                             </span>
-                          ) : (
-                            <>
-                              <b style={{ color: (card.hp ?? 99) <= 5 ? '#ff7875' : (card.hp ?? 0) >= 15 ? '#34d399' : '#cbd5e1' }}>
-                                ♥{card.hp ?? '—'}
-                              </b>
-                              <span style={{ color: '#38bdf8', fontWeight: 700 }}>{card.shopLevel ? `${card.shopLevel}本` : '—'}</span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Track 1: 兜 (Assist Kills) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '8.5px', fontWeight: 700 }}>
-                          <span style={{ color: card.assisted > 0 ? '#00e5ff' : '#64748b', flexShrink: 0 }}>兜</span>
-                          <div style={{ flex: 1, height: '5px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
-                            {assistPct > 0 && <span style={{ width: `${assistPct}%`, background: '#00e5ff' }} />}
                           </div>
-                          <span style={{ color: card.assisted > 0 ? '#67e8f9' : '#475569', flexShrink: 0, minWidth: '14px', textAlign: 'right' }}>
-                            {card.assisted > 0 ? `+${card.assisted}` : '0'}
-                          </span>
-                        </div>
-
-                        {/* Track 2: 漏 (Covered Amber + Escaped Red) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '8.5px', fontWeight: 700 }}>
-                          <span style={{ color: card.escaped > 0 ? '#ff6b6b' : card.leaked > 0 ? '#fbbf24' : '#64748b', flexShrink: 0 }}>漏</span>
-                          <div style={{ flex: 1, height: '5px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
-                            {coveredPct > 0 && <span style={{ width: `${coveredPct}%`, background: '#fb923c' }} />}
-                            {escapedPct > 0 && <span style={{ width: `${escapedPct}%`, background: '#ff4d4f' }} />}
-                          </div>
-                          <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            {card.leaked === 0 ? (
-                              <span style={{ color: '#475569' }}>0</span>
-                            ) : card.escaped === 0 ? (
-                              <span style={{ color: '#fbbf24' }}>{card.leaked}</span>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '9px' }}>
+                            {card.eliminated ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#f87171', fontWeight: 700 }}>
+                                <Skull size={9} />R{card.elimRound}出局
+                              </span>
                             ) : (
                               <>
-                                <span style={{ color: '#fbbf24' }}>{card.leaked}</span>
-                                <span style={{ color: '#ff6b6b', marginLeft: '2px' }}>逃{card.escaped}</span>
+                                <b style={{ color: (card.hp ?? 99) <= 5 ? '#ff7875' : (card.hp ?? 0) >= 15 ? '#34d399' : '#cbd5e1' }}>
+                                  ♥{card.hp ?? '—'}
+                                </b>
+                                {card.shopLevel && (
+                                  <span style={{ padding: '0 3px', borderRadius: '1px', background: 'rgba(56,189,248,0.14)', border: '1px solid rgba(56,189,248,0.4)', color: '#7dd3fc', fontWeight: 700, fontSize: '8.5px' }}>
+                                    {card.shopLevel}本
+                                  </span>
+                                )}
                               </>
                             )}
-                          </span>
+                          </div>
                         </div>
+
+                        {!card.eliminated && card.bonds.shown.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', overflow: 'hidden' }}>
+                            {card.bonds.shown.map(b => (
+                              <span
+                                key={b.name}
+                                style={{
+                                  padding: '0 3.5px',
+                                  fontSize: '8px',
+                                  fontWeight: 700,
+                                  fontFamily: 'var(--font-mono)',
+                                  borderRadius: '1px',
+                                  whiteSpace: 'nowrap',
+                                  background: b.active ? 'rgba(34, 211, 238, 0.15)' : 'rgba(148, 163, 184, 0.12)',
+                                  border: `1px solid ${b.active ? 'rgba(34, 211, 238, 0.45)' : 'rgba(148, 163, 184, 0.28)'}`,
+                                  color: b.active ? '#67e8f9' : '#94a3b8',
+                                }}
+                              >
+                                {b.shortName}{b.count}
+                              </span>
+                            ))}
+                            {card.bonds.hiddenCount > 0 && (
+                              <span style={{ fontSize: '8px', color: '#64748b', fontFamily: 'var(--font-mono)' }}>+{card.bonds.hiddenCount}</span>
+                            )}
+                          </div>
+                        )}
+
+                        {!card.eliminated && (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '8.5px', fontWeight: 700 }}>
+                              <span style={{ color: card.assisted > 0 ? '#00e5ff' : '#64748b', flexShrink: 0 }}>兜</span>
+                              <div style={{ flex: 1, height: '4.5px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                                {assistPct > 0 && <span style={{ width: `${assistPct}%`, background: '#00e5ff' }} />}
+                              </div>
+                              <span style={{ color: card.assisted > 0 ? '#67e8f9' : '#475569', flexShrink: 0, minWidth: '16px', textAlign: 'right' }}>
+                                {card.assisted > 0 ? `+${card.assisted}` : '0'}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-mono)', fontSize: '8.5px', fontWeight: 700 }}>
+                              <span style={{ color: card.escaped > 0 ? '#ff6b6b' : card.leaked > 0 ? '#fbbf24' : '#64748b', flexShrink: 0 }}>漏</span>
+                              <div style={{ flex: 1, height: '4.5px', background: '#0b0f16', border: '1px solid #1f2a3a', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                                {coveredPct > 0 && <span style={{ width: `${coveredPct}%`, background: '#fb923c' }} />}
+                                {escapedPct > 0 && <span style={{ width: `${escapedPct}%`, background: '#ff4d4f' }} />}
+                              </div>
+                              <span style={{ flexShrink: 0, minWidth: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                {card.leaked === 0 ? (
+                                  <span style={{ color: '#475569' }}>0</span>
+                                ) : card.escaped === 0 ? (
+                                  <span style={{ color: '#fbbf24' }}>{card.leaked}</span>
+                                ) : (
+                                  <>
+                                    <span style={{ color: '#fbbf24' }}>{card.leaked}</span>
+                                    <span style={{ color: '#ff6b6b', marginLeft: '2px' }}>逃{card.escaped}</span>
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   });
                 })()}
               </div>
 
-              {/* Bottom Leaked Enemy Icons + Legend */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '2.5px 5px', background: 'rgba(255,255,255,0.04)', borderRadius: '2px', minHeight: '22px' }}>
-                <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#fb923c', flexShrink: 0 }}>
-                  {leakCumulative ? '累计高漏' : `R${String(leakSelectedRound).padStart(2, '0')} 漏怪`}
-                </span>
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
-                  {leakData.enemies.length > 0 ? (
-                    leakData.enemies.slice(0, 4).map(e => (
+              {/* Auto-Collapsed Bottom Leaked Enemy Icons (hidden when 0 leaked enemies!) */}
+              {leakData.enemies.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '2px 5px', background: 'rgba(255,77,79,0.08)', border: '1px solid rgba(255,77,79,0.28)', borderRadius: '2px', minHeight: '20px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700, color: '#fb923c', flexShrink: 0 }}>
+                    {leakCumulative ? `累计高漏(${leakData.totalLeaks})` : `R${String(leakSelectedRound).padStart(2, '0')}漏怪`}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
+                    {leakData.enemies.slice(0, 5).map(e => (
                       <span
                         key={e.id}
                         style={{
@@ -1182,50 +1222,47 @@ export default function HudStripApp({
                           background: '#221215',
                           border: '1px solid rgba(255, 77, 79, 0.45)',
                           borderRadius: '2px',
-                          fontSize: '9.5px',
+                          fontSize: '9px',
                           color: '#e2e8f0',
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        <EnemyAvatar id={e.id} size={14} />
+                        <EnemyAvatar id={e.id} size={13} />
                         <span>{e.name.length > 5 ? e.name.slice(0, 5) : e.name}</span>
-                        <b style={{ fontFamily: 'var(--font-mono)', color: '#fca5a5', fontSize: '9px' }}>×{e.count}</b>
+                        <b style={{ fontFamily: 'var(--font-mono)', color: '#fca5a5', fontSize: '8.5px' }}>×{e.count}</b>
                       </span>
-                    ))
-                  ) : (
-                    <span style={{ color: '#6b7888', fontSize: '9.5px' }}>本段零漏怪记录</span>
-                  )}
+                    ))}
+                  </div>
                 </div>
-                <span style={{ flexShrink: 0, fontSize: '8.5px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                  <b style={{ color: '#00e5ff' }}>■</b>帮兜 <b style={{ color: '#fb923c' }}>■</b>已兜 <b style={{ color: '#ff4d4f' }}>■</b>逃逸
-                </span>
-              </div>
+              )}
             </div>
           ) : (
-            /* ===== TAB 1: 情报（PC 独有牌池余量概率 + 下波出怪实机图标 + Full 节奏提示）===== */
+            /* ===== TAB 1: 情报（心仪牌池 + 未来两波单行同屏预报 + Full 节奏提示）===== */
             <>
               {fullGuideText && (
                 <div
                   style={{
                     flex: 'none',
-                    padding: '3.5px 7px',
+                    padding: '3px 7px',
                     borderBottom: '1px solid rgba(45, 54, 68, 0.55)',
                     background: 'rgba(255, 230, 0, 0.05)',
-                    fontSize: '10.5px',
-                    lineHeight: 1.35,
+                    fontSize: '10px',
+                    lineHeight: 1.32,
                     color: '#e2e8f0',
-                    whiteSpace: 'normal',
-                    wordBreak: 'break-word',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                   }}
+                  title={fullGuideText}
                 >
                   {fullGuideText}
                 </div>
               )}
 
-              <div style={{ flex: '1 0 auto', padding: '4.5px 7px 5px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ flex: '1 0 auto', padding: '4px 7px 5px', display: 'flex', flexDirection: 'column', gap: '4.5px' }}>
                 {parsed.deckPool && trackedOps.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9px', color: '#7d8a9c' }}>
                       <span style={{ color: PRTS_CHART.blue, fontWeight: 700 }}>
                         {trackedSource === 'wishlist'
                           ? `// 心仪牌池 · ${liveShopLevel}本`
@@ -1237,7 +1274,7 @@ export default function HudStripApp({
                         {emptyAlertCount > 0 ? `池空告警 ${emptyAlertCount}` : `单刷 ${parsed.deckPool.shopSlots[liveShopLevel]?.char ?? 4} 格`}
                       </span>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '3.5px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '3px' }}>
                       {trackedOps.map(op => {
                         const odds = computeOperatorOdds(parsed.deckPool!, op, liveShopLevel);
                         const inSelfShop = selfSeat !== null && op.inShopSeats.includes(selfSeat);
@@ -1293,29 +1330,30 @@ export default function HudStripApp({
                   </div>
                 )}
 
-                {waveSpawns.length > 0 && (
+                {nextTwoWaves.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', color: '#7d8a9c' }}>
-                      <span style={{ color: '#00e5ff', fontWeight: 700 }}>
-                        {showAllWaves ? `// 全波次出怪总览 · ${allWaveRounds.length} 波` : `// R${spawnRound} ${spawnIsNext ? '下波出怪' : '本波出怪'}`}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9px', color: '#7d8a9c' }}>
+                      <span style={{ color: '#22d3ee', fontWeight: 700 }}>
+                        {showAllWaves
+                          ? `// 全波次出怪总览 · ${allWaveRounds.length} 波`
+                          : nextTwoWaves.length >= 2
+                            ? `// 未来两波出怪 · R${nextTwoWaves[0].round} + R${nextTwoWaves[1].round}`
+                            : `// R${spawnRound} ${spawnIsNext ? '下波出怪' : '本波出怪'}`}
                       </span>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', color: '#6b7888' }}>
-                          {showAllWaves ? `当前 R${roundNo}` : `${waveSpawns.length} 怪种`}
-                        </span>
                         {allWaveRounds.length > 1 && !state.locked && (
                           <button
                             type="button"
                             onClick={() => setShowAllWaves(v => !v)}
                             style={{
                               padding: '0 5px',
-                              fontSize: '9px',
+                              fontSize: '8.5px',
                               fontWeight: 700,
                               borderRadius: '2px',
                               cursor: 'pointer',
-                              border: '1px solid rgba(0, 229, 255, 0.55)',
-                              background: showAllWaves ? '#00e5ff' : 'rgba(0, 229, 255, 0.12)',
-                              color: showAllWaves ? '#0b0d11' : '#00e5ff',
+                              border: '1px solid rgba(34, 211, 238, 0.55)',
+                              background: showAllWaves ? '#22d3ee' : 'rgba(34, 211, 238, 0.12)',
+                              color: showAllWaves ? '#061318' : '#22d3ee',
                             }}
                           >
                             {showAllWaves ? '收起' : `完整(${allWaveRounds.length})`}
@@ -1323,6 +1361,7 @@ export default function HudStripApp({
                         )}
                       </div>
                     </div>
+
                     {showAllWaves ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                         {allWaveRounds.map(w => {
@@ -1339,7 +1378,7 @@ export default function HudStripApp({
                                 gap: '4px',
                                 padding: '2px 4px',
                                 background: isCur ? 'rgba(255,230,0,0.08)' : isNext ? 'rgba(0,229,255,0.08)' : isBossWave ? 'rgba(255,77,79,0.1)' : '#101620',
-                                borderLeft: `2px solid ${isBossWave ? '#ff4d4f' : isCur ? '#ffe600' : isNext ? '#00e5ff' : '#2a3547'}`,
+                                borderLeft: `2px solid ${isBossWave ? '#ff4d4f' : isCur ? brandAccent : isNext ? '#00e5ff' : '#2a3547'}`,
                                 opacity: isPast ? 0.55 : 1,
                               }}
                             >
@@ -1353,8 +1392,8 @@ export default function HudStripApp({
                                   fontFamily: 'var(--font-mono)',
                                   fontSize: '9px',
                                   fontWeight: 800,
-                                  background: isBossWave ? '#ff4d4f' : isCur ? '#ffe600' : isNext ? '#00e5ff' : '#1e293b',
-                                  color: (isCur || isNext) && !isBossWave ? '#0b0d11' : '#ffffff',
+                                  background: isBossWave ? '#ff4d4f' : isCur ? brandAccent : isNext ? '#00e5ff' : '#1e293b',
+                                  color: (isCur || isNext) && !isBossWave ? brandFg : '#ffffff',
                                 }}
                               >
                                 R{String(w.round).padStart(2, '0')}
@@ -1378,7 +1417,7 @@ export default function HudStripApp({
                                     <EnemyAvatar id={sp.id} size={14} />
                                     <span>{sp.name}</span>
                                     {sp.count !== null && (
-                                      <b style={{ fontFamily: 'var(--font-mono)', color: sp.boss ? '#fca5a5' : '#ffe600', fontSize: '8.5px' }}>
+                                      <b style={{ fontFamily: 'var(--font-mono)', color: sp.boss ? '#fca5a5' : brandAccent, fontSize: '8.5px' }}>
                                         ×{sp.count}
                                       </b>
                                     )}
@@ -1390,37 +1429,82 @@ export default function HudStripApp({
                         })}
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3.5px' }}>
-                        {waveSpawns.map(sp => (
-                          <span
-                            key={`${sp.id}-${sp.name}`}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3.5px',
-                              padding: '1.5px 5px 1.5px 2px',
-                              background: '#131822',
-                              border: `1px solid ${sp.boss ? 'rgba(255,230,0,0.55)' : '#242e3e'}`,
-                              borderRadius: '2px',
-                              fontSize: '9.5px',
-                              color: '#e2e8f0',
-                            }}
-                          >
-                            <EnemyAvatar id={sp.id} size={15} />
-                            <span>{sp.name}</span>
-                            {sp.count !== null && (
-                              <b style={{ fontFamily: 'var(--font-mono)', color: '#ffe600', fontSize: '9px' }}>
-                                ×{sp.count}
-                              </b>
-                            )}
-                          </span>
-                        ))}
+                      /* Single-row Dual-Wave Side-by-Side (下波 R+1 | 预 R+2) */
+                      <div style={{ display: 'grid', gridTemplateColumns: nextTwoWaves.length >= 2 ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: '4px' }}>
+                        {nextTwoWaves.map((w, idx) => {
+                          const isBossWave = w.round >= 14 || w.enemies.some(e => e.boss);
+                          return (
+                            <div
+                              key={w.round}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '2.5px 4px',
+                                background: isBossWave ? 'rgba(255,77,79,0.10)' : idx === 0 ? 'rgba(34,211,238,0.08)' : '#101620',
+                                border: `1px solid ${isBossWave ? 'rgba(255,77,79,0.45)' : idx === 0 ? 'rgba(34,211,238,0.40)' : '#232e3f'}`,
+                                borderRadius: '2px',
+                                minWidth: 0,
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  padding: '1px 3.5px',
+                                  borderRadius: '2px',
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: '8.5px',
+                                  fontWeight: 800,
+                                  background: isBossWave ? '#ff4d4f' : idx === 0 ? '#22d3ee' : '#1e3a5f',
+                                  color: isBossWave ? '#ffffff' : idx === 0 ? '#061318' : '#7dd3fc',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {idx === 0 ? `下R${String(w.round).padStart(2, '0')}` : `预R${String(w.round).padStart(2, '0')}`}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', overflow: 'hidden', flex: 1, minWidth: 0 }}>
+                                {w.enemies.slice(0, nextTwoWaves.length >= 2 ? 3 : 6).map(sp => (
+                                  <span
+                                    key={`${w.round}-${sp.id}-${sp.name}`}
+                                    title={`${sp.name}${sp.count !== null ? ` ×${sp.count}` : ''}`}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2.5px',
+                                      padding: '1px 3.5px 1px 1.5px',
+                                      background: '#131822',
+                                      border: `1px solid ${sp.boss ? 'rgba(255,77,79,0.55)' : '#242e3e'}`,
+                                      borderRadius: '2px',
+                                      fontSize: '9px',
+                                      color: '#e2e8f0',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    <EnemyAvatar id={sp.id} size={13} />
+                                    <span>{sp.name.length > 4 && nextTwoWaves.length >= 2 ? sp.name.slice(0, 4) : sp.name}</span>
+                                    {sp.count !== null && (
+                                      <b style={{ fontFamily: 'var(--font-mono)', color: sp.boss ? '#fca5a5' : brandAccent, fontSize: '8.5px' }}>
+                                        ×{sp.count}
+                                      </b>
+                                    )}
+                                  </span>
+                                ))}
+                                {w.enemies.length > (nextTwoWaves.length >= 2 ? 3 : 6) && (
+                                  <span style={{ fontSize: '8px', color: '#64748b', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                                    +{w.enemies.length - (nextTwoWaves.length >= 2 ? 3 : 6)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
                 )}
 
-                {!parsed.deckPool && waveSpawns.length === 0 && (
+                {!parsed.deckPool && nextTwoWaves.length === 0 && (
                   <span style={{ color: '#6b7888', fontSize: '10.5px' }}>
                     等待牌池与出怪预告同步 · 可随时切「漏兜」查 4 人数据，Boss 战自动切 MMO DPS 榜
                   </span>

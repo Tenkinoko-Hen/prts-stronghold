@@ -3,7 +3,7 @@ import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES, BAN_SENSITIVE_OPERATOR
 import type { BanPickState } from '../utils/tacticalLogic';
 import { parseCovenantScan, type CovenantScan } from './covenantScan';
 
-export type MobileStep = 'ban' | 'plans' | 'guide' | 'library';
+export type MobileStep = 'ban' | 'plans' | 'guide' | 'report' | 'library';
 export type OperatorOwnership = 'owned' | 'elite';
 
 export interface MobileSession {
@@ -79,7 +79,7 @@ export function restoreSession(raw: string | null): MobileSession {
       }
     }
     const compId = compIds.has(value.compId) ? value.compId : null;
-    const step = ['ban', 'plans', 'guide', 'library'].includes(value.step) ? value.step : 'ban';
+    const step = ['ban', 'plans', 'guide', 'report', 'library'].includes(value.step) ? value.step : 'ban';
     return {
       step: step === 'guide' && !compId ? 'plans' : step,
       compId,

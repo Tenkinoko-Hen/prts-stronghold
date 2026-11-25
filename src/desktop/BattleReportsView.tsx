@@ -13,6 +13,7 @@ import { BattleReportDeckPool } from './BattleReportDeckPool';
 import { BattleReportRoster } from './BattleReportRoster';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
+import { SeatTelemetryStrip } from './SeatTelemetryStrip';
 import { isSoloStageMode } from './combatTelemetry';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
 import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type NpcapInstallState, type ReportFeed,
@@ -226,6 +227,15 @@ export default function BattleReportsView({
         {report?.difficulty && <small>{report.difficulty}</small>}
       </nav>
       <div className="d-report-body">
+        {activeTab === 'rounds' && report && !soloStage && (
+          <SeatTelemetryStrip
+            report={report}
+            focusSeat={seat}
+            onSelectSeat={s => setPerspective({ key, seat: s })}
+            onResetPerspective={() => setPerspective(null)}
+            title="四席实时态势"
+          />
+        )}
         {activeTab === 'rounds' && <RoundMatrix key={key} report={report} seat={seat} live={liveView} onPreview={() => showPreview('all')} />}
         {activeTab === 'deck' && (
           <BattleReportDeckPool

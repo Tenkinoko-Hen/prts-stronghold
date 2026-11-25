@@ -62,8 +62,8 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
     const display = screen.getPrimaryDisplay();
     const workArea = display.workArea;
     // 严格克制悬浮窗体积，绝不遮挡核心棋盘；超出内容在主体区统一平滑向下滚动
-    const width = Number.isFinite(initialBounds?.width) && initialBounds.width > 0 ? Math.round(initialBounds.width) : 440;
-    const height = Number.isFinite(initialBounds?.height) && initialBounds.height > 0 ? Math.round(initialBounds.height) : 176;
+    const width = Number.isFinite(initialBounds?.width) && initialBounds.width > 0 ? Math.round(initialBounds.width) : 460;
+    const height = Number.isFinite(initialBounds?.height) && initialBounds.height > 0 ? Math.round(initialBounds.height) : 188;
     const x = Number.isFinite(initialBounds?.x)
       ? Math.round(initialBounds.x)
       : Math.max(workArea.x + 12, workArea.x + Math.round((workArea.width - width) / 2));
@@ -80,7 +80,7 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
       minWidth: 360,
       minHeight: 112,
       maxWidth: 540,
-      maxHeight: 240,
+      maxHeight: 248,
       frame: false,
       transparent: true,
       resizable: false,
@@ -164,8 +164,8 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
       && Number.isFinite(bounds.x)
       && Number.isFinite(bounds.y)
     ) {
-      const width = Number.isFinite(bounds.width) && bounds.width > 0 ? Math.round(bounds.width) : 440;
-      const height = Number.isFinite(bounds.height) && bounds.height > 0 ? Math.round(bounds.height) : 176;
+      const width = Number.isFinite(bounds.width) && bounds.width > 0 ? Math.round(bounds.width) : 460;
+      const height = Number.isFinite(bounds.height) && bounds.height > 0 ? Math.round(bounds.height) : 188;
       win.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width, height });
       if (win.isVisible()) {
         win.setAlwaysOnTop(true, 'screen-saver');

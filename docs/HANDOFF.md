@@ -101,14 +101,18 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25 17:45（完成 **PC 端自动适配 MuMu 模拟器 + 方案 A 右侧贴边战术抽屉专属 UI** 与双版本本地便携出包，准备回家接续实测）
-- **同步基线提交**：见 `git log -n 5 --oneline`（含 `9862bc1`）
+- **最后更新**：2026-11-26 02:08（完成 **全四端 UI 同构升级 + MuMu 内外贴边收起联动 + 双悬浮窗瘦身闭环 + Android Full 第 4 页签「战报」闭环 + 1,064 项全栈/Fuzz/真机 DOM 稳定性验证**，并生成 `2.0.6` 双版签名 APK）
+- **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **172/172 全绿**（`tsc --noEmit` 通过 + TS 105/105 + Node 10/10 + Python 57/57）
+  - `npm test` **183/183 全绿**（`tsc --noEmit` 通过 + TS 110/110 + Node 14/14 + Python 59/59）
+  - Android Java 单元与高压稳定性测试 **871/871 全绿**（含 2,000 轮随机乱序/半包/脏字节 Fuzz 轰炸与 15 局连续轮换零串局测试）
+  - Electron Offscreen 真机 DOM 冒烟 **10/10 全绿**（覆盖 PC Full 宽屏与 `1024×700`、MuMu `416px` 抽屉、PC Lite 宽屏与 `460px` 窄栏禁选折叠、PC HUD 双版 `460×188`、Android Full 5 页签与 Android Lite 3 页签，`pageError=0`、`横向溢出=0`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地测试包（位于本机 `release/`，未入 Git、未发 Release）**：
-  - 完整版：`PRTS-Stronghold-2.0.1-Windows-x64.exe`（240,574,653 字节，SHA-256: `ec8f3d94…8724a400`，内置新版 `PRTS-Worker` 与方案 A MuMu 抽屉）
-  - Lite 版：`PRTS-Stronghold-Lite-Windows-x64-2.0.2.exe`（132,689,134 字节，SHA-256: `a78a42a6…6f2be3d2`，内置新版 `Telemetry-Worker` 同步支持 MuMu 抓包）
+  - Android 完整版：`PRTS-Stronghold-2.0.6-Android.apk`（149,881,762 字节，VersionCode `206`，SHA-256: `4ae34e01…93d719fb`，v2/v3 签名校验通过）
+  - Android 纯净版：`release/telemetry-2.0.6/卫戍战报仪-Android-2.0.6.apk`（33,557,954 字节，VersionCode `206`，SHA-256: `e017bfa6…709a506f`，v2/v3 签名校验通过）
+  - Windows 完整版：`PRTS-Stronghold-2.0.1-Windows-x64.exe`（240,574,653 字节，SHA-256: `ec8f3d94…8724a400`）
+  - Windows Lite 版：`PRTS-Stronghold-Lite-Windows-x64-2.0.2.exe`（132,689,134 字节，SHA-256: `a78a42a6…6f2be3d2`）
 - **最近一次正式发布版本**：
   - **主线完整版（`v2.0.0` · Latest）**：
     - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.42 MiB / 240,560,974 字节，SHA-256: `ff2d64b4…08a2b3e8`，已内置最新 `PRTS-Worker` 与去 AI 化文案）

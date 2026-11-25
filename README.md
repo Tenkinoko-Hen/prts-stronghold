@@ -52,6 +52,6 @@
 
 这是非官方、非商业的玩家项目。游戏图像与设定归相应权利方所有；干员和盟约资料参考 [PRTS Wiki](https://prts.wiki/)，阵容资料参考社区攻略（出处见对应数据文件）。思源黑体附带 [SIL OFL 1.1 许可](public/assets/fonts/SourceHanSans-LICENSE.txt)。
 
-战报核心基于获准公开分发的 **ArkLogs Beta（0.2.6 / 0.2.19 协议特性）** 演进，保留原始来源标注；`prts_battle_core` 是本项目内的模块名，不改变其原有权属。敌人头像来自[可露希尔 Wiki](https://closure.wiki/zh-cn/stronghold-protocol/3)，领袖属性与路线参考 [WakingSeasons 卫戍工具](https://wakingseasons.github.io/garrison-tool/)，两者均不作为本局结算数据。
+敌人头像来自[可露希尔 Wiki](https://closure.wiki/zh-cn/stronghold-protocol/3)，领袖属性与路线参考 [WakingSeasons 卫戍工具](https://wakingseasons.github.io/garrison-tool/)，两者均不作为本局结算数据。
 
 项目自有代码采用 [MIT 许可](LICENSE)。该许可不覆盖第三方游戏素材、图鉴资料、社区攻略或第三方依赖。

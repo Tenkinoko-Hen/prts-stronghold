@@ -1,10 +1,4 @@
 # 青逝痕 Tenkinoko 制作
-# Decompiled with PyLingual (https://pylingual.io)
-# Internal filename: 'arklog_beta\\wire.py'
-# Bytecode version: 3.12.0rc2 (3531)
-# Source timestamp: 1970-01-01 00:00:00 UTC (0)
-
-# ***<module>: Failure: Different bytecode
 """PC-CN V3_1 AutoChess framing and battle messages.\n\nLayouts follow the GameAssembly build CF7956BF88A61986… and the matching\nIL2CPP declarations. ServerNetMsgSerializer uses ByteArray\'s big-endian\nlength and ID, followed by the unchanged body.\n"""
 from dataclasses import dataclass, field
 import struct
@@ -125,7 +119,7 @@ class WireDecoder:
                             offset += 1
                             continue
                     except WireError as exc:
-                        # 0.2.19: 开局 R0/R1 的 300 帧若已完整解出 roster+banned_units，允许对齐并交由上层提取禁选。
+                        # 开局 R0/R1 的 300 帧若已完整解出 roster+banned_units，允许对齐并交由上层提取禁选。
                         partial_opening = (
                             direction == "down" and message_id == 300
                             and bool((exc.roster or {}).get('banned_units'))

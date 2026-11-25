@@ -122,4 +122,4 @@ python -B -m unittest discover -s tests -p test_windows_battle_report.py
 
 历史回放可作对照：R6、R8、R9 的漏怪分别为 5、1、1，合计 7；完整 JSON 记录的 R14 Boss 贡献为 35%（168,000 伤害）。这些数字不是新对局的预期值。网站预告不能用来推断本局席位或 Boss 伤害；缺实战记录就保留未知。
 
-`prts_battle_core` 是已获准公开分发的 ArkLogs Beta 0.2.6 源码在本仓库的模块名，原始署名已保留；资料网站与来源见 [README](../README.md#资料来源)。修复提交 `f9732e6` 已在 GitHub 开发分支 `dev/windows-battle-report-1.4.17` 核实。实局验证完成前不创建 Release 或标签。接续步骤和包校验值见 [公司 AI 接续工单](windows-battle-report-company-ai-ticket.md)。
+资料网站与来源见 [README](../README.md#资料来源与许可)。修复提交 `f9732e6` 已在 GitHub 开发分支 `dev/windows-battle-report-1.4.17` 核实。实局验证完成前不创建 Release 或标签。接续步骤和包校验值见 [公司 AI 接续工单](windows-battle-report-company-ai-ticket.md)。

@@ -4,7 +4,7 @@ const { BrowserWindow, screen } = require('electron');
 
 const HUD_SHORTCUT = 'CommandOrControl+Shift+F10';
 
-function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
+function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExpandDrawer }) {
   let hudWindow = null;
   let disposed = false;
   let state = {
@@ -13,6 +13,8 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     shortcut: 'Ctrl+Shift+F10',
     shortcutAvailable: false,
     status: 'starting',
+    clientSource: 'none',
+    drawerCollapsed: false,
     report: null,
     guide: {
       round: 1,
@@ -55,15 +57,19 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     return broadcast();
   }
 
-  function ensureHudWindow() {
+  function ensureHudWindow(initialBounds) {
     if (hudWindow && !hudWindow.isDestroyed()) return hudWindow;
     const display = screen.getPrimaryDisplay();
     const workArea = display.workArea;
     // 严格克制悬浮窗体积，绝不遮挡核心棋盘；超出内容在主体区统一平滑向下滚动
-    const width = 440;
-    const height = 176;
-    const x = Math.max(workArea.x + 12, workArea.x + Math.round((workArea.width - width) / 2));
-    const y = workArea.y + 16;
+    const width = Number.isFinite(initialBounds?.width) && initialBounds.width > 0 ? Math.round(initialBounds.width) : 440;
+    const height = Number.isFinite(initialBounds?.height) && initialBounds.height > 0 ? Math.round(initialBounds.height) : 176;
+    const x = Number.isFinite(initialBounds?.x)
+      ? Math.round(initialBounds.x)
+      : Math.max(workArea.x + 12, workArea.x + Math.round((workArea.width - width) / 2));
+    const y = Number.isFinite(initialBounds?.y)
+      ? Math.round(initialBounds.y)
+      : workArea.y + 16;
 
     hudWindow = new BrowserWindow({
       title: `${product.shortName || 'PRTS'} 微缩遥测条`,
@@ -102,7 +108,7 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     hudWindow.on('closed', () => {
       hudWindow = null;
       if (!disposed) {
-        state = { ...state, open: false, locked: false };
+        state = { ...state, open: false, locked: false, drawerCollapsed: false };
         broadcast();
       }
     });
@@ -127,7 +133,38 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
       hudWindow.close();
       hudWindow = null;
     }
-    state = { ...state, open: false, locked: false };
+    state = { ...state, open: false, locked: false, drawerCollapsed: false };
+    return broadcast();
+  }
+
+  function openAtBounds(bounds, { drawerCollapsed } = {}) {
+    if (disposed) return state;
+    state = {
+      ...state,
+      open: true,
+      ...(drawerCollapsed !== undefined ? { drawerCollapsed: Boolean(drawerCollapsed) } : {}),
+    };
+    const win = ensureHudWindow(bounds);
+    if (
+      win
+      && !win.isDestroyed()
+      && bounds
+      && Number.isFinite(bounds.x)
+      && Number.isFinite(bounds.y)
+    ) {
+      const width = Number.isFinite(bounds.width) && bounds.width > 0 ? Math.round(bounds.width) : 440;
+      const height = Number.isFinite(bounds.height) && bounds.height > 0 ? Math.round(bounds.height) : 176;
+      win.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width, height });
+      if (win.isVisible()) {
+        win.setAlwaysOnTop(true, 'screen-saver');
+      }
+    }
+    return broadcast();
+  }
+
+  function setDrawerCollapsed(flag) {
+    if (disposed) return state;
+    state = { ...state, drawerCollapsed: Boolean(flag) };
     return broadcast();
   }
 
@@ -136,6 +173,7 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     state = {
       ...state,
       status: feed.status || state.status,
+      clientSource: feed.clientSource !== undefined ? feed.clientSource : state.clientSource,
       report: feed.report !== undefined ? feed.report : state.report,
     };
     if (state.open) broadcast();
@@ -188,10 +226,18 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product }) {
     if (!isTrustedSender(event)) throw new Error('Forbidden');
     return updateGuideContext(guidePatch);
   });
+  ipcMain.handle('hud-overlay-expand-drawer', (event) => {
+    if (!isTrustedSender(event)) throw new Error('Forbidden');
+    if (typeof onExpandDrawer === 'function') onExpandDrawer();
+    return state;
+  });
 
   return {
     getState: () => state,
     getWindow: () => hudWindow,
+    setOpen,
+    openAtBounds,
+    setDrawerCollapsed,
     updateBattleFeed,
     updateGuideContext,
     dispose() {

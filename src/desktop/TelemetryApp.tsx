@@ -37,6 +37,7 @@ import {
   setReportSelfSeat,
   updateLiveReport,
   type BattleReportsBridge,
+  type ClientSource,
   type HudOverlayState,
   type NpcapInstallState,
   type ReportFeed,
@@ -102,6 +103,7 @@ export default function TelemetryApp({
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<LiteTab>('cockpit');
   const [status, setStatus] = useState<ReportStatus>('starting');
+  const [clientSource, setClientSource] = useState<ClientSource>('none');
   const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(undefined);
   const [npcapInstall, setNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
   const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
@@ -120,7 +122,7 @@ export default function TelemetryApp({
     void desktopAPI?.hud?.getState().then(next => { if (mounted) setHudState(next); }).catch(() => {});
     void desktopAPI?.windowLayout?.getMode().then(next => {
       if (!mounted) return;
-      setWindowMode(next.mode);
+      setWindowMode(next.mode === 'rail' ? 'rail' : 'wide');
       setAlwaysOnTop(next.alwaysOnTop);
     }).catch(() => {});
     return () => {
@@ -137,6 +139,7 @@ export default function TelemetryApp({
     let latestRun: number | undefined;
     const accept = (feed: ReportFeed) => {
       setStatus(feed.status);
+      if (feed.clientSource !== undefined) setClientSource(feed.clientSource);
       if (feed.npcapInstalled !== undefined) setNpcapInstalled(feed.npcapInstalled);
       if (feed.npcapInstall !== undefined) setNpcapInstall(feed.npcapInstall);
       if (latest === feed.report && latestRun === feed.reportRun) return;
@@ -189,7 +192,7 @@ export default function TelemetryApp({
     setLayoutPending(true);
     try {
       const next = await desktopAPI.windowLayout.setMode(windowMode === 'rail' ? 'wide' : 'rail');
-      setWindowMode(next.mode);
+      setWindowMode(next.mode === 'rail' ? 'rail' : 'wide');
       setAlwaysOnTop(next.alwaysOnTop);
     } finally {
       setLayoutPending(false);
@@ -226,8 +229,10 @@ export default function TelemetryApp({
     : npcapInstalled === false
       ? '未装 Npcap'
       : liveView
-        ? (liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中')
-        : SHORT_STATUS[status];
+        ? `${clientSource === 'mumu' ? 'MuMu · ' : ''}${liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中'}`
+        : clientSource === 'mumu'
+          ? (['waiting', 'connecting', 'listening'].includes(status) ? 'MuMu · 待进局' : `MuMu · ${SHORT_STATUS[status]}`)
+          : SHORT_STATUS[status];
 
   const openRecord = (recordKey: string | null) => {
     setOpenedKey(recordKey);

@@ -5,11 +5,76 @@ const { windowsWorkerLaunch } = require('./windows-runtime.cjs');
 const { NPCAP_DOWNLOAD_PAGE, hasNpcap, runNpcapInstaller } = require('./npcap-installer.cjs');
 
 const WORKER_STATUSES = new Set(['waiting', 'connecting', 'listening', 'permission', 'unavailable', 'incompatible']);
+const CLIENT_SOURCES = new Set(['none', 'pc', 'mumu']);
+const CLIENT_SOURCE_LABELS = { mumu: 'MuMu 模拟器', pc: 'PC 原生端', none: '未检测到' };
 const MAX_REPORT = 8 * 1024 * 1024;
 const DIAGNOSTICS = /^PRTS_REPORT_DIAG(?: [0-9]{1,12}){8}$/;
 const DETAILS = /^PRTS_REPORT_DETAIL(?: [0-9]{1,12}){10}$/;
 const BOSS_DETAILS = /^PRTS_REPORT_BOSS(?: [0-9]{1,12}){6,7}$/;
 const UNKNOWN_DETAILS = /^PRTS_REPORT_UNKNOWN(?: [01] [0-9]{1,5} [0-9]{1,12}){0,12}$/;
+
+function parseSourceMessage(message, screenApi) {
+  if (!message || message.kind !== 'source' || !CLIENT_SOURCES.has(message.client)) {
+    return null;
+  }
+  const clientSource = message.client;
+  if (clientSource !== 'mumu' || !message.mumuWindow || typeof message.mumuWindow !== 'object') {
+    return { clientSource, mumuWindow: null };
+  }
+  const raw = message.mumuWindow;
+  if (
+    !Number.isFinite(raw.x)
+    || !Number.isFinite(raw.y)
+    || !Number.isFinite(raw.width)
+    || !Number.isFinite(raw.height)
+    || raw.width <= 0
+    || raw.height <= 0
+  ) {
+    return { clientSource, mumuWindow: null };
+  }
+  const title = typeof raw.title === 'string' ? raw.title.slice(0, 120) : '';
+  let rect = {
+    x: Math.round(raw.x),
+    y: Math.round(raw.y),
+    width: Math.round(raw.width),
+    height: Math.round(raw.height),
+  };
+  let dipScreen = screenApi;
+  if (dipScreen === undefined) {
+    try {
+      dipScreen = require('electron')?.screen;
+    } catch {
+      dipScreen = undefined;
+    }
+  }
+  if (typeof dipScreen?.screenToDipRect === 'function') {
+    try {
+      const converted = dipScreen.screenToDipRect(null, rect);
+      if (
+        converted
+        && Number.isFinite(converted.x)
+        && Number.isFinite(converted.y)
+        && Number.isFinite(converted.width)
+        && Number.isFinite(converted.height)
+        && converted.width > 0
+        && converted.height > 0
+      ) {
+        rect = {
+          x: Math.round(converted.x),
+          y: Math.round(converted.y),
+          width: Math.round(converted.width),
+          height: Math.round(converted.height),
+        };
+      }
+    } catch {
+      // Fallback to raw pixel coordinates outside full Electron runtime.
+    }
+  }
+  return {
+    clientSource,
+    mumuWindow: title ? { title, ...rect } : rect,
+  };
+}
 
 function bossSummary(report) {
   const rounds = report?.rounds ?? {};
@@ -49,11 +114,14 @@ function diagnosticsDialogTitle(product) {
   return product?.reportBrand?.diagnosticsTitle || 'PRTS · 战报诊断';
 }
 
-function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) {
+function installBattleReports({ app, mainWindow, ipcMain, product, onPublish, spawnFn, screenApi }) {
+  const spawnWorker = spawnFn || spawn;
   let state = {
     status: 'starting',
     report: null,
     reportRun: 0,
+    clientSource: 'none',
+    mumuWindow: null,
     npcapInstalled: hasNpcap(),
     npcapInstall: { status: 'idle', message: '' },
   };
@@ -104,12 +172,19 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
       previous.stdin.destroy();
       previous.kill();
     }
+    if (state.clientSource !== 'none' || state.mumuWindow !== null) {
+      if (disposed) {
+        state = { ...state, clientSource: 'none', mumuWindow: null };
+      } else {
+        publish({ clientSource: 'none', mumuWindow: null });
+      }
+    }
   }
 
   function start() {
     if (disposed || worker) return state;
     const { command, args, cwd } = windowsWorkerLaunch(app, product);
-    const child = spawn(command, [...args, '--battle-report'], {
+    const child = spawnWorker(command, [...args, '--battle-report'], {
       cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     });
     worker = child;
@@ -154,6 +229,9 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
         if (message?.kind === 'status' && WORKER_STATUSES.has(message.status)) {
           clearTimeout(startupTimer);
           publish({ status: message.status });
+        } else if (message?.kind === 'source') {
+          const parsedSource = parseSourceMessage(message, screenApi);
+          if (parsedSource) publish(parsedSource);
         } else if (message?.kind === 'report'
           && (message.report === null || (message.report?.rounds && message.report?.capture))) {
           if (message.report) lastBossSummary = bossSummary(message.report);
@@ -164,7 +242,7 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
     });
     startupTimer = setTimeout(fail, 12_000);
     startupTimer.unref();
-    return publish({ status: 'starting', report: null, reportRun: childRun });
+    return publish({ status: 'starting', report: null, reportRun: childRun, clientSource: 'none', mumuWindow: null });
   }
 
   function showDiagnostics() {
@@ -225,6 +303,7 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
         detail += `\n最近协防记录：R${latestHelp[0]} · 双方已识别 ${assigned} 只 · 未能确认双方 ${unmatched} 只`;
       }
     }
+    detail += `\n游戏客户端：${CLIENT_SOURCE_LABELS[state.clientSource] || CLIENT_SOURCE_LABELS.none}`;
     if (backend) detail += `\n采集通道：${{ winsock: 'Windows 内置', npcap: 'Npcap', mixed: 'Npcap / Windows 内置' }[backend]}`;
     if (traffic) detail += `\n游戏连接字节：下行 ${traffic[0]} / 上行 ${traffic[1]}`;
     if (details && !details[0] && !details[1] && (details[3] || details[4])) {
@@ -339,4 +418,4 @@ function installBattleReports({ app, mainWindow, ipcMain, product, onPublish }) 
   };
 }
 
-module.exports = { installBattleReports, diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails };
+module.exports = { installBattleReports, diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails, parseSourceMessage };

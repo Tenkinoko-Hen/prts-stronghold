@@ -5,7 +5,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', Boolean(flag)),
   windowLayout: {
     getMode: () => ipcRenderer.invoke('window-layout-get'),
-    setMode: (mode) => ipcRenderer.invoke('window-layout-set', mode === 'rail' ? 'rail' : 'wide'),
+    setMode: (mode) => ipcRenderer.invoke('window-layout-set', mode === 'rail' ? 'rail' : mode === 'mumu-drawer' ? 'mumu-drawer' : 'wide'),
+    snapToMumu: () => ipcRenderer.invoke('window-layout-snap-mumu'),
+    collapseToHud: () => ipcRenderer.invoke('window-layout-collapse-mumu'),
+    setAutoMumu: (enabled) => ipcRenderer.invoke('window-layout-set-auto-mumu', Boolean(enabled)),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('window-layout-state', listener);
+      return () => ipcRenderer.removeListener('window-layout-state', listener);
+    },
   },
   ...(process.platform === 'win32' ? {
     battleReports: {
@@ -37,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       getState: () => ipcRenderer.invoke('hud-overlay-get'),
       setOpen: (flag) => ipcRenderer.invoke('hud-overlay-open', Boolean(flag)),
       setLocked: (locked) => ipcRenderer.invoke('hud-overlay-lock', Boolean(locked)),
+      expandDrawer: () => ipcRenderer.invoke('hud-overlay-expand-drawer'),
       syncGuide: (guide) => ipcRenderer.invoke('hud-overlay-guide', guide),
       onState: (callback) => {
         const listener = (_event, state) => callback(state);

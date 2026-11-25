@@ -22,9 +22,12 @@ export interface BattleBanSyncState {
 
 export function useBattleBanSync(
   onSync: (payload: { matchKey: string; bannedCovenants: string[]; source: 'packet' | 'ocr' }) => void,
+  options?: { externalFeed?: ReportFeed | null },
 ) {
   const api = window.electronAPI?.battleReports;
   const ocrApi = window.electronAPI?.covenantOcr;
+  const hasExternalFeed = options !== undefined && 'externalFeed' in options;
+  const externalFeed = options?.externalFeed;
   const [state, setState] = useState<BattleBanSyncState>({
     available: Boolean(api),
     ocrAvailable: Boolean(ocrApi),
@@ -45,63 +48,67 @@ export function useBattleBanSync(
   const packetActiveRef = useRef(false);
   onSyncRef.current = onSync;
 
+  const acceptPacket = useCallback((feed: ReportFeed) => {
+    let matchKey = '';
+    let packetBans: string[] = [];
+    let hasDownlink = false;
+    let liveRound: number | null = null;
+    let liveRoundConfirmed = false;
+    if (feed.report) {
+      try {
+        const parsed = readBattleReport(feed.report);
+        matchKey = `${feed.reportRun}:${parsed.match ?? 'live'}`;
+        packetBans = parsed.bannedCovenants;
+        hasDownlink = parsed.current !== null || Boolean(parsed.mode) || packetBans.length > 0;
+        if (parsed.current !== null && parsed.current >= 1 && parsed.current <= 15) {
+          liveRound = parsed.current;
+          liveRoundConfirmed = true;
+        } else {
+          const latest = parsed.rounds.at(-1)?.number ?? null;
+          if (latest !== null && latest >= 1 && latest <= 15) liveRound = latest;
+        }
+      } catch {
+        // Ignore unreadable snapshots; report page handles incompatible status.
+      }
+    }
+
+    const hasPacketBans = Boolean(matchKey && packetBans.length > 0);
+    if (packetActiveRef.current !== hasPacketBans) {
+      packetActiveRef.current = hasPacketBans;
+      void ocrApi?.setAutoPoll(!hasPacketBans);
+    }
+
+    setState(prev => ({
+      ...prev,
+      available: true,
+      status: feed.status,
+      matchKey: matchKey || (prev.syncSource === 'ocr' ? prev.matchKey : ''),
+      bannedCovenants: hasPacketBans ? packetBans : (matchKey ? [] : prev.syncSource === 'ocr' ? prev.bannedCovenants : []),
+      syncSource: hasPacketBans ? 'packet' : (matchKey ? null : prev.syncSource),
+      hasDownlink,
+      liveRound,
+      liveRoundConfirmed,
+      npcapInstalled: feed.npcapInstalled,
+      npcapInstall: feed.npcapInstall,
+    }));
+
+    if (hasPacketBans) {
+      const signature = `${matchKey}:${packetBans.join(',')}`;
+      if (signature !== appliedPacketRef.current) {
+        appliedPacketRef.current = signature;
+        onSyncRef.current({ matchKey, bannedCovenants: packetBans, source: 'packet' });
+      }
+    }
+  }, [ocrApi]);
+
+  useEffect(() => {
+    if (!hasExternalFeed || !externalFeed) return;
+    acceptPacket(externalFeed);
+  }, [acceptPacket, externalFeed, hasExternalFeed]);
+
   useEffect(() => {
     let mounted = true;
     let changed = false;
-
-    const acceptPacket = (feed: ReportFeed) => {
-      if (!mounted) return;
-      let matchKey = '';
-      let packetBans: string[] = [];
-      let hasDownlink = false;
-      let liveRound: number | null = null;
-      let liveRoundConfirmed = false;
-      if (feed.report) {
-        try {
-          const parsed = readBattleReport(feed.report);
-          matchKey = `${feed.reportRun}:${parsed.match ?? 'live'}`;
-          packetBans = parsed.bannedCovenants;
-          hasDownlink = parsed.current !== null || Boolean(parsed.mode) || packetBans.length > 0;
-          if (parsed.current !== null && parsed.current >= 1 && parsed.current <= 15) {
-            liveRound = parsed.current;
-            liveRoundConfirmed = true;
-          } else {
-            const latest = parsed.rounds.at(-1)?.number ?? null;
-            if (latest !== null && latest >= 1 && latest <= 15) liveRound = latest;
-          }
-        } catch {
-          // Ignore unreadable snapshots; report page handles incompatible status.
-        }
-      }
-
-      const hasPacketBans = Boolean(matchKey && packetBans.length > 0);
-      if (packetActiveRef.current !== hasPacketBans) {
-        packetActiveRef.current = hasPacketBans;
-        void ocrApi?.setAutoPoll(!hasPacketBans);
-      }
-
-      setState(prev => ({
-        ...prev,
-        available: true,
-        status: feed.status,
-        matchKey: matchKey || (prev.syncSource === 'ocr' ? prev.matchKey : ''),
-        bannedCovenants: hasPacketBans ? packetBans : (matchKey ? [] : prev.syncSource === 'ocr' ? prev.bannedCovenants : []),
-        syncSource: hasPacketBans ? 'packet' : (matchKey ? null : prev.syncSource),
-        hasDownlink,
-        liveRound,
-        liveRoundConfirmed,
-        npcapInstalled: feed.npcapInstalled,
-        npcapInstall: feed.npcapInstall,
-      }));
-
-      if (hasPacketBans) {
-        const signature = `${matchKey}:${packetBans.join(',')}`;
-        if (signature !== appliedPacketRef.current) {
-          appliedPacketRef.current = signature;
-          onSyncRef.current({ matchKey, bannedCovenants: packetBans, source: 'packet' });
-        }
-      }
-    };
 
     const acceptOcr = (ocr: CovenantOcrState) => {
       if (!mounted) return;
@@ -133,8 +140,11 @@ export function useBattleBanSync(
     };
 
     const unsubs: (() => void)[] = [];
-    if (api) {
-      unsubs.push(api.onState(feed => { changed = true; acceptPacket(feed); }));
+    if (api && !hasExternalFeed) {
+      unsubs.push(api.onState(feed => {
+        changed = true;
+        if (mounted) acceptPacket(feed);
+      }));
       void api.getState().then(feed => { if (mounted && !changed) acceptPacket(feed); }).catch(() => {
         if (mounted && !changed) setState(prev => ({ ...prev, status: 'failed' }));
       });
@@ -148,7 +158,7 @@ export function useBattleBanSync(
       mounted = false;
       for (const fn of unsubs) fn();
     };
-  }, [api, ocrApi]);
+  }, [acceptPacket, api, hasExternalFeed, ocrApi]);
 
   const resync = useCallback(() => {
     if (state.matchKey && (state.bannedCovenants.length > 0 || state.syncSource === 'ocr')) {

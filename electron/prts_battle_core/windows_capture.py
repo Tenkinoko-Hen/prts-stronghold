@@ -1,5 +1,5 @@
 # 青逝痕 Tenkinoko 制作
-"""Windows IPv4 capture restricted to TCP connections owned by Arknights.exe."""
+"""Windows IPv4 capture restricted to TCP connections owned by Arknights.exe or MuMu."""
 
 from collections import deque
 import ctypes as ct
@@ -19,6 +19,20 @@ Direction = Literal["up", "down"]
 Connection = tuple[Endpoint, Endpoint]
 _CONNECTION_INTERVAL = 0.08
 _MAX_DEFERRED = 64
+_DWMWA_EXTENDED_FRAME_BOUNDS = 9
+_MUMU_CONTROL_PORTS = frozenset({5037, 5555, 7555})
+
+PC_PROCESS_NAMES = frozenset({"arknights.exe"})
+MUMU_PROCESS_NAMES = frozenset({
+    "mumuplayer.exe",
+    "mumunxmain.exe",
+    "mumunxdevice.exe",
+    "mumuvmmheadless.exe",
+    "mumuvmmservice.exe",
+    "mumuvmmsvc.exe",
+    "nemuplayer.exe",
+    "nemuheadless.exe",
+})
 
 
 @dataclass(frozen=True)
@@ -49,7 +63,9 @@ class ProcessEntry(ct.Structure):
     ]
 
 
-def game_pids() -> set[int]:
+def list_process_map() -> dict[int, str]:
+    if not hasattr(ct, "windll"):
+        return {}
     kernel = ct.windll.kernel32
     kernel.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
     kernel.CreateToolhelp32Snapshot.restype = wt.HANDLE
@@ -59,19 +75,141 @@ def game_pids() -> set[int]:
     if snapshot == ct.c_void_p(-1).value:
         raise OSError("Process snapshot unavailable")
     try:
-        result: set[int] = set()
+        result: dict[int, str] = {}
         entry = ProcessEntry(size=ct.sizeof(ProcessEntry))
         found = kernel.Process32FirstW(snapshot, ct.byref(entry))
         while found:
-            if entry.exe.casefold() == "arknights.exe":
-                result.add(entry.pid)
+            if entry.exe:
+                result[int(entry.pid)] = entry.exe.casefold()
             found = kernel.Process32NextW(snapshot, ct.byref(entry))
         return result
     finally:
         kernel.CloseHandle(snapshot)
 
 
-def game_connections(pids: set[int]) -> set[Connection]:
+def game_pids() -> set[int]:
+    return {pid for pid, exe in list_process_map().items() if exe in PC_PROCESS_NAMES}
+
+
+def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
+    mumu_pids = {pid for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
+    if not mumu_pids or not hasattr(ct, "windll"):
+        return None
+    user32 = ct.windll.user32
+    dwmapi = getattr(ct.windll, "dwmapi", None)
+    enum_proc = ct.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    user32.EnumWindows.argtypes = [enum_proc, wt.LPARAM]
+    user32.EnumWindows.restype = wt.BOOL
+    user32.IsWindowVisible.argtypes = [wt.HWND]
+    user32.IsWindowVisible.restype = wt.BOOL
+    user32.IsIconic.argtypes = [wt.HWND]
+    user32.IsIconic.restype = wt.BOOL
+    user32.GetWindowThreadProcessId.argtypes = [wt.HWND, ct.POINTER(wt.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wt.DWORD
+    user32.GetWindowTextLengthW.argtypes = [wt.HWND]
+    user32.GetWindowTextLengthW.restype = ct.c_int
+    user32.GetWindowTextW.argtypes = [wt.HWND, wt.LPWSTR, ct.c_int]
+    user32.GetWindowTextW.restype = ct.c_int
+    user32.GetWindowRect.argtypes = [wt.HWND, ct.POINTER(wt.RECT)]
+    user32.GetWindowRect.restype = wt.BOOL
+    if dwmapi is not None and hasattr(dwmapi, "DwmGetWindowAttribute"):
+        dwmapi.DwmGetWindowAttribute.argtypes = [wt.HWND, wt.DWORD, ct.c_void_p, wt.DWORD]
+        dwmapi.DwmGetWindowAttribute.restype = ct.c_long
+
+    best: tuple[int, dict] | None = None
+
+    def callback(hwnd: int, _lparam: int) -> bool:
+        nonlocal best
+        if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+            return True
+        pid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ct.byref(pid))
+        if pid.value not in mumu_pids:
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buf = ct.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        title = buf.value.strip()
+        if "明日方舟" not in title and "arknights" not in title.casefold():
+            return True
+        rect = wt.RECT()
+        got_rect = False
+        if dwmapi is not None and hasattr(dwmapi, "DwmGetWindowAttribute"):
+            try:
+                got_rect = dwmapi.DwmGetWindowAttribute(
+                    hwnd, _DWMWA_EXTENDED_FRAME_BOUNDS, ct.byref(rect), ct.sizeof(rect)
+                ) == 0
+            except OSError:
+                got_rect = False
+        if not got_rect and not user32.GetWindowRect(hwnd, ct.byref(rect)):
+            return True
+        width = int(rect.right - rect.left)
+        height = int(rect.bottom - rect.top)
+        if width < 300 or height < 200:
+            return True
+        area = width * height
+        if best is None or area > best[0]:
+            best = (area, {
+                "title": title,
+                "x": int(rect.left),
+                "y": int(rect.top),
+                "width": width,
+                "height": height,
+            })
+        return True
+
+    user32.EnumWindows(enum_proc(callback), 0)
+    return best[1] if best is not None else None
+
+
+def resolve_capture_target(
+    process_map: dict[int, str],
+    mumu_window: dict | None,
+    *,
+    has_mumu_traffic: bool = False,
+) -> tuple[str, set[int], dict | None]:
+    pc_pids = {pid for pid, exe in process_map.items() if exe.casefold() in PC_PROCESS_NAMES}
+    if pc_pids:
+        return ("pc", pc_pids, None)
+    mumu_pids = {pid for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
+    if mumu_pids and (mumu_window is not None or has_mumu_traffic):
+        return ("mumu", mumu_pids, mumu_window)
+    return ("none", set(), None)
+
+
+def _is_mumu_control_port(port: int) -> bool:
+    return port in _MUMU_CONTROL_PORTS or 16384 <= port <= 16500
+
+
+def _parse_tcp_table(buffer: bytes, pids: set[int], *, exclude_mumu_control: bool = False) -> set[Connection]:
+    count = struct.unpack_from("<I", buffer)[0]
+    result: set[Connection] = set()
+    for index in range(min(count, (len(buffer) - 4) // 24)):
+        offset = 4 + index * 24
+        state, local, remote, pid = struct.unpack_from("<I4s4x4s4xI", buffer, offset)
+        # CLOSED, TIME_WAIT and DELETE_TCB can outlive the usable game stream in the table.
+        if state in (1, 11, 12) or pid not in pids or local == b"\0" * 4 or remote == b"\0" * 4:
+            continue
+        local_port = struct.unpack_from("!H", buffer, offset + 8)[0]
+        remote_port = struct.unpack_from("!H", buffer, offset + 16)[0]
+        if not remote_port:
+            continue
+        local_ip = socket.inet_ntoa(local)
+        remote_ip = socket.inet_ntoa(remote)
+        if exclude_mumu_control and (
+            local_ip.startswith("127.")
+            or remote_ip.startswith("127.")
+            or _is_mumu_control_port(local_port)
+            or _is_mumu_control_port(remote_port)
+        ):
+            continue
+        result.add(((local_ip, local_port), (remote_ip, remote_port)))
+    return result
+
+
+def game_connections(pids: set[int], *, exclude_mumu_control: bool = False) -> set[Connection]:
     if not pids:
         return set()
     table = ct.windll.iphlpapi.GetExtendedTcpTable
@@ -88,19 +226,7 @@ def game_connections(pids: set[int]) -> set[Connection]:
         buffer = ct.create_string_buffer(size.value)
     else:
         raise OSError("TCP table changed during read")
-    count = struct.unpack_from("<I", buffer)[0]
-    result: set[Connection] = set()
-    for index in range(min(count, (len(buffer) - 4) // 24)):
-        offset = 4 + index * 24
-        state, local, remote, pid = struct.unpack_from("<I4s4x4s4xI", buffer, offset)
-        # CLOSED, TIME_WAIT and DELETE_TCB can outlive the usable game stream in the table.
-        if state in (1, 11, 12) or pid not in pids or local == b"\0" * 4 or remote == b"\0" * 4:
-            continue
-        local_port = struct.unpack_from("!H", buffer, offset + 8)[0]
-        remote_port = struct.unpack_from("!H", buffer, offset + 16)[0]
-        if remote_port:
-            result.add(((socket.inet_ntoa(local), local_port), (socket.inet_ntoa(remote), remote_port)))
-    return result
+    return _parse_tcp_table(buffer, pids, exclude_mumu_control=exclude_mumu_control)
 
 
 def read_segment(
@@ -175,8 +301,24 @@ def open_receiver(address: str):
     return driver if driver is not None else open_raw_receiver(address)
 
 
+_ORIGINAL_LIST_PROCESS_MAP = list_process_map
+_ORIGINAL_GAME_PIDS = game_pids
+
+
+def _window_shifted(a: dict | None, b: dict | None) -> bool:
+    if (a is None) != (b is None):
+        return True
+    if a is None or b is None:
+        return False
+    if a.get("title") != b.get("title"):
+        return True
+    return any(abs(int(a[k]) - int(b[k])) > 4 for k in ("x", "y", "width", "height"))
+
+
 def segments(
-    stopped: Event, on_status: Callable[[str], None],
+    stopped: Event,
+    on_status: Callable[[str], None],
+    on_source: Callable[[dict], None] | None = None,
 ) -> Iterator[tuple[Segment, Direction] | RetiredConnections | None]:
     receivers: dict[str, socket.socket | NpcapReceiver] = {}
     connections: set[Connection] = set()
@@ -185,6 +327,10 @@ def segments(
     next_refresh = 0.0
     next_connection_check = 0.0
     last_backend = ''
+    last_client: str | None = None
+    last_window: dict | None = None
+    client = 'none'
+    mumu_window: dict | None = None
     game_servers = set()
 
     def defer_game(segment: Segment) -> None:
@@ -197,17 +343,33 @@ def segments(
             now = monotonic()
             refresh_receivers = now >= next_refresh
             if refresh_receivers:
-                pids = game_pids()
+                if list_process_map is _ORIGINAL_LIST_PROCESS_MAP and game_pids is not _ORIGINAL_GAME_PIDS:
+                    process_map = {pid: "arknights.exe" for pid in game_pids()}
+                else:
+                    process_map = list_process_map()
+                detected_window = find_mumu_arknights_window(process_map)
+                has_mumu_traffic = client == "mumu" and any(server[1] == 8443 for _, server in connections)
+                client, pids, mumu_window = resolve_capture_target(
+                    process_map, detected_window, has_mumu_traffic=has_mumu_traffic
+                )
             checked = refresh_receivers or (bool(deferred) and now >= next_connection_check)
             if checked:
                 previous = connections
-                connections = game_connections(pids)
+                connections = (
+                    game_connections(pids, exclude_mumu_control=True)
+                    if client == "mumu"
+                    else game_connections(pids)
+                )
                 game_servers = {server for _, server in connections}
                 next_connection_check = now + _CONNECTION_INTERVAL
                 if retired := previous - connections:
                     yield RetiredConnections(frozenset(retired))
             if refresh_receivers:
-                connected = {client[0] for client, _ in connections}
+                if on_source is not None and (client != last_client or _window_shifted(mumu_window, last_window)):
+                    on_source({"client": client, "mumuWindow": mumu_window})
+                    last_client = client
+                    last_window = dict(mumu_window) if mumu_window is not None else None
+                connected = {client_ep[0] for client_ep, _ in connections}
                 addresses = connected or ((set(receivers) or local_ipv4()) if pids else set())
                 for address in list(receivers.keys() - addresses):
                     receivers.pop(address).close()

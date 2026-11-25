@@ -44,6 +44,7 @@ def serve() -> None:
 
     Thread(target=stop_with_parent, daemon=True).start()
     last_status = ""
+    last_source: dict | None = None
 
     def status(value: str) -> None:
         nonlocal last_status
@@ -51,9 +52,20 @@ def serve() -> None:
             print_event({"kind": "status", "status": value})
             last_status = value
 
+    def source(payload: dict) -> None:
+        nonlocal last_source
+        event = {
+            "kind": "source",
+            "client": payload.get("client", "none"),
+            "mumuWindow": payload.get("mumuWindow"),
+        }
+        if event != last_source:
+            print_event(event)
+            last_source = event
+
     inspector = PcBattleInspector()
     try:
-        collect_reports(segments(stopped, status), stopped, status, inspector=inspector)
+        collect_reports(segments(stopped, status, on_source=source), stopped, status, inspector=inspector)
     finally:
         inspector.close()
 

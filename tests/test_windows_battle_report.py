@@ -1110,5 +1110,75 @@ class CombatMeterAndInspectorTests(unittest.TestCase):
         self.assertEqual(ebn_after['remaining'], 16)
 
 
+class MumuCaptureDetectionTests(unittest.TestCase):
+    def test_resolve_capture_target_prioritizes_pc_and_guards_mumu_arknights(self):
+        from electron.prts_battle_core.windows_capture import resolve_capture_target
+
+        win = {'title': '明日方舟 - MuMu模拟器12', 'x': 100, 'y': 60, 'width': 1280, 'height': 720}
+        # 1. PC Arknights.exe + MuMu running simultaneously -> must pick PC
+        both_map = {101: 'arknights.exe', 202: 'mumuplayer.exe', 203: 'mumuvmmheadless.exe'}
+        self.assertEqual(resolve_capture_target(both_map, win), ('pc', {101}, None))
+
+        # 2. MuMu running with visible Arknights window -> picks MuMu PIDs + window bounds
+        mumu_only = {202: 'MuMuPlayer.exe', 203: 'MuMuNxMain.exe', 204: 'explorer.exe'}
+        self.assertEqual(resolve_capture_target(mumu_only, win), ('mumu', {202, 203}, win))
+
+        # 3. MuMu running without Arknights window and without traffic -> does NOT misdetect
+        self.assertEqual(resolve_capture_target(mumu_only, None), ('none', set(), None))
+
+        # 4. MuMu minimized mid-match with active traffic -> keeps MuMu capture alive
+        self.assertEqual(
+            resolve_capture_target(mumu_only, None, has_mumu_traffic=True),
+            ('mumu', {202, 203}, None),
+        )
+
+    def test_parse_tcp_table_filters_mumu_control_ports_and_loopback(self):
+        import socket
+        from electron.prts_battle_core.windows_capture import _parse_tcp_table
+
+        def row(state: int, lip: str, lport: int, rip: str, rport: int, pid: int) -> bytes:
+            return (
+                struct.pack('<I4s', state, socket.inet_aton(lip))
+                + struct.pack('!H2x', lport)
+                + socket.inet_aton(rip)
+                + struct.pack('!H2x', rport)
+                + struct.pack('<I', pid)
+            )
+
+        rows = [
+            row(5, '127.0.0.1', 50100, '127.0.0.1', 8443, 203),      # loopback
+            row(5, '192.168.1.10', 50101, '192.168.1.10', 5037, 203), # ADB 5037
+            row(5, '192.168.1.10', 50102, '192.168.1.10', 5555, 203), # ADB 5555
+            row(5, '192.168.1.10', 50103, '192.168.1.10', 7555, 203), # MuMu control 7555
+            row(5, '192.168.1.10', 16400, '192.168.1.10', 16384, 203), # MuMu range 16384-16500
+            row(5, '10.0.2.15', 43210, '203.0.113.8', 8443, 203),    # Real Stronghold server
+        ]
+        buf = struct.pack('<I', len(rows)) + b''.join(rows)
+
+        all_conns = _parse_tcp_table(buf, {203}, exclude_mumu_control=False)
+        self.assertEqual(len(all_conns), 6)
+
+        filtered = _parse_tcp_table(buf, {203}, exclude_mumu_control=True)
+        self.assertEqual(filtered, {(('10.0.2.15', 43210), ('203.0.113.8', 8443))})
+
+    def test_segments_emits_mumu_source_callback(self):
+        stopped = Event()
+        sources = []
+        win = {'title': '明日方舟 - MuMu模拟器12', 'x': 80, 'y': 40, 'width': 1280, 'height': 720}
+        with patch('electron.prts_battle_core.windows_capture.list_process_map', return_value={202: 'mumuplayer.exe'}), \
+             patch('electron.prts_battle_core.windows_capture.find_mumu_arknights_window', return_value=win), \
+             patch('electron.prts_battle_core.windows_capture.game_connections', return_value={OLD}), \
+             patch('electron.prts_battle_core.windows_capture.monotonic', return_value=0.0), \
+             patch('electron.prts_battle_core.windows_capture.open_receiver'), \
+             patch('electron.prts_battle_core.windows_capture.select', return_value=([], [], [])), \
+             redirect_stderr(io.StringIO()):
+            stream = segments(stopped, lambda _: None, on_source=sources.append)
+            try:
+                self.assertIsNone(next(stream))
+            finally:
+                stream.close()
+        self.assertEqual(sources, [{'client': 'mumu', 'mumuWindow': win}])
+
+
 if __name__ == '__main__':
     unittest.main()

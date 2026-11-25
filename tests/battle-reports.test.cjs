@@ -1,12 +1,27 @@
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
+const { PassThrough } = require('node:stream');
 const test = require('node:test');
 
-const { diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails } = require('../electron/battle-reports.cjs');
+const {
+  diagnosticsDialogTitle,
+  installBattleReports,
+  latestSelfFinish,
+  parseSourceMessage,
+  parseUnknownDetails,
+} = require('../electron/battle-reports.cjs');
 const { pickLatestNpcapInstaller } = require('../electron/npcap-installer.cjs');
-const { classifyBadgeBgra, evaluateOcrLines, extractCovenantBoxesFromLine, looksLikeCovenantScreen } = require('../electron/covenant-ocr.cjs');
+const {
+  classifyBadgeBgra,
+  evaluateOcrLines,
+  extractCovenantBoxesFromLine,
+  isArknightsWindowName,
+  looksLikeCovenantScreen,
+} = require('../electron/covenant-ocr.cjs');
 const { installLanSync, isPrivateLanIp, verifyPin } = require('../electron/lan-sync.cjs');
+const { computeMumuDrawerBounds, computeMumuHudBounds } = require('../electron/mumu-layout.cjs');
 
 const loadProduct = (id) =>
   JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'products', id, 'product.json'), 'utf8'));
@@ -166,4 +181,157 @@ test('LAN sync restricts access to RFC1918/loopback IPs and enforces 4-digit PIN
   } finally {
     lan.dispose();
   }
+});
+
+test('parseSourceMessage validates client source and converts MuMu coordinates to DIP with fallback', () => {
+  assert.equal(parseSourceMessage({ kind: 'source', client: 'bad' }), null);
+  assert.deepEqual(parseSourceMessage({ kind: 'source', client: 'pc', mumuWindow: { x: 1, y: 1, width: 800, height: 600 } }), {
+    clientSource: 'pc',
+    mumuWindow: null,
+  });
+
+  const dip = parseSourceMessage(
+    {
+      kind: 'source',
+      client: 'mumu',
+      mumuWindow: { title: '明日方舟 - MuMu模拟器12', x: 150, y: 90, width: 1920, height: 1080 },
+    },
+    {
+      screenToDipRect: (_win, r) => ({
+        x: Math.round(r.x / 1.5),
+        y: Math.round(r.y / 1.5),
+        width: Math.round(r.width / 1.5),
+        height: Math.round(r.height / 1.5),
+      }),
+    },
+  );
+  assert.deepEqual(dip, {
+    clientSource: 'mumu',
+    mumuWindow: { title: '明日方舟 - MuMu模拟器12', x: 100, y: 60, width: 1280, height: 720 },
+  });
+
+  const fallback = parseSourceMessage(
+    {
+      kind: 'source',
+      client: 'mumu',
+      mumuWindow: { title: 'Arknights', x: 50, y: 40, width: 1280, height: 720 },
+    },
+    {
+      screenToDipRect: () => { throw new Error('no screen'); },
+    },
+  );
+  assert.deepEqual(fallback, {
+    clientSource: 'mumu',
+    mumuWindow: { title: 'Arknights', x: 50, y: 40, width: 1280, height: 720 },
+  });
+});
+
+test('installBattleReports syncs worker source events and resets clientSource on pause', async () => {
+  const published = [];
+  const sentStates = [];
+  const handlers = new Map();
+  let fakeChild;
+
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: 'prts://app/' },
+    send: (channel, payload) => {
+      if (channel === 'battle-reports-state') sentStates.push(payload);
+    },
+  });
+
+  const br = installBattleReports({
+    app: { isPackaged: false, getAppPath: () => path.resolve(__dirname, '..') },
+    mainWindow: fakeMain,
+    ipcMain: {
+      handle: (name, fn) => handlers.set(name, fn),
+      removeHandler: (name) => handlers.delete(name),
+    },
+    product: loadProduct('stronghold'),
+    onPublish: (state) => published.push(state),
+    screenApi: null,
+    spawnFn: () => {
+      fakeChild = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {},
+      });
+      return fakeChild;
+    },
+  });
+
+  try {
+    br.start();
+    fakeChild.stdout.write(JSON.stringify({ kind: 'status', status: 'connecting' }) + '\n');
+    fakeChild.stdout.write(JSON.stringify({
+      kind: 'source',
+      client: 'mumu',
+      mumuWindow: { title: '明日方舟 - MuMu模拟器12', x: 10, y: 20, width: 1280, height: 720 },
+    }) + '\n');
+    await new Promise(r => setTimeout(r, 20));
+
+    const latest = published.at(-1);
+    assert.equal(latest.clientSource, 'mumu');
+    assert.deepEqual(latest.mumuWindow, { title: '明日方舟 - MuMu模拟器12', x: 10, y: 20, width: 1280, height: 720 });
+    assert.equal(sentStates.at(-1).clientSource, 'mumu');
+
+    const senderEvent = { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame };
+    const paused = handlers.get('battle-reports-enable')(senderEvent, false);
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.clientSource, 'none');
+    assert.equal(paused.mumuWindow, null);
+  } finally {
+    br.dispose();
+  }
+});
+
+test('mumu-layout computes outside-right, inside-right 28%, screen-right fallback, and HUD bounds', () => {
+  const workArea = { x: 0, y: 0, width: 1920, height: 1040 };
+
+  // 1. Enough room on right -> outside-right
+  const out = computeMumuDrawerBounds({
+    mumuWindow: { x: 80, y: 60, width: 1280, height: 720 },
+    workArea,
+  });
+  assert.equal(out.placement, 'outside-right');
+  assert.deepEqual(out.bounds, { x: 1364, y: 60, width: 416, height: 720 });
+
+  // 2. Full-width or edge-hugging MuMu -> inside-right 28% (clamped 390..440)
+  const inside = computeMumuDrawerBounds({
+    mumuWindow: { x: 0, y: 0, width: 1920, height: 1040 },
+    workArea,
+  });
+  assert.equal(inside.placement, 'inside-right');
+  assert.deepEqual(inside.bounds, { x: 1480, y: 0, width: 440, height: 1040 });
+
+  const insideNarrow = computeMumuDrawerBounds({
+    mumuWindow: { x: 640, y: 100, width: 1280, height: 720 },
+    workArea,
+  });
+  assert.equal(insideNarrow.placement, 'inside-right');
+  assert.deepEqual(insideNarrow.bounds, { x: 1530, y: 100, width: 390, height: 720 });
+
+  // 3. No MuMu window -> screen-right fallback
+  const fallback = computeMumuDrawerBounds({ mumuWindow: null, workArea });
+  assert.equal(fallback.placement, 'screen-right');
+  assert.deepEqual(fallback.bounds, { x: 1504, y: 0, width: 416, height: 1040 });
+
+  // 4. HUD strip positioned near top center-right of MuMu, clamped inside workArea
+  const hud = computeMumuHudBounds({
+    mumuWindow: { x: 100, y: 40, width: 1280, height: 720 },
+    workArea,
+  });
+  assert.equal(hud.width, 440);
+  assert.equal(hud.height, 176);
+  assert.ok(hud.x >= 100 && hud.x + hud.width <= 1920);
+  assert.ok(hud.y >= 40 && hud.y + hud.height <= 1040);
+
+  // 5. Window title recognition handles MuMu + Arknights variants
+  assert.equal(isArknightsWindowName('明日方舟'), true);
+  assert.equal(isArknightsWindowName('MuMu模拟器12 - 明日方舟'), true);
+  assert.equal(isArknightsWindowName('明日方舟 - MuMu模拟器'), true);
+  assert.equal(isArknightsWindowName('MuMu Player 12 - Arknights'), true);
+  assert.equal(isArknightsWindowName('MuMu模拟器12'), false);
 });

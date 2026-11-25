@@ -96,7 +96,7 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-25（完成 **PRTS Stronghold Lite v2.0.1** 纯 PC 轻量版 GitHub Release 发布，并同步主线全端文案且覆盖更新 `v2.0.0` 双端 GitHub Release 资产）
+- **最后更新**：2026-11-25（新增 **PC 端自动适配 MuMu 模拟器 + 方案 A 右侧贴边战术抽屉专属 UI**，未检测到 MuMu 启动明日方舟时 100% 沿用原 PC 流程，172/172 全量测试与双产品构建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最近一次正式发布版本**：
   - **主线完整版（`v2.0.0` · Latest）**：
@@ -107,6 +107,10 @@ npm run build
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker；本机已安装并登录 `gh` CLI（大文件上传如遇代理重置可配合 `curl --http1.1 --limit-rate 3M`）。
 - **近期已完成里程碑**：
+  - **PC 端自动适配 MuMu 模拟器 + 方案 A 右侧贴边战术抽屉专属 UI**（172/172 测试全绿，双产品构建通过）：
+    - `electron/prts_battle_core/windows_capture.py` & `live.py`：纯 Win32 `ctypes` 识别 `Arknights.exe`（优先级最高）与 MuMu 家族进程及标题匹配 `明日方舟 / Arknights` 的可见未最小化窗口坐标（`DwmGetWindowAttribute` 优先、回退 `GetWindowRect`），`game_connections` 针对 MuMu 过滤回环与 `5037/5555/7555/16384–16500` 控制面端口，去重上报 `source` 事件。
+    - `electron/mumu-layout.cjs` / `main.cjs` / `hud-overlay.cjs` / `battle-reports.cjs` / `preload.cjs`：未检测到 MuMu 运行明日方舟时 100% 沿用原有 PC 流程；检测到后完整版自动切入 `mumu-drawer`（右侧留白足够则零遮挡贴外侧右边，空间不足则叠放至 MuMu 内侧最右 28% 并置顶），支持一键「全屏（尊重本次会话手动切回）」、「收起至 MuMu 顶部微缩悬浮条（悬浮条提供『展开抽屉』一键恢复）」、「重新吸附」及退出 MuMu 自动复原。
+    - 新建 `src/desktop/MumuDrawerApp.tsx` + `src/desktop/mumuDrawer.css`（终末地黄 `#FFE600` × PRTS 青 `#00E5FF` 4 签抽屉：`总览` / `跟打` / `牌库` / `战报`），与标准三域共享 `records` / 禁选 / 阵容 / 回合状态；Lite 版同步共享底层 MuMu 抓包并标识来源；支持 `?mumu-demo=1` / `?mumu-demo=coop_boss` 演示预览。
   - **PRTS Stronghold Lite（资深玩家战报仪）PC 端完整 UI 落地**（`products/telemetry/` 升级，166/166 测试全绿，双产品构建通过）：
     - 彻底剥离阵容/站位攻略与 `boss-routes` 路线图（仅保留 `avatars` + `fonts`），视觉切换为低疲劳 PRTS 遥测青 `#22D3EE` + 哑光钢蓝 `#3698CC` 深黑仪器风。
     - 重构 `TelemetryApp.tsx` 与 `telemetryLite.css` 为 40px+34px 极简双行仪器顶栏，新增默认首页 `LiteCockpitView.tsx`（实时驾驶舱：四席态势条 + 波次出怪雷达 + 近期回合速览 + 场上/心仪牌池盯防 + 实时算力 Top 5 / Boss 削血自动切换，以及待机三段式自检面板）。

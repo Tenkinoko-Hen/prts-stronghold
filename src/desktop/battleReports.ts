@@ -2,6 +2,15 @@
 import { mergeBossRound, REPORT_SEATS, type BattleReport, type BattleRound } from './battleReportData';
 
 export type ReportStatus = 'starting' | 'waiting' | 'connecting' | 'listening' | 'permission' | 'paused' | 'unavailable' | 'incompatible' | 'failed';
+export type ClientSource = 'none' | 'pc' | 'mumu';
+export type WindowLayoutMode = 'wide' | 'rail' | 'mumu-drawer';
+export interface MumuWindowBounds {
+  title?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 export interface NpcapInstallState {
   status: 'idle' | 'downloading' | 'installing' | 'installed' | 'error';
   message?: string;
@@ -10,6 +19,8 @@ export interface ReportFeed {
   status: ReportStatus;
   report: unknown;
   reportRun: number;
+  clientSource?: ClientSource;
+  mumuWindow?: MumuWindowBounds | null;
   npcapInstalled?: boolean;
   npcapInstall?: NpcapInstallState;
 }
@@ -49,6 +60,8 @@ export interface HudOverlayState {
   shortcut: string;
   shortcutAvailable?: boolean;
   status: ReportStatus;
+  clientSource?: ClientSource;
+  drawerCollapsed?: boolean;
   report: unknown;
   guide: {
     round: number;
@@ -61,6 +74,7 @@ export interface HudOverlayBridge {
   getState(): Promise<HudOverlayState>;
   setOpen(flag: boolean): Promise<HudOverlayState>;
   setLocked(locked: boolean): Promise<HudOverlayState>;
+  expandDrawer?(): Promise<HudOverlayState>;
   syncGuide(guide: { round?: number; compTitle?: string; paceTip?: string; suggestedOperators?: string[] }): Promise<HudOverlayState>;
   onState(callback: (state: HudOverlayState) => void): () => void;
 }
@@ -89,12 +103,21 @@ export interface LanSyncBridge {
 }
 
 export interface WindowLayoutState {
-  mode: 'wide' | 'rail';
+  mode: WindowLayoutMode;
   alwaysOnTop: boolean;
+  clientSource?: ClientSource;
+  mumuWindow?: MumuWindowBounds | null;
+  placement?: 'outside-right' | 'inside-right' | 'screen-right' | null;
+  autoMumuEnabled?: boolean;
+  drawerCollapsed?: boolean;
 }
 export interface WindowLayoutBridge {
   getMode(): Promise<WindowLayoutState>;
-  setMode(mode: 'wide' | 'rail'): Promise<WindowLayoutState>;
+  setMode(mode: WindowLayoutMode): Promise<WindowLayoutState>;
+  snapToMumu?(): Promise<WindowLayoutState>;
+  collapseToHud?(): Promise<WindowLayoutState>;
+  setAutoMumu?(enabled: boolean): Promise<WindowLayoutState>;
+  onState?(callback: (state: WindowLayoutState) => void): () => void;
 }
 
 declare global {

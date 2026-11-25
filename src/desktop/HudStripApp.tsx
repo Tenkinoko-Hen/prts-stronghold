@@ -1,6 +1,6 @@
 // 青逝痕 Tenkinoko 制作
 import { useEffect, useMemo, useState } from 'react';
-import { Layers, Lock, ShieldCheck, Skull, Swords, Unlock, Users, X } from 'lucide-react';
+import { Layers, Lock, PanelRightOpen, ShieldCheck, Skull, Swords, Unlock, Users, X } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 import { REPORT_SEATS, readBattleReport, reportBossRounds } from './battleReportData';
@@ -380,6 +380,27 @@ export default function HudStripApp({
             </span>
           ) : (
             <div style={{ display: 'inline-flex', gap: '4px', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              {(state.clientSource === 'mumu' || state.drawerCollapsed) && (
+                <button
+                  type="button"
+                  onClick={() => void hudApi?.expandDrawer?.()}
+                  title="展开右侧 MuMu 战术抽屉"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '1px 5px',
+                    fontSize: '10.5px',
+                    color: '#00e5ff',
+                    border: '1px solid rgba(0,229,255,0.45)',
+                    background: 'rgba(0,229,255,0.12)',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <PanelRightOpen size={10} />展开抽屉
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void hudApi?.setLocked(true)}

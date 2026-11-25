@@ -45,6 +45,7 @@ export default function BattleReportsView({
   suggestedOperatorNames = [],
   suggestedEquipNames = [],
   compTitle = '',
+  shared,
 }: {
   api: BattleReportsBridge;
   visible: boolean;
@@ -52,14 +53,21 @@ export default function BattleReportsView({
   suggestedOperatorNames?: string[];
   suggestedEquipNames?: string[];
   compTitle?: string;
+  shared?: {
+    records: ReportRecords;
+    setRecords: React.Dispatch<React.SetStateAction<ReportRecords>>;
+    status: ReportStatus;
+    npcapInstalled?: boolean;
+    npcapInstall?: NpcapInstallState;
+  };
 }) {
-  const [records, setRecords] = useState<ReportRecords>({ history: [] });
+  const [localRecords, setLocalRecords] = useState<ReportRecords>({ history: [] });
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('rounds');
   const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
-  const [status, setStatus] = useState<ReportStatus>('starting');
-  const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(undefined);
-  const [npcapInstall, setNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
+  const [localStatus, setLocalStatus] = useState<ReportStatus>('starting');
+  const [localNpcapInstalled, setLocalNpcapInstalled] = useState<boolean | undefined>(undefined);
+  const [localNpcapInstall, setLocalNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
   const [perspective, setPerspective] = useState<{ key: string; seat: ReportSeat } | null>(null);
   const [bossFilter, setBossFilter] = useState<{ key: string; round: number } | null>(null);
   const [exported, setExported] = useState<ReportSummary | null>(null);
@@ -67,30 +75,37 @@ export default function BattleReportsView({
   const [leaderImage, setLeaderImage] = useState<{ url: string; title: string } | null>(null);
   const prevLiveKeyRef = useRef<string | undefined>(undefined);
 
+  const records = shared ? shared.records : localRecords;
+  const setRecords = shared ? shared.setRecords : setLocalRecords;
+  const status = shared ? shared.status : localStatus;
+  const npcapInstalled = shared ? shared.npcapInstalled : localNpcapInstalled;
+  const npcapInstall = shared ? shared.npcapInstall : localNpcapInstall;
+
   useEffect(() => {
+    if (shared) return;
     let changed = false;
     let mounted = true;
     let latest: unknown;
     let latestRun: number | undefined;
     const accept = (feed: ReportFeed) => {
-      setStatus(feed.status);
-      if (feed.npcapInstalled !== undefined) setNpcapInstalled(feed.npcapInstalled);
-      if (feed.npcapInstall !== undefined) setNpcapInstall(feed.npcapInstall);
+      setLocalStatus(feed.status);
+      if (feed.npcapInstalled !== undefined) setLocalNpcapInstalled(feed.npcapInstalled);
+      if (feed.npcapInstall !== undefined) setLocalNpcapInstall(feed.npcapInstall);
       if (latest === feed.report && latestRun === feed.reportRun) return;
       latest = feed.report;
       latestRun = feed.reportRun;
       try {
         const report = feed.report === null ? null : readBattleReport(feed.report);
         const seenAt = Date.now();
-        setRecords(previous => updateLiveReport(previous, report, feed.reportRun, seenAt));
-      } catch { setStatus('incompatible'); }
+        setLocalRecords(previous => updateLiveReport(previous, report, feed.reportRun, seenAt));
+      } catch { setLocalStatus('incompatible'); }
     };
     const remove = api.onState(feed => { changed = true; accept(feed); });
     void api.getState().then(feed => { if (mounted && !changed) accept(feed); }).catch(() => {
-      if (mounted && !changed) setStatus('failed');
+      if (mounted && !changed) setLocalStatus('failed');
     });
     return () => { mounted = false; remove(); };
-  }, [api]);
+  }, [api, shared]);
 
   // 当实时对局结束/玩家阵亡断连归档进 history 时，自动停留展示刚结束的对局复盘，绝不瞬间清空白屏；
   // 等新对局开打产生新 live key 时，自动切回新实时局。

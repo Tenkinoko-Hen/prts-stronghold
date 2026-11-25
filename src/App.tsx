@@ -1,6 +1,7 @@
 // 青逝痕 Tenkinoko 制作
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { AppWindow, BookOpen, Calculator, Grid, Images, Pin, Repeat2, Smartphone } from 'lucide-react';
+import { AppWindow, BookOpen, Calculator, Grid, Images, PanelRight, Pin, Repeat2, Smartphone } from 'lucide-react';
+import { PRODUCT_BRAND } from './brand/productBrand';
 import {
   META_COMPS,
   OperatorPlacement,
@@ -15,10 +16,26 @@ import { StackingCalculatorView } from './components/StackingCalculatorView';
 import { TransferItemsView } from './components/TransferItemsView';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
 import { useBattleBanSync } from './desktop/battleBanSync';
-import type { HudOverlayState, LanSyncState } from './desktop/battleReports';
+import { readBattleReport } from './desktop/battleReportData';
+import {
+  updateLiveReport,
+  type ClientSource,
+  type HudOverlayState,
+  type LanSyncState,
+  type MumuWindowBounds,
+  type NpcapInstallState,
+  type ReportFeed,
+  type ReportRecords,
+  type ReportStatus,
+  type WindowLayoutMode,
+  type WindowLayoutState,
+} from './desktop/battleReports';
+import { demoReport, type DemoScene } from './desktop/demo/battleReportFixture';
 import { LanSyncDialog } from './desktop/LanSyncDialog';
+import MumuDrawerApp from './desktop/MumuDrawerApp';
 import { BanPickState, getRecommendedPaceForRound } from './utils/tacticalLogic';
 import './desktop/desktop.css';
+import './desktop/mumuDrawer.css';
 
 type PrimaryDomain = 'guide' | 'reports' | 'reference';
 type ReferenceTab = 'tactical' | 'transfers' | 'covenants' | 'calculator';
@@ -26,6 +43,20 @@ type ReferenceTab = 'tactical' | 'transfers' | 'covenants' | 'calculator';
 const FAV_STORAGE_KEY = 'stronghold_fav_covenants_v1';
 const desktopAPI = window.electronAPI;
 const BattleReportsView = lazy(() => import('./desktop/BattleReportsView'));
+
+const mumuDemoParam = typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search).get('mumu-demo')
+  : null;
+const isMumuDemo = mumuDemoParam !== null;
+const mumuDemoScene: DemoScene = (
+  mumuDemoParam === 'coop_boss'
+  || mumuDemoParam === 'quick_r9'
+  || mumuDemoParam === 'settled'
+  || mumuDemoParam === 'assisting'
+  || mumuDemoParam === 'opening'
+  || mumuDemoParam === 'solo_dps'
+  || mumuDemoParam === 'coop_elim'
+) ? mumuDemoParam : 'coop_elim';
 
 const REFERENCE_TABS: { id: ReferenceTab; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
   { id: 'tactical', label: '2D 战术站位', Icon: Grid },
@@ -59,6 +90,98 @@ export default function App() {
   const [banState, setBanState] = useState<BanPickState>({ bannedCovenants: [], bannedOperators: [] });
   const [matchSyncId, setMatchSyncId] = useState('');
 
+  const [windowMode, setWindowMode] = useState<WindowLayoutMode>(isMumuDemo ? 'mumu-drawer' : 'wide');
+  const [mumuPlacement, setMumuPlacement] = useState<'outside-right' | 'inside-right' | 'screen-right' | null>(
+    isMumuDemo ? 'outside-right' : null,
+  );
+  const [clientSource, setClientSource] = useState<ClientSource>(isMumuDemo ? 'mumu' : 'none');
+  const [mumuWindow, setMumuWindow] = useState<MumuWindowBounds | null>(null);
+  const [reportStatus, setReportStatus] = useState<ReportStatus>(isMumuDemo ? 'listening' : 'starting');
+  const [npcapInstalled, setNpcapInstalled] = useState<boolean | undefined>(isMumuDemo ? true : undefined);
+  const [npcapInstall, setNpcapInstall] = useState<NpcapInstallState | undefined>(undefined);
+  const [latestFeed, setLatestFeed] = useState<ReportFeed | null>(() => (
+    isMumuDemo
+      ? { status: 'listening', report: demoReport(mumuDemoScene), reportRun: 1, clientSource: 'mumu', npcapInstalled: true }
+      : null
+  ));
+  const [records, setRecords] = useState<ReportRecords>(() => {
+    if (!isMumuDemo) return { history: [] };
+    try {
+      const parsed = readBattleReport(demoReport(mumuDemoScene));
+      return {
+        live: { key: 'demo:mumu', report: parsed, label: 'MuMu 演示战报', seenAt: Date.now() },
+        history: [],
+      };
+    } catch {
+      return { history: [] };
+    }
+  });
+
+  useEffect(() => {
+    if (isMumuDemo) return;
+    const reportsApi = desktopAPI?.battleReports;
+    if (!reportsApi) return;
+    let changed = false;
+    let mounted = true;
+    let latestReport: unknown;
+    let latestRun: number | undefined;
+    const accept = (feed: ReportFeed) => {
+      if (!mounted) return;
+      setLatestFeed(feed);
+      setReportStatus(feed.status);
+      if (feed.clientSource !== undefined) setClientSource(feed.clientSource);
+      if (feed.mumuWindow !== undefined) setMumuWindow(feed.mumuWindow ?? null);
+      if (feed.npcapInstalled !== undefined) setNpcapInstalled(feed.npcapInstalled);
+      if (feed.npcapInstall !== undefined) setNpcapInstall(feed.npcapInstall);
+      if (latestReport === feed.report && latestRun === feed.reportRun) return;
+      latestReport = feed.report;
+      latestRun = feed.reportRun;
+      try {
+        const parsed = feed.report === null ? null : readBattleReport(feed.report);
+        setRecords(previous => updateLiveReport(previous, parsed, feed.reportRun, Date.now()));
+      } catch {
+        setReportStatus('incompatible');
+      }
+    };
+    const remove = reportsApi.onState(feed => {
+      changed = true;
+      accept(feed);
+    });
+    void reportsApi.getState().then(feed => {
+      if (mounted && !changed) accept(feed);
+    }).catch(() => {
+      if (mounted && !changed) {
+        setReportStatus('failed');
+        setLatestFeed({ status: 'failed', report: null, reportRun: 0 });
+      }
+    });
+    return () => {
+      mounted = false;
+      remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isMumuDemo) return;
+    const layoutApi = desktopAPI?.windowLayout;
+    if (!layoutApi) return;
+    let mounted = true;
+    const applyLayout = (next: WindowLayoutState) => {
+      if (!mounted) return;
+      setWindowMode(next.mode);
+      setAlwaysOnTop(next.alwaysOnTop);
+      if (next.clientSource !== undefined) setClientSource(next.clientSource);
+      if (next.mumuWindow !== undefined) setMumuWindow(next.mumuWindow ?? null);
+      if (next.placement !== undefined) setMumuPlacement(next.placement ?? null);
+    };
+    const offLayout = layoutApi.onState?.(applyLayout);
+    void layoutApi.getMode().then(applyLayout).catch(() => {});
+    return () => {
+      mounted = false;
+      offLayout?.();
+    };
+  }, []);
+
   const { sync: banSync, resync: resyncBans, reset: resetBanSync, scanWindow, scanClipboard } = useBattleBanSync(value => {
     setBanState(previous => {
       const unchanged = previous.bannedCovenants.length === value.bannedCovenants.length
@@ -72,7 +195,7 @@ export default function App() {
       setMatchSyncId(value.matchKey);
       return { bannedCovenants: value.bannedCovenants, bannedOperators: [] };
     });
-  });
+  }, desktopAPI?.battleReports || isMumuDemo ? { externalFeed: latestFeed } : undefined);
 
   useEffect(() => {
     if (autoFollowRound && banSync.liveRound !== null) {
@@ -216,6 +339,40 @@ export default function App() {
           : banSync.status === 'permission' ? '需管理员'
             : banSync.status === 'paused' ? '已暂停' : '等待开局';
 
+  if (windowMode === 'mumu-drawer') {
+    return (
+      <MumuDrawerApp
+        records={records}
+        reportStatus={reportStatus}
+        clientSource={clientSource}
+        mumuWindow={mumuWindow}
+        placement={mumuPlacement}
+        npcapInstalled={npcapInstalled}
+        npcapInstall={npcapInstall}
+        reportsApi={desktopAPI?.battleReports}
+        banState={banState}
+        onChangeBanState={setBanState}
+        banSync={banSync}
+        onResyncBans={resyncBans}
+        onScanWindow={scanWindow}
+        onClearBans={clearBans}
+        selectedCompId={selectedCompId}
+        onSelectCompId={setSelectedCompId}
+        currentRound={currentRound}
+        autoFollowRound={autoFollowRound}
+        onToggleAutoFollow={toggleAutoFollow}
+        onChangeRound={handleManualRound}
+        hudState={hudState}
+        onSnapMumu={desktopAPI?.windowLayout?.snapToMumu ? () => void desktopAPI.windowLayout?.snapToMumu?.() : undefined}
+        onExpandWide={() => {
+          if (desktopAPI?.windowLayout) void desktopAPI.windowLayout.setMode('wide');
+          else setWindowMode('wide');
+        }}
+        onCollapseToHud={desktopAPI?.windowLayout?.collapseToHud ? () => void desktopAPI.windowLayout?.collapseToHud?.() : undefined}
+      />
+    );
+  }
+
   return (
     <div className="desktop-app relative w-screen h-screen overflow-hidden select-none">
       {/* 1. Unified PRTS × Endfield 3-Domain Top Header */}
@@ -228,7 +385,7 @@ export default function App() {
           }}
           className="d-wordmark font-display"
         >
-          <span className="d-brand-chip">PRTS</span>
+          <span className="d-brand-chip">{PRODUCT_BRAND.shortName}</span>
           <span>卫戍协议战术终端</span>
         </a>
 
@@ -243,7 +400,7 @@ export default function App() {
           >
             <span className="d-nav-code">01</span>战术跟打
           </a>
-          {desktopAPI?.battleReports && (
+          {(desktopAPI?.battleReports || isMumuDemo) && (
             <a
               href="#reports"
               aria-current={activeDomain === 'reports' ? 'page' : undefined}
@@ -263,7 +420,7 @@ export default function App() {
               setActiveDomain('reference');
             }}
           >
-            <span className="d-nav-code">{desktopAPI?.battleReports ? '03' : '02'}</span>战术资料
+            <span className="d-nav-code">{desktopAPI?.battleReports || isMumuDemo ? '03' : '02'}</span>战术资料
           </a>
         </nav>
 
@@ -278,6 +435,20 @@ export default function App() {
             >
               <span className="d-dot" aria-hidden="true" />
               <span>{telemetryLabel}</span>
+            </button>
+          )}
+          {clientSource === 'mumu' && (desktopAPI?.windowLayout || isMumuDemo) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (desktopAPI?.windowLayout) void desktopAPI.windowLayout.setMode('mumu-drawer');
+                else setWindowMode('mumu-drawer');
+              }}
+              title="切换到 MuMu 右侧贴边战术抽屉（方案 A）"
+              className="d-button d-small d-mumu-switch-btn"
+            >
+              <PanelRight size={13} />
+              <span>MuMu 抽屉</span>
             </button>
           )}
           {desktopAPI?.hud && (
@@ -362,15 +533,27 @@ export default function App() {
       />
 
       {/* 3. Domain 02: Live Battle Reports */}
-      {desktopAPI?.battleReports && (
+      {(desktopAPI?.battleReports || isMumuDemo) && (
         <div hidden={activeDomain !== 'reports'}>
           <Suspense fallback={activeDomain === 'reports' && <main className="desktop-page d-muted">正在打开战报…</main>}>
             <BattleReportsView
-              api={desktopAPI.battleReports}
+              api={desktopAPI?.battleReports ?? {
+                getState: async () => latestFeed ?? { status: reportStatus, report: null, reportRun: 1 },
+                showDiagnostics: async () => {},
+                setEnabled: async () => latestFeed ?? { status: reportStatus, report: null, reportRun: 1 },
+                onState: () => () => {},
+              }}
               visible={activeDomain === 'reports'}
               compTitle={activeComp.title}
               suggestedOperatorNames={suggestedOperatorNames}
               suggestedEquipNames={activeComp.equipmentTips}
+              shared={{
+                records,
+                setRecords,
+                status: reportStatus,
+                npcapInstalled,
+                npcapInstall,
+              }}
             />
           </Suspense>
         </div>

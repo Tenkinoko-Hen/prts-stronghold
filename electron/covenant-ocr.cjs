@@ -397,7 +397,10 @@ function createWinRtOcrRunner() {
 
 function isArknightsWindowName(name) {
   const text = String(name || '').trim();
-  return text === '明日方舟' || /^Arknights\b/i.test(text) || /明日方舟.*MuMu|MuMu.*明日方舟/i.test(text);
+  if (!text) return false;
+  return text === '明日方舟'
+    || /^Arknights\b/i.test(text)
+    || /(?:明日方舟|Arknights).*MuMu|MuMu.*(?:明日方舟|Arknights)/i.test(text);
 }
 
 function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut }) {
@@ -619,5 +622,6 @@ module.exports = {
   extractCovenantBoxesFromLine,
   evaluateOcrLines,
   createWinRtOcrRunner,
+  isArknightsWindowName,
   installCovenantOcr,
 };

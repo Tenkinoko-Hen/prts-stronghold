@@ -101,18 +101,18 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 02:08（完成 **全四端 UI 同构升级 + MuMu 内外贴边收起联动 + 双悬浮窗瘦身闭环 + Android Full 第 4 页签「战报」闭环 + 1,064 项全栈/Fuzz/真机 DOM 稳定性验证**，并生成 `2.0.6` 双版签名 APK）
-- **同步基线提交**：见 `git log -n 5 --oneline`
+- **最后更新**：2026-11-26 02:21（完成 **全四端 UI 同构升级 + MuMu 内外贴边收起联动 + 双悬浮窗瘦身闭环 + Android Full 第 4 页签「战报」闭环 + 1,064 项全栈/Fuzz/真机 DOM 稳定性验证**，并完成 `2.0.6` 全四端本地测试出包，准备次日上班接续实测）
+- **同步基线提交**：见 `git log -n 5 --oneline`（主功能提交 `84cfd8d`）
 - **最新验证结果**：
   - `npm test` **183/183 全绿**（`tsc --noEmit` 通过 + TS 110/110 + Node 14/14 + Python 59/59）
   - Android Java 单元与高压稳定性测试 **871/871 全绿**（含 2,000 轮随机乱序/半包/脏字节 Fuzz 轰炸与 15 局连续轮换零串局测试）
   - Electron Offscreen 真机 DOM 冒烟 **10/10 全绿**（覆盖 PC Full 宽屏与 `1024×700`、MuMu `416px` 抽屉、PC Lite 宽屏与 `460px` 窄栏禁选折叠、PC HUD 双版 `460×188`、Android Full 5 页签与 Android Lite 3 页签，`pageError=0`、`横向溢出=0`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
-- **今日已完成本地测试包（位于本机 `release/`，未入 Git、未发 Release）**：
-  - Android 完整版：`PRTS-Stronghold-2.0.6-Android.apk`（149,881,762 字节，VersionCode `206`，SHA-256: `4ae34e01…93d719fb`，v2/v3 签名校验通过）
-  - Android 纯净版：`release/telemetry-2.0.6/卫戍战报仪-Android-2.0.6.apk`（33,557,954 字节，VersionCode `206`，SHA-256: `e017bfa6…709a506f`，v2/v3 签名校验通过）
-  - Windows 完整版：`PRTS-Stronghold-2.0.1-Windows-x64.exe`（240,574,653 字节，SHA-256: `ec8f3d94…8724a400`）
-  - Windows Lite 版：`PRTS-Stronghold-Lite-Windows-x64-2.0.2.exe`（132,689,134 字节，SHA-256: `a78a42a6…6f2be3d2`）
+- **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
+  - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）
+  - **PC 纯净版（Lite）**：`release/v2.0.6/PRTS-Stronghold-Lite-2.0.6-Win64.exe`（132,635,289 字节 / 126.49 MiB，SHA-256: `8075851d…b6fb09b1`）
+  - **Android 完整版**：`release/PRTS-Stronghold-2.0.6-Android.apk`（149,881,762 字节 / 142.94 MiB，VersionCode `206`，SHA-256: `4ae34e01…93d719fb`，v2/v3 签名校验通过）
+  - **Android 纯净版（Lite）**：`release/telemetry-2.0.6/卫戍战报仪-Android-2.0.6.apk`（33,557,954 字节 / 32.00 MiB，VersionCode `206`，SHA-256: `e017bfa6…709a506f`，v2/v3 签名校验通过）
 - **最近一次正式发布版本**：
   - **主线完整版（`v2.0.0` · Latest）**：
     - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.42 MiB / 240,560,974 字节，SHA-256: `ff2d64b4…08a2b3e8`，已内置最新 `PRTS-Worker` 与去 AI 化文案）
@@ -122,6 +122,10 @@ npm run build
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker；本机已安装并登录 `gh` CLI（大文件上传如遇代理重置可配合 `curl --http1.1 --limit-rate 3M`）。
 - **近期已完成里程碑**：
+  - **全四端终版 UI 同构升级 + MuMu 防挡收起联动 + 双悬浮窗瘦身闭环（`84cfd8d`，1,064 项全栈/Fuzz/真机 DOM 验证全绿，已出 `2.0.6` 全四端测试包）**：
+    - `src/desktop/covenantBonds.ts` + `SeatTelemetryStrip.tsx`：统一 PC Full `02 实时战报`、PC Lite `总览` 与 MuMu 贴边抽屉的四席双轨态势条（`兜(青)/漏(橙+红)` + `♥HP` + `1–6本` + 在阵干员去重与转职装备 `+1` 实时激活盟约 + 淘汰灰态回流提示）。
+    - `electron/mumu-layout.cjs` / `hud-overlay.cjs` / `main.cjs` + `MumuDrawerApp.tsx` / `TelemetryApp.tsx` / `HudStripApp.tsx`：PC Full 与 PC Lite 同步支持 `inside-right` 防遮挡黄条一键收起至 `460×188` 顶部微缩 HUD ⇄ 恢复贴边，Lite 460px 窄栏自动折叠多禁选胶囊，PC HUD 升级双波并排与零漏底栏自动折叠，并严格区分 Full 黄 `#FFE600` / Lite 青 `#22D3EE`（含异常守护卡）。
+    - `src/mobile/MobileApp.tsx` / `mobileSession.ts` + `android/.../OverlayService.java`：Android Full 补齐第 4 页签「战报」（5 页签 `[识别|方案|跟进|战报|资料]` 闭环），原生横屏悬浮窗纵向瘦身 `-43%` 至 `~136dp`（Full/Lite 统一 `376dp` 2×2 宽卡、下两波单行同排、零漏底栏自动 `View.GONE`、双品牌分色）。
   - **PC 端自动适配 MuMu 模拟器 + 方案 A 右侧贴边战术抽屉专属 UI**（172/172 测试全绿，双产品构建通过）：
     - `electron/prts_battle_core/windows_capture.py` & `live.py`：纯 Win32 `ctypes` 识别 `Arknights.exe`（优先级最高）与 MuMu 家族进程及标题匹配 `明日方舟 / Arknights` 的可见未最小化窗口坐标（`DwmGetWindowAttribute` 优先、回退 `GetWindowRect`），`game_connections` 针对 MuMu 过滤回环与 `5037/5555/7555/16384–16500` 控制面端口，去重上报 `source` 事件。
     - `electron/mumu-layout.cjs` / `main.cjs` / `hud-overlay.cjs` / `battle-reports.cjs` / `preload.cjs`：未检测到 MuMu 运行明日方舟时 100% 沿用原有 PC 流程；检测到后完整版自动切入 `mumu-drawer`（右侧留白足够则零遮挡贴外侧右边，空间不足则叠放至 MuMu 内侧最右 28% 并置顶），支持一键「全屏（尊重本次会话手动切回）」、「收起至 MuMu 顶部微缩悬浮条（悬浮条提供『展开抽屉』一键恢复）」、「重新吸附」及退出 MuMu 自动复原。
@@ -151,9 +155,8 @@ npm run build
     - 解除 `BOSS_ROUNDS = (14, 15)` 硬编码，完整支持单人极速模拟 R9 等动态首领回合与单兵结算文案；同步修复移动端 LAN 导入动态首领伤害与已淘汰回合过滤。
     - 队友淘汰席位自动灰态斜纹并标 `已淘汰 · R×`，不伪造 0 漏怪且持卡自动回流共享池；`我` 徽章严格锁定真实本机席位，新增 `回我视角` 与局末自动保留回放防白屏；忽略本机阵亡后观战 311 包。
     - 新增「当局牌库」标签页：实时余量扣除（普通=1/金卡=3/阵亡回流）、1–6 本沙盘切换、精准超几何单刷/5刷/10刷/期望资金/升本收益对比/三连三选一概率，支持一键导入当前攻略核心阵容。
-- **未完成项 / 已知问题与回家后建议第一步**：
-  - **回家第一步（优先）**：执行 `git pull --ff-only origin main`，在家里电脑启动 MuMu 模拟器 12 +《明日方舟》卫戍协议进行**实机联调**：
-    1. 验证启动 MuMu 明日方舟后是否自动切入方案 A 右侧贴边抽屉（外侧贴右 / 空间不足时内侧 28% 叠放）、收起联动 MuMu 顶部微缩悬浮条与「展开抽屉」、退出 MuMu 自动复原标准三域窗口；
-    2. 实局检验 MuMu NAT 网络下 `PRTS-Worker` 是否顺利抓取卫戍协议 TCP 帧（`300/302/303/311/313` 等），按 `Ctrl+Shift+F9` 查看诊断弹窗确认 `游戏客户端：MuMu 模拟器` 与下行/上行帧解析无 `未识别消息 ID`；
-    3. 如发现 MuMu 12 新版本进程名遗漏、桥接模式抓包需求、安卓协议细微字段差异或抽屉吸附偏移，直接记录诊断输出后在主线定向校准。
-  - **待定事项**：实机验收稳定后再决定是否同步打包发布正式 GitHub Release（`v2.0.1` / `lite-v2.0.2`），以及继续按需推进手机无线副屏实机验收。
+- **未完成项 / 已知问题与次日上班接续第一步**：
+  - **次日上班第一步（优先）**：在公司/常用电脑执行 `git pull --ff-only origin main`，检查 `git log -n 5 --oneline`，并结合最新 `2.0.6` 全四端本地实测反馈推进收尾：
+    1. **PC / MuMu 实机验收**：实测 `PRTS-Stronghold-Full-2.0.6-Win64.exe` 与 `PRTS-Stronghold-Lite-2.0.6-Win64.exe` 在普通 PC 端及 MuMu 12 下的外侧贴边 / 内侧防挡黄条一键收起至顶部 HUD / `460×188` 双波与 2×2 盟约悬浮窗，以及 `Ctrl+Shift+F9` 诊断面板下的 MuMu 抓包稳定性；
+    2. **Android 实机验收**：实测 `PRTS-Stronghold-2.0.6-Android.apk`（5 页签「战报」闭环）与 `卫戍战报仪-Android-2.0.6.apk` 的局内横屏 `~136dp` 原生悬浮窗零遮挡表现、2×2 盟约显示与免 Root VPN 断线/加速器冲突自愈；
+    3. **发布决策**：实机验收确认无微调需求后，按需决定是否统一打正式版本并发布 GitHub Release（`v2.0.6` / `lite-v2.0.6`）。

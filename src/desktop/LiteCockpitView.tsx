@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  AppWindow,
   ChevronRight,
-  Cpu,
   Flame,
   Heart,
   Layers,
@@ -11,7 +11,6 @@ import {
   Radio,
   ShieldCheck,
   Skull,
-  Smartphone,
   Sparkles,
   Swords,
 } from 'lucide-react';
@@ -98,7 +97,6 @@ export function LiteCockpitView({
   onSelectSeat,
   onJumpTab,
   onOpenHud,
-  onOpenLan,
 }: {
   report?: BattleReport;
   seat: number | null;
@@ -110,7 +108,6 @@ export function LiteCockpitView({
   onSelectSeat(seat: ReportSeat): void;
   onJumpTab(tab: LiteTab): void;
   onOpenHud?(): void;
-  onOpenLan?(): void;
 }) {
   const [wishTick, setWishTick] = useState(0);
 
@@ -291,67 +288,62 @@ export function LiteCockpitView({
     setWishTick(t => t + 1);
   };
 
-  // Standby / Pre-match Instrument Panel
+  // Standby / Pre-match Panel
   if (!report) {
     const adminOk = status !== 'permission';
     const npcapOk = npcapInstalled !== false;
     const gameOk = status === 'listening' || status === 'connecting';
     return (
-      <section className="lite-standby" aria-label="战报仪待机面板">
+      <section className="lite-standby" aria-label="等待对局">
         <div className="lite-card lite-standby-status">
           <header className="lite-card-head">
-            <span><b className="lite-slash">//</b>采集通道自检</span>
-            <small>{status === 'listening' ? 'READY' : 'STANDBY'}</small>
+            <span><b className="lite-slash">//</b>运行环境</span>
+            <small>{status === 'listening' ? '就绪' : '待机'}</small>
           </header>
           <div className="lite-checks">
             <div className="lite-check-row" data-state={adminOk ? 'ok' : 'error'}>
               <ShieldCheck size={15} />
               <div>
-                <strong>① 管理员采集权限</strong>
-                <span>{adminOk ? '已具备本机抓取权限' : '需要以管理员身份重启以开启实时采集'}</span>
+                <strong>管理员权限</strong>
+                <span>{adminOk ? '已获取' : '请以管理员身份重新打开'}</span>
               </div>
-              <em>{adminOk ? 'OK' : '缺权限'}</em>
+              <em>{adminOk ? '正常' : '未获取'}</em>
             </div>
             <div className="lite-check-row" data-state={npcapOk ? 'ok' : 'warn'}>
               <Radio size={15} />
               <div>
-                <strong>② Npcap 驱动通道</strong>
-                <span>{npcapOk ? '驱动就绪，可低开销直收完整上下行流' : '未检测到 Npcap，可在上方提示条一键安装'}</span>
+                <strong>Npcap 驱动</strong>
+                <span>{npcapOk ? '已安装，可正常读取对局数据' : '未检测到，点上方按钮一键安装'}</span>
               </div>
-              <em>{npcapOk ? 'OK' : '未安装'}</em>
+              <em>{npcapOk ? '正常' : '未安装'}</em>
             </div>
             <div className="lite-check-row" data-state={gameOk ? 'ok' : 'pending'}>
               <Activity size={15} />
               <div>
-                <strong>③ 游戏进程与对局连接</strong>
-                <span>{status === 'connecting' ? '已捕获游戏进程，进入卫戍对局后自动激活驾驶舱' : '启动 Windows 版明日方舟进入卫戍协议即可自动采集'}</span>
+                <strong>游戏连接</strong>
+                <span>{status === 'connecting' ? '已检测到游戏，进入卫戍协议后自动开始记录' : '打开电脑版明日方舟，进入卫戍协议即可自动记录'}</span>
               </div>
-              <em>{gameOk ? '已连' : '等待中'}</em>
+              <em>{gameOk ? '已连接' : '等待中'}</em>
             </div>
           </div>
-          <div className="lite-standby-actions">
-            {onOpenHud && (
+          {onOpenHud && (
+            <div className="lite-standby-actions">
               <button type="button" className="d-button d-small" onClick={onOpenHud}>
-                <Cpu size={13} />开启穿透微缩条
+                <AppWindow size={13} />打开悬浮窗
               </button>
-            )}
-            {onOpenLan && (
-              <button type="button" className="d-button d-small" onClick={onOpenLan}>
-                <Smartphone size={13} />开启手机无线副屏
-              </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="lite-card lite-standby-history">
           <header className="lite-card-head">
-            <span><b className="lite-slash">//</b>历史战局归档</span>
+            <span><b className="lite-slash">//</b>历史对局</span>
             <small>{history.length} 场</small>
           </header>
           {history.length === 0 ? (
             <div className="lite-empty-note">
-              <p>本机暂无历史归档记录。</p>
-              <p>完成对局后会自动归档在此，可随时回看回合漏怪、算力明细或一键导出离线战报图。</p>
+              <p>还没有对局记录。</p>
+              <p>打完一局会自动保存在这里，随时回看漏怪明细或导出战报图。</p>
             </div>
           ) : (
             <ul className="lite-history-list">
@@ -436,9 +428,9 @@ export function LiteCockpitView({
         <div className="lite-cockpit-col">
           <section className="lite-card" aria-label="当前与下波出怪预告">
             <header className="lite-card-head">
-              <span><b className="lite-slash">//</b><ListTree size={13} />波次出怪雷达</span>
+              <span><b className="lite-slash">//</b><ListTree size={13} />出怪预告</span>
               <button type="button" className="lite-link-btn" onClick={() => onJumpTab('preview')}>
-                完整预告<ChevronRight size={13} />
+                完整列表<ChevronRight size={13} />
               </button>
             </header>
             {waveInfo ? (
@@ -475,9 +467,9 @@ export function LiteCockpitView({
             )}
           </section>
 
-          <section className="lite-card" aria-label="近期回合战况">
+          <section className="lite-card" aria-label="最近回合战况">
             <header className="lite-card-head">
-              <span><b className="lite-slash">//</b><Activity size={13} />近期回合速览</span>
+              <span><b className="lite-slash">//</b><Activity size={13} />最近回合</span>
               <button type="button" className="lite-link-btn" onClick={() => onJumpTab('rounds')}>
                 全部 {report.rounds.length} 轮<ChevronRight size={13} />
               </button>
@@ -517,26 +509,26 @@ export function LiteCockpitView({
 
         {/* Right Column: Tracked Deck Pool + Live DPS / Boss Bar */}
         <div className="lite-cockpit-col">
-          <section className="lite-card" aria-label="当局牌池余量盯防">
+          <section className="lite-card" aria-label="牌池余量">
             <header className="lite-card-head">
               <span>
                 <b className="lite-slash">//</b>
                 <Layers size={13} />
                 {trackedDeck.source === 'wishlist'
-                  ? '心仪牌池盯防'
+                  ? '心仪牌池'
                   : trackedDeck.source === 'board'
-                    ? '场上干员牌池（自动）'
-                    : '热点高阶牌池'}
+                    ? '场上干员余量'
+                    : '高阶牌池'}
                 <small className="lite-head-pill">{liveShopLevel}本</small>
               </span>
               <div className="lite-head-actions">
                 {trackedDeck.source !== 'wishlist' && selfSeat !== null && (report.lineups[selfSeat]?.deployed.length ?? 0) > 0 && (
-                  <button type="button" className="lite-chip-btn" onClick={trackOwnBoard} title="将我当前场上干员加入心仪盯防">
-                    <Sparkles size={11} />盯场上
+                  <button type="button" className="lite-chip-btn" onClick={trackOwnBoard} title="把当前场上干员加入心仪追踪">
+                    <Sparkles size={11} />盯住场上
                   </button>
                 )}
                 <button type="button" className="lite-link-btn" onClick={() => onJumpTab('deck')}>
-                  牌库管理<ChevronRight size={13} />
+                  全部牌池<ChevronRight size={13} />
                 </button>
               </div>
             </header>
@@ -603,11 +595,11 @@ export function LiteCockpitView({
           </section>
 
           {bossData ? (
-            <section className="lite-card lite-card-boss" aria-label="Boss 实时削血与输出">
+            <section className="lite-card lite-card-boss" aria-label="Boss 伤害">
               <header className="lite-card-head">
-                <span><b className="lite-slash">//</b><Swords size={13} />R{bossData.roundNo} 首领实时削血</span>
+                <span><b className="lite-slash">//</b><Swords size={13} />R{bossData.roundNo} Boss 伤害</span>
                 <button type="button" className="lite-link-btn" onClick={() => onJumpTab('boss')}>
-                  Boss 看板<ChevronRight size={13} />
+                  查看详情<ChevronRight size={13} />
                 </button>
               </header>
               {bossData.seatDmg.length > 0 && (
@@ -657,11 +649,11 @@ export function LiteCockpitView({
               </div>
             </section>
           ) : (
-            <section className="lite-card" aria-label="实时算力 Top 5">
+            <section className="lite-card" aria-label="本波伤害 Top 5">
               <header className="lite-card-head">
-                <span><b className="lite-slash">//</b><Flame size={13} />实时算力 Top 5</span>
+                <span><b className="lite-slash">//</b><Flame size={13} />本波伤害 Top 5</span>
                 <button type="button" className="lite-link-btn" onClick={() => onJumpTab('telemetry')}>
-                  完整遥测<ChevronRight size={13} />
+                  全部伤害<ChevronRight size={13} />
                 </button>
               </header>
               {topDpsOps.length > 0 ? (
@@ -684,7 +676,7 @@ export function LiteCockpitView({
                   ))}
                 </div>
               ) : (
-                <div className="lite-empty-inline">战斗触发后自动采集干员 DPS 与伤害排行（首领战自动切换削血条）</div>
+                <div className="lite-empty-inline">开战后自动统计干员伤害与秒伤，Boss 战自动切为 Boss 伤害排行。</div>
               )}
             </section>
           )}

@@ -20,7 +20,7 @@
 
 1. **单主线双产品架构**（品牌与配置集中在 `products/`）：
    - `products/stronghold/`（默认完整版）：`PRTS Stronghold`（`com.prts.stronghold` / `com.prts.stronghold.mobile`），含 3 域桌面终端（`01 战术跟打` · `02 实时战报` · `03 战术资料`）+ Android 攻略随行版。
-   - `products/telemetry/`（独立纯净版 · A 模式 · **PRTS Stronghold Lite**）：`PRTS Stronghold Lite · 卫戍战报仪`（`com.stronghold.telemetry`），面向资深玩家的无攻略战报仪，彻底剥离阵容/站位攻略与 Boss 路线图，仅保留干员头像/字体与全套实时战报核心（40px+34px 双行极简仪器头、`1180×740` 实时驾驶舱、`460px` 一键贴边伴随窄栏 + 窗口形态持久化、当局牌库「追踪我场上干员」与穿透微缩条）。
+   - `products/telemetry/`（独立纯净版 · A 模式 · **PRTS Stronghold Lite**）：`PRTS Stronghold Lite · 卫戍战报仪`（`com.stronghold.telemetry`），纯 PC 轻量战报工具，彻底剥离攻略、Boss 路线图与手机副屏，仅保留干员头像/字体与实时战报核心（40px+34px 极简顶栏、`1180×740` 总览、`460px` 侧边栏贴边 + 窗口记忆、牌库「追踪我场上干员」与桌面悬浮窗）。
    - 共享源码禁止硬编码单一产品名，统一经 `src/brand/productBrand.ts`、`products/<id>/product.json` 或 Android 资源读取。
 2. **Windows 桌面采集与启动**：
    - 已彻底移除桌面端 RapidOCR；统一为纯标准库 Python 抓包进程 `PRTS-Worker`（支持实时协议解析、开局 `1/3 确认本局信息` 画面 Windows 原生 OCR 禁选兜底 + TCP 双通道同步、四席编队/策略家/本数解析与 Boss 参战干员映射、零注入 `ReadProcessMemory` 双重逻辑帧守卫算力采样）。

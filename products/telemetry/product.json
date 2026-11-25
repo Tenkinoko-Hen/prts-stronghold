@@ -7,7 +7,7 @@
   "author": "青逝痕 Tenkinoko 制作",
   "windowTitle": "PRTS Stronghold Lite · 卫戍战报仪",
   "startupHeading": "PRTS STRONGHOLD LITE",
-  "description": "《明日方舟》卫戍协议资深玩家战报仪：无攻略纯数据驾驶舱、当局牌库概率、实时算力遥测与离线战报归档。",
+  "description": "《明日方舟》卫戍协议轻量战报工具：只保留实时战报、牌库概率、伤害统计与离线导出，不含攻略。",
   "faviconFile": "favicon.svg",
   "reportBrand": {
     "name": "卫戍战报仪",

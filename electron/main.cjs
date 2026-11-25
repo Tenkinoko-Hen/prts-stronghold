@@ -173,7 +173,7 @@ app.whenReady().then(() => {
   const hudOverlay = process.platform === 'win32'
     ? installHudOverlay({ mainWindow, ipcMain, globalShortcut, product })
     : null;
-  const lanSync = process.platform === 'win32'
+  const lanSync = process.platform === 'win32' && product.mode === 'full'
     ? installLanSync({ mainWindow, ipcMain, product })
     : null;
   const battleReports = process.platform === 'win32'

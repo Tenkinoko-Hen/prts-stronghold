@@ -2,16 +2,16 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  AppWindow,
+  BarChart3,
   ChevronDown,
-  Cpu,
   FileDown,
-  Gauge,
+  LayoutDashboard,
   Layers,
   ListTree,
   Maximize2,
   Minimize2,
   Pin,
-  Smartphone,
   Swords,
 } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
@@ -38,14 +38,12 @@ import {
   updateLiveReport,
   type BattleReportsBridge,
   type HudOverlayState,
-  type LanSyncState,
   type NpcapInstallState,
   type ReportFeed,
   type ReportRecords,
   type ReportSeat,
   type ReportStatus,
 } from './battleReports';
-import { LanSyncDialog } from './LanSyncDialog';
 import { LiteCockpitView, type LiteTab } from './LiteCockpitView';
 import './desktop.css';
 import './battleReports.css';
@@ -53,11 +51,11 @@ import './telemetryLite.css';
 
 const desktopAPI = window.electronAPI;
 
-const LITE_TABS: { id: LiteTab; label: string; Icon: typeof Gauge }[] = [
-  { id: 'cockpit', label: '驾驶舱', Icon: Gauge },
+const LITE_TABS: { id: LiteTab; label: string; Icon: typeof LayoutDashboard }[] = [
+  { id: 'cockpit', label: '总览', Icon: LayoutDashboard },
   { id: 'rounds', label: '战报', Icon: Activity },
   { id: 'deck', label: '牌库', Icon: Layers },
-  { id: 'telemetry', label: '算力', Icon: Cpu },
+  { id: 'telemetry', label: '伤害', Icon: BarChart3 },
   { id: 'boss', label: 'Boss', Icon: Swords },
   { id: 'preview', label: '出怪', Icon: ListTree },
 ];
@@ -65,8 +63,8 @@ const LITE_TABS: { id: LiteTab; label: string; Icon: typeof Gauge }[] = [
 const SHORT_STATUS: Record<ReportStatus, string> = {
   starting: '启动中',
   waiting: '待游戏',
-  connecting: '待对局',
-  listening: 'LIVE',
+  connecting: '待进局',
+  listening: '记录中',
   permission: '需管理员',
   paused: '已暂停',
   unavailable: '不可用',
@@ -99,8 +97,6 @@ export default function TelemetryApp({
   const [pinPending, setPinPending] = useState(false);
   const [layoutPending, setLayoutPending] = useState(false);
   const [hudState, setHudState] = useState<HudOverlayState | null>(null);
-  const [lanState, setLanState] = useState<LanSyncState | null>(null);
-  const [lanOpen, setLanOpen] = useState(false);
 
   const [records, setRecords] = useState<ReportRecords>({ history: [] });
   const [openedKey, setOpenedKey] = useState<string | null>(null);
@@ -121,9 +117,7 @@ export default function TelemetryApp({
   useEffect(() => {
     let mounted = true;
     const offHud = desktopAPI?.hud?.onState(next => { if (mounted) setHudState(next); });
-    const offLan = desktopAPI?.lanSync?.onState(next => { if (mounted) setLanState(next); });
     void desktopAPI?.hud?.getState().then(next => { if (mounted) setHudState(next); }).catch(() => {});
-    void desktopAPI?.lanSync?.getState().then(next => { if (mounted) setLanState(next); }).catch(() => {});
     void desktopAPI?.windowLayout?.getMode().then(next => {
       if (!mounted) return;
       setWindowMode(next.mode);
@@ -132,7 +126,6 @@ export default function TelemetryApp({
     return () => {
       mounted = false;
       offHud?.();
-      offLan?.();
     };
   }, []);
 
@@ -233,7 +226,7 @@ export default function TelemetryApp({
     : npcapInstalled === false
       ? '未装 Npcap'
       : liveView
-        ? (liveRound !== null ? `LIVE R${String(liveRound).padStart(2, '0')}` : 'LIVE')
+        ? (liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中')
         : SHORT_STATUS[status];
 
   const openRecord = (recordKey: string | null) => {
@@ -313,11 +306,11 @@ export default function TelemetryApp({
               className="lite-tool-btn"
               aria-pressed={windowMode === 'rail'}
               disabled={layoutPending}
-              title={windowMode === 'rail' ? '恢复宽屏驾驶舱（1180×740）' : '切换 460px 贴边伴随窄栏（自动置顶）'}
+              title={windowMode === 'rail' ? '切回宽屏视图（1180×740）' : '切到 460px 侧边栏贴在游戏旁边（自动置顶）'}
               onClick={() => void toggleWindowMode()}
             >
               {windowMode === 'rail' ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
-              <span>{windowMode === 'rail' ? '展开' : '窄栏'}</span>
+              <span>{windowMode === 'rail' ? '宽屏' : '侧边栏'}</span>
             </button>
           )}
 
@@ -326,24 +319,11 @@ export default function TelemetryApp({
               type="button"
               className="lite-tool-btn"
               aria-pressed={Boolean(hudState?.open)}
-              title="切换置顶鼠标穿透微缩遥测条（Ctrl+Shift+F10 锁定穿透）"
+              title="打开置顶小窗（Ctrl+Shift+F10 锁定鼠标穿透）"
               onClick={() => void desktopAPI.hud?.setOpen(!hudState?.open)}
             >
-              <Cpu size={13} />
-              <span>HUD</span>
-            </button>
-          )}
-
-          {desktopAPI?.lanSync && (
-            <button
-              type="button"
-              className="lite-tool-btn"
-              aria-pressed={Boolean(lanState?.enabled)}
-              title="PC ↔ 手机无线横屏副屏与战报同步"
-              onClick={() => setLanOpen(true)}
-            >
-              <Smartphone size={13} />
-              <span>{lanState?.enabled ? `副屏(${lanState.peerCount})` : '副屏'}</span>
+              <AppWindow size={13} />
+              <span>悬浮窗</span>
             </button>
           )}
 
@@ -437,7 +417,6 @@ export default function TelemetryApp({
                   onSelectSeat={s => setPerspective({ key, seat: s })}
                   onJumpTab={setTab}
                   onOpenHud={desktopAPI?.hud ? () => void desktopAPI.hud?.setOpen(true) : undefined}
-                  onOpenLan={desktopAPI?.lanSync ? () => setLanOpen(true) : undefined}
                 />
               )}
               {activeTab === 'rounds' && (
@@ -463,9 +442,6 @@ export default function TelemetryApp({
       </main>
 
       {exported && <BattleReportExportDialog report={exported} onClose={() => setExported(null)} />}
-      {desktopAPI?.lanSync && lanState && (
-        <LanSyncDialog open={lanOpen} state={lanState} api={desktopAPI.lanSync} onClose={() => setLanOpen(false)} />
-      )}
     </div>
   );
 }

@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       getState: () => ipcRenderer.invoke('hud-overlay-get'),
       setOpen: (flag) => ipcRenderer.invoke('hud-overlay-open', Boolean(flag)),
       setLocked: (locked) => ipcRenderer.invoke('hud-overlay-lock', Boolean(locked)),
+      setScale: (scale) => ipcRenderer.invoke('hud-overlay-scale', scale),
       expandDrawer: () => ipcRenderer.invoke('hud-overlay-expand-drawer'),
       syncGuide: (guide) => ipcRenderer.invoke('hud-overlay-guide', guide),
       onState: (callback) => {

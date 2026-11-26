@@ -38,9 +38,30 @@ function mountLoadFailure(err: unknown) {
 }
 
 if (isHud) {
-  void import('./desktop/HudStripApp')
-    .then(({default: HudStripApp}) => mountWithGuard(<HudStripApp />, true))
-    .catch(mountLoadFailure);
+  const hudDemoKey = import.meta.env.DEV ? searchParams.get('hud-demo') : null;
+  const hudScaleParam = import.meta.env.DEV ? searchParams.get('hud-scale') : null;
+  const validScale = hudScaleParam === 'sm' || hudScaleParam === 'md' || hudScaleParam === 'lg'
+    ? hudScaleParam
+    : undefined;
+  void (async () => {
+    const { default: HudStripApp } = await import('./desktop/HudStripApp');
+    if (hudDemoKey) {
+      const { buildHudDemoPreview } = await import('./desktop/demo/hudDemoFixture');
+      const demo = buildHudDemoPreview(hudDemoKey, validScale ?? 'md');
+      if (demo) {
+        mountWithGuard(
+          <HudStripApp
+            previewState={demo.previewState}
+            initialPage={demo.initialPage}
+            previewScale={validScale ?? 'md'}
+          />,
+          true,
+        );
+        return;
+      }
+    }
+    mountWithGuard(<HudStripApp previewScale={validScale} />, true);
+  })().catch(mountLoadFailure);
 } else if (import.meta.env.DEV && (searchParams.has('battle-demo') || searchParams.has('lite-demo'))) {
   void import('./desktop/demo/BattleReportDemo')
     .then(({default: Demo}) => mountWithGuard(<Demo />))

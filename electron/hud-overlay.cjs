@@ -1,15 +1,82 @@
 // 青逝痕 Tenkinoko 制作
+const fs = require('node:fs');
 const path = require('node:path');
-const { BrowserWindow, screen } = require('electron');
+const electron = require('electron');
+const { BrowserWindow, screen } = electron && typeof electron === 'object' ? electron : {};
 
 const HUD_SHORTCUT = 'CommandOrControl+Shift+F10';
 
-function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExpandDrawer }) {
+const HUD_SCALES = {
+  sm: { width: 500, height: 248 },
+  md: { width: 580, height: 280 },
+  lg: { width: 660, height: 316 },
+};
+
+function normalizeHudScale(scale) {
+  return scale === 'sm' || scale === 'md' || scale === 'lg' ? scale : null;
+}
+
+function defaultHudScaleForWorkArea(workArea) {
+  return Number(workArea?.width) >= 1800 ? 'md' : 'sm';
+}
+
+function getHudDimensions(scale) {
+  return HUD_SCALES[normalizeHudScale(scale) || 'md'];
+}
+
+function clampHudBoundsToWorkArea(bounds, workArea) {
+  const waX = Number(workArea?.x) || 0;
+  const waY = Number(workArea?.y) || 0;
+  const waW = Math.max(360, Number(workArea?.width) || 1280);
+  const waH = Math.max(120, Number(workArea?.height) || 720);
+  const width = Math.min(bounds.width, waW);
+  const height = Math.min(bounds.height, waH);
+  const x = Math.max(waX, Math.min(waX + waW - width, bounds.x));
+  const y = Math.max(waY, Math.min(waY + waH - height, bounds.y));
+  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+}
+
+function readPersistedHudPrefs(prefsPath) {
+  if (!prefsPath) return {};
+  try {
+    if (!fs.existsSync(prefsPath)) return {};
+    const parsed = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePersistedHudPrefs(prefsPath, prefs) {
+  if (!prefsPath) return;
+  try {
+    fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
+    fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2), 'utf8');
+  } catch {
+    // ignore preference persistence errors
+  }
+}
+
+function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, onExpandDrawer }) {
   let hudWindow = null;
   let disposed = false;
+  const prefsPath = app && typeof app.getPath === 'function'
+    ? path.join(app.getPath('userData'), 'hud-prefs.json')
+    : null;
+  const savedPrefs = readPersistedHudPrefs(prefsPath);
+  const primaryWorkArea = (() => {
+    try {
+      return screen.getPrimaryDisplay()?.workArea || { x: 0, y: 0, width: 1920, height: 1080 };
+    } catch {
+      return { x: 0, y: 0, width: 1920, height: 1080 };
+    }
+  })();
+  const initialScale = normalizeHudScale(savedPrefs.scale) || defaultHudScaleForWorkArea(primaryWorkArea);
+
   let state = {
     open: false,
     locked: false,
+    scale: initialScale,
     shortcut: 'Ctrl+Shift+F10',
     shortcutAvailable: false,
     status: 'starting',
@@ -57,13 +124,18 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
     return broadcast();
   }
 
+  function getScaleBounds() {
+    return getHudDimensions(state.scale);
+  }
+
   function ensureHudWindow(initialBounds) {
     if (hudWindow && !hudWindow.isDestroyed()) return hudWindow;
     const display = screen.getPrimaryDisplay();
     const workArea = display.workArea;
+    const preset = getScaleBounds();
     // 严格克制悬浮窗体积，绝不遮挡核心棋盘；超出内容在主体区统一平滑向下滚动
-    const width = Number.isFinite(initialBounds?.width) && initialBounds.width > 0 ? Math.round(initialBounds.width) : 460;
-    const height = Number.isFinite(initialBounds?.height) && initialBounds.height > 0 ? Math.round(initialBounds.height) : 188;
+    const width = Number.isFinite(initialBounds?.width) && initialBounds.width > 0 ? Math.round(initialBounds.width) : preset.width;
+    const height = Number.isFinite(initialBounds?.height) && initialBounds.height > 0 ? Math.round(initialBounds.height) : preset.height;
     const x = Number.isFinite(initialBounds?.x)
       ? Math.round(initialBounds.x)
       : Math.max(workArea.x + 12, workArea.x + Math.round((workArea.width - width) / 2));
@@ -79,8 +151,8 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
       height,
       minWidth: 360,
       minHeight: 112,
-      maxWidth: 540,
-      maxHeight: 248,
+      maxWidth: 720,
+      maxHeight: 360,
       frame: false,
       transparent: true,
       resizable: false,
@@ -164,12 +236,34 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
       && Number.isFinite(bounds.x)
       && Number.isFinite(bounds.y)
     ) {
-      const width = Number.isFinite(bounds.width) && bounds.width > 0 ? Math.round(bounds.width) : 460;
-      const height = Number.isFinite(bounds.height) && bounds.height > 0 ? Math.round(bounds.height) : 188;
+      const preset = getScaleBounds();
+      const width = Number.isFinite(bounds.width) && bounds.width > 0 ? Math.round(bounds.width) : preset.width;
+      const height = Number.isFinite(bounds.height) && bounds.height > 0 ? Math.round(bounds.height) : preset.height;
       win.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width, height });
       if (win.isVisible()) {
         win.setAlwaysOnTop(true, 'screen-saver');
       }
+    }
+    return broadcast();
+  }
+
+  function setScale(nextScale) {
+    if (disposed) return state;
+    const normalized = normalizeHudScale(nextScale);
+    if (!normalized) return state;
+    state = { ...state, scale: normalized };
+    writePersistedHudPrefs(prefsPath, { ...savedPrefs, scale: normalized });
+    if (hudWindow && !hudWindow.isDestroyed()) {
+      const target = getHudDimensions(normalized);
+      const prev = hudWindow.getBounds();
+      const display = screen.getDisplayMatching(prev);
+      const clamped = clampHudBoundsToWorkArea({
+        x: prev.x + Math.round((prev.width - target.width) / 2),
+        y: prev.y,
+        width: target.width,
+        height: target.height,
+      }, display?.workArea);
+      hudWindow.setBounds(clamped);
     }
     return broadcast();
   }
@@ -234,6 +328,10 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
     if (!isTrustedSender(event)) throw new Error('Forbidden');
     return applyLockState(locked);
   });
+  ipcMain.handle('hud-overlay-scale', (event, scalePatch) => {
+    if (!isTrustedSender(event)) throw new Error('Forbidden');
+    return setScale(scalePatch);
+  });
   ipcMain.handle('hud-overlay-guide', (event, guidePatch) => {
     if (!isTrustedSender(event)) throw new Error('Forbidden');
     return updateGuideContext(guidePatch);
@@ -247,7 +345,9 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
   return {
     getState: () => state,
     getWindow: () => hudWindow,
+    getScaleBounds,
     setOpen,
+    setScale,
     openAtBounds,
     setDrawerCollapsed,
     updateBattleFeed,
@@ -263,4 +363,11 @@ function installHudOverlay({ mainWindow, ipcMain, globalShortcut, product, onExp
   };
 }
 
-module.exports = { installHudOverlay };
+module.exports = {
+  HUD_SCALES,
+  normalizeHudScale,
+  defaultHudScaleForWorkArea,
+  getHudDimensions,
+  clampHudBoundsToWorkArea,
+  installHudOverlay,
+};

@@ -57,7 +57,9 @@ export function SeatTelemetryStrip({
         if (elim !== undefined && r.number > elim) continue;
         const [lk, as] = roundMetrics(r, s, report.self);
         const rLeak = lk?.value ?? 0;
-        const rEsc = Math.min(rLeak, r.uncoveredLeaks[s] ?? 0);
+        const rEsc = r.allPlayersLeaked && r.uncoveredLeaks[s] === undefined
+          ? rLeak
+          : Math.min(rLeak, r.uncoveredLeaks[s] ?? 0);
         leaks += rLeak;
         escaped += rEsc;
         assists += as?.value ?? 0;

@@ -577,6 +577,21 @@ final class BattleCaptureState {
         updateSeatBonds(ev);
     }
 
+    private static List<String> lookupUnitBonds(Map<String, List<String>> ownMap, String chessId, String charId) {
+        if (ownMap != null) {
+            List<String> hit = !chessId.isEmpty() ? ownMap.get(chessId) : null;
+            if (hit == null && !charId.isEmpty()) hit = ownMap.get(charId);
+            if (hit != null) return hit;
+        }
+        for (Map<String, List<String>> otherMap : squadBondsBySeat.values()) {
+            if (otherMap == null || otherMap == ownMap) continue;
+            List<String> hit = !chessId.isEmpty() ? otherMap.get(chessId) : null;
+            if (hit == null && !charId.isEmpty()) hit = otherMap.get(charId);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
     private static void updateSeatBonds(StrongholdWireDecoder.Event ev) {
         if (ev.deployedChessBySeat.isEmpty() && ev.equipIdentsBySeat.isEmpty()) return;
         for (int s = 1; s <= 4; s++) {
@@ -585,7 +600,7 @@ final class BattleCaptureState {
             if (deployed == null && equips == null) continue;
             Map<String, List<String>> squadMap = squadBondsBySeat.get(s);
             Map<String, Integer> counts = new LinkedHashMap<>();
-            if (deployed != null && squadMap != null && !squadMap.isEmpty()) {
+            if (deployed != null && !squadBondsBySeat.isEmpty()) {
                 Set<String> seenUnits = new HashSet<>();
                 for (Integer ident : deployed) {
                     if (ident == null) continue;
@@ -593,8 +608,7 @@ final class BattleCaptureState {
                     String chessId = StrongholdEnemyCatalog.chessIdForIdent(ident);
                     String dedupKey = !charId.isEmpty() ? charId : (!chessId.isEmpty() ? chessId : ("#" + ident));
                     if (!seenUnits.add(dedupKey)) continue;
-                    List<String> unitBonds = !chessId.isEmpty() ? squadMap.get(chessId) : null;
-                    if (unitBonds == null && !charId.isEmpty()) unitBonds = squadMap.get(charId);
+                    List<String> unitBonds = lookupUnitBonds(squadMap, chessId, charId);
                     if (unitBonds != null) {
                         for (String bId : unitBonds) {
                             String cn = StrongholdEnemyCatalog.covenantName(bId);

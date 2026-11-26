@@ -58,9 +58,12 @@ export interface CovenantOcrBridge {
   onState(callback: (state: CovenantOcrState) => void): () => void;
 }
 
+export type HudScale = 'sm' | 'md' | 'lg';
+
 export interface HudOverlayState {
   open: boolean;
   locked: boolean;
+  scale?: HudScale;
   shortcut: string;
   shortcutAvailable?: boolean;
   status: ReportStatus;
@@ -78,6 +81,7 @@ export interface HudOverlayBridge {
   getState(): Promise<HudOverlayState>;
   setOpen(flag: boolean): Promise<HudOverlayState>;
   setLocked(locked: boolean): Promise<HudOverlayState>;
+  setScale?(scale: HudScale): Promise<HudOverlayState>;
   expandDrawer?(): Promise<HudOverlayState>;
   syncGuide(guide: { round?: number; compTitle?: string; paceTip?: string; suggestedOperators?: string[] }): Promise<HudOverlayState>;
   onState(callback: (state: HudOverlayState) => void): () => void;

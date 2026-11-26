@@ -404,6 +404,42 @@ public final class VpnCodecAndWireTest {
         }
         check(foundYan2 && foundPreci2, "seat 2 active covenants exact including transfer equip (+1 炎)");
 
+        // Cross-seat squadBondsBySeat fallback: seat 3 has no seat-3 frame-300 squad, yet deployed 101+102 fall back to seat 1/other captured squad map
+        ByteArrayOutputStream b306Seat3 = new ByteArrayOutputStream();
+        DataOutputStream d306Seat3 = new DataOutputStream(b306Seat3);
+        d306Seat3.writeByte(3); // seat 3
+        d306Seat3.writeShort(30);
+        d306Seat3.writeByte(4);
+        d306Seat3.writeByte(4);
+        d306Seat3.write(new byte[6]);
+        d306Seat3.writeShort(0);
+        d306Seat3.writeByte(2);
+        d306Seat3.writeShort(2);
+        d306Seat3.writeInt(9101); d306Seat3.writeShort(0); d306Seat3.writeShort(101); d306Seat3.write(new byte[3]);
+        d306Seat3.writeInt(9102); d306Seat3.writeShort(0); d306Seat3.writeShort(102); d306Seat3.write(new byte[3]);
+        d306Seat3.writeShort(0); // equips
+        d306Seat3.writeShort(0); // traps
+        d306Seat3.writeShort(2); // deployed positions
+        d306Seat3.writeInt(9101); d306Seat3.write(new byte[6]);
+        d306Seat3.writeInt(9102); d306Seat3.write(new byte[6]);
+        d306Seat3.writeShort(0);
+        d306Seat3.writeShort(0); d306Seat3.writeByte(0);
+        d306Seat3.writeShort(0);
+        d306Seat3.writeShort(0); d306Seat3.writeByte(0); d306Seat3.writeShort(0);
+        d306Seat3.writeShort(0);
+        writeStr(d306Seat3, "");
+        d306Seat3.write(new byte[13]);
+        byte[] f306Seat3 = wrapFrame(306, b306Seat3.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Seat3, 0, f306Seat3.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> seat3Bonds = BattleCaptureState.getSeatBonds(3);
+        boolean seat3Preci2 = false;
+        for (BattleCaptureState.BondStatus bs : seat3Bonds) {
+            if ("精准".equals(bs.name) && bs.count == 2 && bs.active) seat3Preci2 = true;
+        }
+        check(seat3Preci2, "seat 3 resolves active 精准2 via cross-seat squad fallback");
+
         // 6. 校验开局 300 帧即使场景截断也能抢救 banned_bonds（避免 1/3 确认信息界面丢 Ban）
         ByteArrayOutputStream b300Partial = new ByteArrayOutputStream();
         DataOutputStream d300Partial = new DataOutputStream(b300Partial);

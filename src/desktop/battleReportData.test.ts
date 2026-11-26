@@ -706,3 +706,63 @@ test('full player IDs omit seat number prefix unless missing, zero estimate beco
   assert.ok(seatCardsIdx < bottomEnemyIdx);
   assert.doesNotMatch(visualHtml, /与我相关|已知数据合计|全队漏怪已全额兜住/);
 });
+
+test('R15 BossDamage strips smart quotes, uses unified team denominator, and updates donut/subtitle cleanly', () => {
+  const r15Report = readBattleReport({
+    capture: { match: 7, round: 15, self: 1 },
+    players: { 1: '乌尔比福的安水', 2: '冰茶', 3: '雪月六', 4: '星极' },
+    battle_config: { mode_id: 'mode_multi_hard' },
+    boss_rounds: [14, 15],
+    rounds: {
+      15: {
+        phase: 'boss',
+        boss_hp: 1500000,
+        boss_damage: { 1: 901000, 2: 520000, 3: 410000, 4: 250000 },
+        boss_percent: { 1: 43.3, 2: 25.0, 3: 19.7, 4: 12.0 },
+        boss_status: 'reported',
+        boss_official: [
+          { player: 1, identifier: 1001, char_id: 'char_pramanix_2', operator_name: '“圣聆初雪”', damage: 649000 },
+          { player: 2, identifier: 1002, char_id: 'char_4064_mlynar', operator_name: '玛恩纳', damage: 44000 },
+        ],
+      },
+    },
+  });
+  const html = renderToStaticMarkup(createElement(BossDamage, {
+    report: r15Report, number: 15, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.doesNotMatch(html, /“圣聆初雪”|93\.7%/);
+  assert.match(html, /圣聆初雪/);
+  assert.match(html, /31\.2%/);
+  assert.match(html, /全队输出/);
+  assert.match(html, /官方前2干员合计.*其余席位见左侧总览/);
+  assert.match(html, /已同步实时伤害与官方榜单/);
+});
+
+test('R11 WaveDetails applies killer seat colors to peer bars and omits duplicate covered pill', () => {
+  const r11Report = readBattleReport({
+    capture: { match: 8, round: 11, self: 1 },
+    players: { 1: '我方', 2: '二号', 3: '三号', 4: '四号' },
+    battle_config: { mode_id: 'mode_multi_hard' },
+    rounds: {
+      11: {
+        phase: 'settle',
+        self_leaks: 1,
+        leaks: { 1: 1, 2: 0, 3: 2, 4: 0 },
+        leaks_status: 'reported',
+        assists_status: 'reported',
+        assists_others: { 1: 0, 2: 1, 3: 0, 4: 2 },
+        assist_pairs: [
+          { killer: 2, owner: 1, count: 1 },
+          { killer: 4, owner: 3, count: 2 },
+        ],
+        uncovered_status: 'reported',
+        uncovered_leaks: {},
+      },
+    },
+  });
+  const html = detailView(r11Report, 11);
+  assert.match(html, /is-peer seat-fill-4/);
+  assert.match(html, /本路已兜住/);
+  assert.match(html, /本路漏怪/);
+  assert.doesNotMatch(html.split('d-assist-visual')[0], /本路被兜住/);
+});

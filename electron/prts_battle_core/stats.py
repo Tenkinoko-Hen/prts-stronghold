@@ -204,7 +204,13 @@ class MatchStats:
             traps = dict(shop.get("traps") or {})
             goods = list(shop.get("shop") or ())
             skill_id = str(shop.get("skill_id") or "")
-            deployed_piece_count = sum(1 for inst_id in pieces if inst_id in positions)
+            deployed_piece_count = sum(
+                1
+                for inst_id in pieces
+                if isinstance(positions.get(inst_id), (int, float))
+                and not isinstance(positions.get(inst_id), bool)
+                and positions[inst_id] >= 0
+            )
             summary = {
                 "round": int(round_no) if isinstance(round_no, int) and 1 <= round_no <= 15 else self.current_round,
                 "shop_level": int(shop.get("shop_level") or 0),
@@ -860,7 +866,8 @@ class MatchStats:
                     "tier": resolved["tier"],
                     "is_golden": resolved["is_golden"],
                 }
-                if inst_id in positions:
+                pos_val = positions.get(inst_id)
+                if isinstance(pos_val, (int, float)) and not isinstance(pos_val, bool) and pos_val >= 0:
                     deployed.append(item)
                 else:
                     bench.append(item)

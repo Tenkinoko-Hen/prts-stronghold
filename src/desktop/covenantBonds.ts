@@ -1,6 +1,28 @@
 // 青逝痕 Tenkinoko 制作
+import operatorReference from '../data/operatorReference.json';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES } from '../data/strongholdData';
 import type { DeckPoolSnapshot, SeatLineup } from './combatTelemetry';
+
+const OPERATOR_QUOTE_RE = /["'“”‘’]/g;
+
+export function normalizeOperatorName(name?: string | null): string {
+  return name ? name.replace(OPERATOR_QUOTE_RE, '').trim() : '';
+}
+
+const REF_COVENANTS_BY_NAME: ReadonlyMap<string, string[]> = (() => {
+  const map = new Map<string, string[]>();
+  const mode = (operatorReference as { mode?: Record<string, { covenants?: unknown }> })?.mode;
+  if (!mode) return map;
+  for (const [rawName, entry] of Object.entries(mode)) {
+    const covs = Array.isArray(entry?.covenants)
+      ? entry.covenants.filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+      : [];
+    if (covs.length === 0) continue;
+    const norm = normalizeOperatorName(rawName);
+    if (norm) map.set(norm, covs);
+  }
+  return map;
+})();
 
 // 明日方舟《卫戍协议》V3_1（act3autochess）官方 bondInfoDict 全量 26 项盟约 ID 映射
 export const BOND_ID_TO_COVENANT: Readonly<Record<string, string>> = {
@@ -125,16 +147,18 @@ export function computeSeatCovenants(
   const byName = new Map<string, string[]>();
   for (const s of lineup.squad) {
     if (s.covenants.length > 0) {
+      const norm = normalizeOperatorName(s.name);
       if (s.chessId) byChess.set(s.chessId, s.covenants);
       if (s.charId) byChar.set(s.charId, s.covenants);
-      if (s.name) byName.set(s.name, s.covenants);
+      if (norm) byName.set(norm, s.covenants);
     }
   }
   if (deckPool) {
     for (const op of deckPool.operators) {
       if (op.covenants.length > 0) {
+        const norm = normalizeOperatorName(op.name);
         if (op.charId && !byChar.has(op.charId)) byChar.set(op.charId, op.covenants);
-        if (op.name && !byName.has(op.name)) byName.set(op.name, op.covenants);
+        if (norm && !byName.has(norm)) byName.set(norm, op.covenants);
       }
     }
   }
@@ -142,12 +166,14 @@ export function computeSeatCovenants(
   // 2. 场上不重复干员计数
   const seenUnits = new Set<string>();
   for (const unit of lineup.deployed) {
-    const dedupKey = unit.charId || unit.chessId || unit.name;
+    const normName = normalizeOperatorName(unit.name);
+    const dedupKey = unit.charId || unit.chessId || normName || unit.name;
     if (!dedupKey || seenUnits.has(dedupKey)) continue;
     seenUnits.add(dedupKey);
     const covs = (unit.chessId ? byChess.get(unit.chessId) : undefined)
       ?? (unit.charId ? byChar.get(unit.charId) : undefined)
-      ?? (unit.name ? byName.get(unit.name) : undefined);
+      ?? (normName ? byName.get(normName) : undefined)
+      ?? (normName ? REF_COVENANTS_BY_NAME.get(normName) : undefined);
     if (!covs) continue;
     for (const cov of covs) {
       if (!VALID_COVENANTS.has(cov)) continue;

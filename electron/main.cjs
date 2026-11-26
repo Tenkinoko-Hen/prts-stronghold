@@ -414,7 +414,13 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     const display = latestMumuWindow
       ? screen.getDisplayMatching(latestMumuWindow)
       : screen.getDisplayMatching(mainWindow.getBounds());
-    const hudBounds = computeMumuHudBounds({ mumuWindow: latestMumuWindow, workArea: display.workArea });
+    const hudSize = hudOverlay?.getScaleBounds?.();
+    const hudBounds = computeMumuHudBounds({
+      mumuWindow: latestMumuWindow,
+      workArea: display.workArea,
+      hudWidth: hudSize?.width,
+      hudHeight: hudSize?.height,
+    });
     const wasHudOpen = Boolean(hudOverlay?.getState()?.open);
     hudOpenedByCollapse = !wasHudOpen;
     hudOverlay?.openAtBounds(hudBounds, { drawerCollapsed: true });
@@ -476,6 +482,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
 
   hudOverlay = process.platform === 'win32'
     ? installHudOverlay({
+        app,
         mainWindow,
         ipcMain,
         globalShortcut,
@@ -544,9 +551,12 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
                 sendLayoutState();
               }
               if (drawerCollapsed && hudOverlay?.getState()?.open && moved) {
+                const hudSize = hudOverlay?.getScaleBounds?.();
                 const hudBounds = computeMumuHudBounds({
                   mumuWindow: latestMumuWindow,
                   workArea: safeDisplayWorkArea(latestMumuWindow),
+                  hudWidth: hudSize?.width,
+                  hudHeight: hudSize?.height,
                 });
                 hudOverlay.openAtBounds(hudBounds, { drawerCollapsed: true });
               }
@@ -590,9 +600,12 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
               sendLayoutState();
             }
             if (drawerCollapsed && hudOverlay?.getState()?.open && moved) {
+              const hudSize = hudOverlay?.getScaleBounds?.();
               const hudBounds = computeMumuHudBounds({
                 mumuWindow: latestMumuWindow,
                 workArea: safeDisplayWorkArea(latestMumuWindow),
+                hudWidth: hudSize?.width,
+                hudHeight: hudSize?.height,
               });
               hudOverlay.openAtBounds(hudBounds, { drawerCollapsed: true });
             }

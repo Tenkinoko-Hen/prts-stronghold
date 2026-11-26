@@ -2,10 +2,14 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { defaultBossRound, readBattleReport, reportBossRounds, reportLeader } from './battleReportData';
 import { renderBattleReportHtml } from './battleReportDocument';
 import { summarizeBattleReport } from './battleReportExport';
 import { isSeatEliminatedInRound, roundOutcome } from './battleRoundOutcome';
+import { SeatLineupsStrip } from './BattleReportTelemetry';
+import { SeatTelemetryStrip } from './SeatTelemetryStrip';
 import {
   formatTelemetryRate,
   formatTelemetryTotal,
@@ -23,11 +27,13 @@ import {
   hypergeometricAtLeastOne,
 } from './deckPoolMath';
 import { computeSeatCovenants, shortCovenantName, visibleSeatCovenants } from './covenantBonds';
+import { HUD_SCALE_SPECS, buildHudBossTeamData, buildHudLeakData } from './hudTelemetryViewModel';
 import { buildSmoothSplinePath, formatAxisNumber, niceTicks } from './prtsChartKit';
 import { resolveEquipIconIndex } from './EquipIcon';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
 import { isSecondScreenActive } from '../mobile/MobileLanPanel';
 import { demoReport } from './demo/battleReportFixture';
+import { buildHudDemoPreview } from './demo/hudDemoFixture';
 import { computeEffectiveDps } from '../mobile/MobileDpsEstimator';
 import { parseSettlementQuickText } from '../mobile/settlementQuickParse';
 import { emptySession, mobileReducer } from '../mobile/mobileSession';
@@ -329,4 +335,162 @@ test('computeSeatCovenants deduplicates deployed copies, applies transfer equip 
   const capped = visibleSeatCovenants(lineups[1], pool, 2);
   assert.equal(capped.shown.length, 2);
   assert.equal(capped.hiddenCount, 1);
+});
+
+test('computeSeatCovenants normalizes smart quotes and falls back to operatorReference catalog without squad/pool', () => {
+  const lineups = readSeatLineups({
+    1: {
+      round: 8,
+      shop_level: 4,
+      piece_count: 3,
+      deployed_count: 3,
+      deployed: [
+        { inst_id: 1, chess_id: '', char_id: 'char_pramanix_2', name: '“圣聆初雪”', tier: 6, is_golden: false },
+        { inst_id: 2, chess_id: '', char_id: 'char_4046_ebnhlz', name: '黑键', tier: 4, is_golden: false },
+        { inst_id: 3, chess_id: '', char_id: 'char_367_swllow', name: '灰喉', tier: 1, is_golden: false },
+      ],
+      bench: [],
+      equips: [],
+      shop_goods: [],
+      squad: [],
+    },
+    3: {
+      round: 8,
+      shop_level: 4,
+      piece_count: 3,
+      deployed_count: 3,
+      deployed: [
+        { inst_id: 4, chess_id: '', char_id: 'char_zheya', name: '折桠', tier: 1, is_golden: false },
+        { inst_id: 5, chess_id: '', char_id: 'char_lethes', name: '烈夏', tier: 3, is_golden: false },
+        { inst_id: 6, chess_id: '', char_id: 'char_istina', name: '真理', tier: 3, is_golden: false },
+      ],
+      bench: [],
+      equips: [],
+      shop_goods: [],
+      squad: [],
+    },
+  });
+  const s1Bonds = computeSeatCovenants(lineups[1], null);
+  const preci = s1Bonds.find(b => b.name === '精准');
+  assert.ok(preci && preci.count === 2 && preci.active);
+  assert.ok(s1Bonds.some(b => b.name === '奥术' && b.count === 1));
+
+  const s3Bonds = computeSeatCovenants(lineups[3], null);
+  const ursus = s3Bonds.find(b => b.name === '乌萨斯');
+  assert.ok(ursus && ursus.count === 3 && ursus.active);
+});
+
+test('R8 all-players-leaked uses roundMetrics/skippedCosts and prevents false 零逃 in HUD & SeatTelemetryStrip', () => {
+  assert.deepEqual(
+    {
+      sm: { width: HUD_SCALE_SPECS.sm.width, height: HUD_SCALE_SPECS.sm.height },
+      md: { width: HUD_SCALE_SPECS.md.width, height: HUD_SCALE_SPECS.md.height },
+      lg: { width: HUD_SCALE_SPECS.lg.width, height: HUD_SCALE_SPECS.lg.height },
+    },
+    {
+      sm: { width: 500, height: 248 },
+      md: { width: 580, height: 280 },
+      lg: { width: 660, height: 316 },
+    },
+  );
+  const leakPreview = buildHudDemoPreview('leak_r8', 'md');
+  assert.ok(leakPreview);
+  const parsed = readBattleReport(leakPreview.previewState.report);
+  const hudLeak = buildHudLeakData({
+    parsed,
+    leakCumulative: true,
+    leakSelectedRound: 8,
+    soloMode: false,
+    selfSeat: 1,
+  });
+  assert.ok(hudLeak.totalEscaped >= 18);
+  const s1 = hudLeak.cards.find(c => c.seat === 1)!;
+  assert.ok(s1.leaked >= 6 && s1.escaped >= 6 && s1.covered === 0);
+  assert.ok(s1.bonds.shown.some(b => b.name === '精准' && b.count === 2 && b.active));
+  assert.equal(hudLeak.cards.find(c => c.seat === 3)?.bonds.shown.some(b => b.name === '乌萨斯' && b.count === 3 && b.active), true);
+
+  const stripHtml = renderToStaticMarkup(createElement(SeatTelemetryStrip, { report: parsed, focusSeat: 1 }));
+  assert.doesNotMatch(stripHtml, /零逃/);
+  assert.match(stripHtml, /逃\s*18|逃18/);
+});
+
+test('R14 HUD Boss ranking merges bossOfficial/bossPercent alongside partial bossDamage without dropping #3', () => {
+  const bossPreview = buildHudDemoPreview('boss_r14', 'md');
+  assert.ok(bossPreview);
+  const parsed = readBattleReport(bossPreview.previewState.report);
+  const bossRound = parsed.rounds.find(r => r.number === 14);
+  const data = buildHudBossTeamData({
+    parsed,
+    bossRound,
+    bossPool: null,
+    bossLeader: null,
+    bossElapsedSec: 40,
+    soloMode: false,
+    selfSeat: 1,
+  });
+  const seat3Row = data.rows.find(r => r.seat === 3)!;
+  assert.equal(seat3Row.damage, 4410000);
+  assert.equal(seat3Row.rank, 3);
+  assert.ok(seat3Row.sharePct > 19);
+});
+
+test('SeatLineupsStrip shows 持有 X 枚 when bench is empty and 在场 X / 整备 Y when bench is populated', () => {
+  const noBenchReport = readBattleReport({
+    capture: { match: 9, round: 8, self: 1 },
+    players: { 1: '测试席1' },
+    battle_config: { mode_id: 'mode_multi_hard' },
+    rounds: { 8: { phase: 'prep', self_leaks: 0 } },
+    lineups: {
+      1: {
+        round: 8,
+        shop_level: 5,
+        piece_count: 9,
+        deployed_count: 9,
+        deployed: Array.from({ length: 9 }, (_, i) => ({
+          inst_id: i + 1, chess_id: '', char_id: `char_${i}`, name: `干员${i}`, tier: 4, is_golden: false,
+        })),
+        bench: [],
+        equips: [],
+        shop_goods: [],
+        squad: [],
+      },
+    },
+  });
+  const noBenchHtml = renderToStaticMarkup(createElement(SeatLineupsStrip, {
+    report: noBenchReport,
+    lineups: noBenchReport.lineups,
+    solo: false,
+  }));
+  assert.match(noBenchHtml, /持有 9 枚/);
+  assert.doesNotMatch(noBenchHtml, /在场 9\/9/);
+
+  const withBenchReport = readBattleReport({
+    capture: { match: 10, round: 9, self: 1 },
+    players: { 1: '测试席1' },
+    battle_config: { mode_id: 'mode_multi_hard' },
+    rounds: { 9: { phase: 'prep', self_leaks: 0 } },
+    lineups: {
+      1: {
+        round: 9,
+        shop_level: 5,
+        piece_count: 9,
+        deployed_count: 7,
+        deployed: Array.from({ length: 7 }, (_, i) => ({
+          inst_id: i + 1, chess_id: '', char_id: `char_${i}`, name: `干员${i}`, tier: 4, is_golden: false,
+        })),
+        bench: Array.from({ length: 2 }, (_, i) => ({
+          inst_id: 20 + i, chess_id: '', char_id: `bench_${i}`, name: `整备${i}`, tier: 3, is_golden: false,
+        })),
+        equips: [],
+        shop_goods: [],
+        squad: [],
+      },
+    },
+  });
+  const withBenchHtml = renderToStaticMarkup(createElement(SeatLineupsStrip, {
+    report: withBenchReport,
+    lineups: withBenchReport.lineups,
+    solo: false,
+  }));
+  assert.match(withBenchHtml, /在场 7 \/ 整备 2/);
 });

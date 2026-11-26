@@ -101,12 +101,12 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 02:21（完成 **全四端 UI 同构升级 + MuMu 内外贴边收起联动 + 双悬浮窗瘦身闭环 + Android Full 第 4 页签「战报」闭环 + 1,064 项全栈/Fuzz/真机 DOM 稳定性验证**，并完成 `2.0.6` 全四端本地测试出包，准备次日上班接续实测）
-- **同步基线提交**：见 `git log -n 5 --oneline`（主功能提交 `84cfd8d`）
+- **最后更新**：2026-11-26 10:52（完成 **全端 HUD 字体统一 + 24 寸 2K 屏三档缩放 / 小米 14 字号重构 + 5 项实机战报数据与口径 Bug 根治**，191/191 全栈测试 + Android 872 项直跑测试 + Chrome CDP 真机视口实测截图全绿）
+- **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **183/183 全绿**（`tsc --noEmit` 通过 + TS 110/110 + Node 14/14 + Python 59/59）
-  - Android Java 单元与高压稳定性测试 **871/871 全绿**（含 2,000 轮随机乱序/半包/脏字节 Fuzz 轰炸与 15 局连续轮换零串局测试）
-  - Electron Offscreen 真机 DOM 冒烟 **10/10 全绿**（覆盖 PC Full 宽屏与 `1024×700`、MuMu `416px` 抽屉、PC Lite 宽屏与 `460px` 窄栏禁选折叠、PC HUD 双版 `460×188`、Android Full 5 页签与 Android Lite 3 页签，`pageError=0`、`横向溢出=0`）
+  - `npm test` **191/191 全绿**（`tsc --noEmit` 通过 + TS 116/116 + Node 15/15 + Python 60/60）
+  - Android Java 单元与高压稳定性测试 **872 项直跑全绿**（`OverlayService.java` 静态审计 `Typeface.MONOSPACE` / `setTypeface(null` / `<10f` 均为 0 处）
+  - Chrome CDP 真机视口实测截图全绿（`sm 500×248` / `md 580×280` / `lg 660×316` 漏兜页均 `scrollHeight === clientHeight` 零裁切，`Source Han Sans CN` 命中，小米 14 `840×378` & `378×840` 零横向溢出）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
   - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）
@@ -122,6 +122,10 @@ npm run build
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker；本机已安装并登录 `gh` CLI（大文件上传如遇代理重置可配合 `curl --http1.1 --limit-rate 3M`）。
 - **近期已完成里程碑**：
+  - **全端 HUD 字体统一 + 2K/小米 14 字号重构 + 5 项实局数据口径 Bug 根治**（191/191 全栈测试 + Android 872 项直跑测试 + CDP 三档零裁切实测全绿）：
+    - **PC 悬浮窗（`hud-overlay.cjs` / `HudStripApp.tsx` / `hudTelemetryViewModel.ts`）**：全量中文字体统一回 `Source Han Sans CN`（`var(--font-sans)`），仅纯数字/短码走 `var(--font-mono)`；新增持久化 3 档缩放（`sm 500×248` / `md 580×280` 2K 默认 / `lg 660×316`）与顶栏 `小/中/大` 快捷切换，最低字号 `≥11px`（`sm ≥10.5px`），三档漏兜 2×2+高漏底栏一屏零滚动条无裁切，底部双波无半截头像裁切。
+    - **Android 原生悬浮窗（`OverlayService.java`）**：彻底移除 `Typeface.MONOSPACE`，统一 `prtsSans` + `prtsNumeric`（`sans-serif-condensed` + `tnum`），按小米 14 6.36" 横屏（`~840×378dp`）提档至 `10–12.5sp`、横屏宽 `448dp`。
+    - **5 项实测数据修复**：① `covenantBonds.ts` 接入 143 干员 `operatorReference.json` 兜底与引号归一化，同步 `BattleCaptureState.java` 跨席查找，修复 1/2/4 席盟约漏显；② `HudStripApp` 漏兜统一复用 `roundMetrics`，并修复全队均漏回合误显 `1` 与误标 `零逃`（同步修 `SeatTelemetryStrip.tsx`）；③ `buildHudBossTeamData` 改为逐席合并 `bossDamage/bossOfficial/bossUplink/bossPercent`，修复 R14 4 人榜漏掉 `#3` 席位；④ `BattleReportPanels.tsx` 统一 R15 Boss 排行分母、合作圆环中心为全队输出、清洗弯引号并优化状态文案；⑤ `stats.py` 负数坐标归入整备，`SeatLineupsStrip` 未分整备时标 `持有 X 枚`，R11 队友互兜按施救者席位着色并去重胶囊。
   - **全四端终版 UI 同构升级 + MuMu 防挡收起联动 + 双悬浮窗瘦身闭环（`84cfd8d`，1,064 项全栈/Fuzz/真机 DOM 验证全绿，已出 `2.0.6` 全四端测试包）**：
     - `src/desktop/covenantBonds.ts` + `SeatTelemetryStrip.tsx`：统一 PC Full `02 实时战报`、PC Lite `总览` 与 MuMu 贴边抽屉的四席双轨态势条（`兜(青)/漏(橙+红)` + `♥HP` + `1–6本` + 在阵干员去重与转职装备 `+1` 实时激活盟约 + 淘汰灰态回流提示）。
     - `electron/mumu-layout.cjs` / `hud-overlay.cjs` / `main.cjs` + `MumuDrawerApp.tsx` / `TelemetryApp.tsx` / `HudStripApp.tsx`：PC Full 与 PC Lite 同步支持 `inside-right` 防遮挡黄条一键收起至 `460×188` 顶部微缩 HUD ⇄ 恢复贴边，Lite 460px 窄栏自动折叠多禁选胶囊，PC HUD 升级双波并排与零漏底栏自动折叠，并严格区分 Full 黄 `#FFE600` / Lite 青 `#22D3EE`（含异常守护卡）。

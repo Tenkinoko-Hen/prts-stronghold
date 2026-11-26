@@ -386,7 +386,7 @@ function SegmentedEnergyBar({ op, maxValue, metric, rank = 1 }: {
   );
 }
 
-function SeatLineupsStrip({ report, lineups, solo }: {
+export function SeatLineupsStrip({ report, lineups, solo }: {
   report: BattleReport;
   lineups: Record<number, SeatLineup>;
   solo: boolean;
@@ -414,7 +414,15 @@ function SeatLineupsStrip({ report, lineups, solo }: {
                   {isEliminated && <span className="d-seat-elim-tag"><Skull size={10} />R{elimRound}阵亡</span>}
                   {info.shopLevel && <span className="d-tele-chip is-accent">{info.shopLevel}本</span>}
                   {info.strategist && <span className="d-tele-chip">{info.strategist}</span>}
-                  {info.pieceCount > 0 && <span className="d-tele-chip">在场 {info.deployedCount}/{info.pieceCount}</span>}
+                  {info.pieceCount > 0 && (
+                    <span className="d-tele-chip">
+                      {info.bench.length === 0 && info.deployed.length > 0
+                        ? `持有 ${info.pieceCount} 枚`
+                        : info.bench.length > 0
+                          ? `在场 ${info.deployedCount} / 整备 ${info.bench.length}`
+                          : `在场 ${info.deployedCount}/${info.pieceCount}`}
+                    </span>
+                  )}
                 </div>
               </div>
 

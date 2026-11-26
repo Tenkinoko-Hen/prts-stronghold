@@ -24,6 +24,7 @@ const {
 } = require('../electron/covenant-ocr.cjs');
 const { installLanSync, isPrivateLanIp, verifyPin } = require('../electron/lan-sync.cjs');
 const { computeMumuDrawerBounds, computeMumuHudBounds } = require('../electron/mumu-layout.cjs');
+const { HUD_SCALES, defaultHudScaleForWorkArea, installHudOverlay } = require('../electron/hud-overlay.cjs');
 
 const loadProduct = (id) =>
   JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'products', id, 'product.json'), 'utf8'));
@@ -617,5 +618,43 @@ test('corrupted worker stdout chunks and extreme window coordinates never throw 
     assert.ok(extremeHud.y >= 0 && extremeHud.y + extremeHud.height <= 1040);
   } finally {
     br.dispose();
+  }
+});
+
+test('HUD overlay exposes sm/md/lg presets, picks md on 2K displays, and persists scale changes', async () => {
+  const os = require('node:os');
+  assert.deepEqual(HUD_SCALES, {
+    sm: { width: 500, height: 248 },
+    md: { width: 580, height: 280 },
+    lg: { width: 660, height: 316 },
+  });
+  assert.equal(defaultHudScaleForWorkArea({ width: 2560, height: 1400 }), 'md');
+  assert.equal(defaultHudScaleForWorkArea({ width: 1440, height: 900 }), 'sm');
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prts-hud-prefs-'));
+  const handlers = {};
+  const fakeMain = {
+    isDestroyed: () => false,
+    webContents: { mainFrame: { url: 'prts://app/' }, send: () => {} },
+  };
+  const overlay = installHudOverlay({
+    app: { getPath: () => tmpDir },
+    mainWindow: fakeMain,
+    ipcMain: { handle: (name, fn) => { handlers[name] = fn; } },
+    globalShortcut: null,
+    product: loadProduct('stronghold'),
+  });
+  try {
+    const res = await handlers['hud-overlay-scale'](
+      { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame },
+      'lg',
+    );
+    assert.equal(res.scale, 'lg');
+    assert.deepEqual(overlay.getScaleBounds(), { width: 660, height: 316 });
+    const saved = JSON.parse(fs.readFileSync(path.join(tmpDir, 'hud-prefs.json'), 'utf8'));
+    assert.equal(saved.scale, 'lg');
+  } finally {
+    overlay.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

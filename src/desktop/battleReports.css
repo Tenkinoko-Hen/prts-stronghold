@@ -199,8 +199,8 @@
 .d-report-table thead th { background:var(--bg-base,var(--bg-canvas)); color:var(--d-muted); white-space:nowrap; }
 .d-report-table tbody tr:nth-child(even) { background:rgba(145,160,184,.04); }
 .d-report-note { margin:0; padding:10px 0; }
-.d-solo-pill { display:inline-flex; align-items:center; padding:1px 6px; border:1px solid rgba(245,208,0,.45); background:rgba(245,208,0,.1); color:var(--report-active); font:700 10px var(--font-mono); letter-spacing:.06em; border-radius:2px; }
-.d-tab-count { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:15px; padding:0 4px; border-radius:2px; background:rgba(34,211,238,.16); color:var(--report-round); font:700 10px var(--font-mono); font-style:normal; }
+.d-solo-pill { display:inline-flex; align-items:center; padding:1px 6px; border:1px solid rgba(245,208,0,.45); background:rgba(245,208,0,.1); color:var(--report-active); font:700 10.5px var(--font-sans); letter-spacing:.04em; border-radius:2px; }
+.d-tab-count { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:15px; padding:0 4px; border-radius:2px; background:rgba(34,211,238,.16); color:var(--report-round); font:700 10.5px var(--font-mono); font-style:normal; }
 .d-boss-op { display:inline-flex; align-items:center; gap:6px; vertical-align:middle; }
 .d-report-seat-cards[data-solo="true"] { grid-template-columns:minmax(0,220px); }
 .d-round-cell-mix { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; min-width:0; }
@@ -220,7 +220,7 @@
 .d-tele-empty p { margin:0; font-size:12.5px; line-height:1.6; max-width:72ch; }
 .d-tele-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; padding:8px 12px; border:1px solid var(--border-hairline); border-top:2px solid var(--report-active); background:#10141c; border-radius:2px; }
 .d-tele-scope-group,.d-tele-controls { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
-.d-tele-scope-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; background:rgba(245,208,0,.12); border:1px solid rgba(245,208,0,.45); color:var(--report-active); font:700 11px var(--font-mono); letter-spacing:.03em; border-radius:2px; }
+.d-tele-scope-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; background:rgba(245,208,0,.12); border:1px solid rgba(245,208,0,.45); color:var(--report-active); font:700 11.5px var(--font-sans); letter-spacing:.03em; border-radius:2px; }
 .d-tele-scope-badge[data-scope="coop_assist"] { background:rgba(56,189,248,.12); border-color:rgba(56,189,248,.45); color:#38bdf8; }
 .d-tele-scope-badge[data-scope="coop_boss"] { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.45); color:#f87171; }
 .d-tele-stage { font-size:13px; color:#f1f5f9; }
@@ -238,7 +238,7 @@
 .d-tele-enemy-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; font-size:12px; color:var(--d-muted); }
 .d-tele-enemy-meta > span:first-child { display:inline-flex; align-items:center; gap:5px; font-weight:700; color:#f1f5f9; }
 .d-tele-enemy-meta b { color:#f1f5f9; font:700 12.5px var(--font-mono); }
-.d-tele-rebirth { padding:1px 6px; background:rgba(248,113,113,.14); border:1px solid rgba(248,113,113,.4); color:#f87171; font:600 11px var(--font-mono); border-radius:2px; }
+.d-tele-rebirth { padding:1px 6px; background:rgba(248,113,113,.14); border:1px solid rgba(248,113,113,.4); color:#f87171; font:600 11.5px var(--font-sans); border-radius:2px; }
 .d-tele-hp-track { height:6px; background:#141922; border:1px solid #232a35; border-radius:1px; overflow:hidden; }
 .d-tele-hp-track > span { display:block; height:100%; background:#d64840; transition:width .2s ease; }
 .d-tele-lineups { display:grid; gap:6px; padding:9px 12px; border:1px solid var(--border-hairline); background:var(--bg-panel); border-radius:2px; }
@@ -251,7 +251,7 @@
 .d-tele-lineup-card[data-self="true"] { border-left:2px solid var(--report-active); }
 .d-tele-lineup-top { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px; font-size:12px; }
 .d-tele-badges { display:inline-flex; flex-wrap:wrap; gap:4px; }
-.d-tele-chip { padding:1px 6px; border:1px solid var(--border-hairline); background:#161c26; color:#cbd5e1; font:600 11px var(--font-mono); border-radius:2px; }
+.d-tele-chip { padding:1px 6px; border:1px solid var(--border-hairline); background:#161c26; color:#cbd5e1; font:600 11.5px var(--font-sans); font-variant-numeric:tabular-nums; border-radius:2px; }
 .d-tele-chip.is-accent { border-color:rgba(245,208,0,.45); color:var(--report-active); background:rgba(245,208,0,.1); }
 .d-tele-squad-chips { display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
 .d-tele-op-pill { display:inline-flex; align-items:center; gap:4px; padding:1px 6px 1px 2px; border:1px solid #242c38; background:#141922; border-radius:2px; font-size:11.5px; color:#e2e8f0; }

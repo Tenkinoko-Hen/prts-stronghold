@@ -282,7 +282,7 @@ function AssistFlowVisual({ rows, report, seat }: { rows: BattleRound[]; report:
                   {owner === killer ? <small>自补</small> : seatName(owner, report)}
                 </span>
                 <span className="d-bar-track" aria-hidden="true">
-                  <i className="is-peer" style={{ width: `${Math.max(6, (count / otherScale) * 100)}%` }} />
+                  <i className={`is-peer seat-fill-${killer}`} style={{ width: `${Math.max(6, (count / otherScale) * 100)}%` }} />
                 </span>
                 <strong className="d-bar-val">{count}</strong>
               </li>
@@ -356,6 +356,9 @@ export function WaveDetails({ report, round, seat = report.self, live = false }:
   const showDistinctOutcomeNote = Boolean(
     outcome && outcome.note && outcome.label === '本路无人兜底',
   );
+  const omitDuplicateCoveredPill = Boolean(
+    !solo && outcome?.tone === 'covered' && uncoveredOwn === 0 && covered > 0 && leaks && covered === leaks.value,
+  );
 
   return <section className="d-wave-detail" aria-label={active ? `R${active.number} 回合详情` : '全部回合累计'}>
     <header className="d-report-heading"><h2>{active ? <><b>R{active.number}</b> 回合详情</> : <>全部回合累计 <small>{rows.length}R</small></>}</h2>
@@ -381,7 +384,7 @@ export function WaveDetails({ report, round, seat = report.self, live = false }:
             <b>+{myOut}</b>
           </span>
         )}
-        {!solo && covered > 0 && (
+        {!solo && covered > 0 && !omitDuplicateCoveredPill && (
           <span className="d-kpi-pill is-in">
             <small>本路被兜住</small>
             <b>{covered} 只</b>

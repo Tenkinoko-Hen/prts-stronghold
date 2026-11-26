@@ -263,6 +263,14 @@ public class OverlayService extends Service {
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
+    private static Typeface prtsSans(boolean bold) {
+        return Typeface.create("sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL);
+    }
+
+    private static Typeface prtsNumeric(boolean bold) {
+        return Typeface.create("sans-serif-condensed", bold ? Typeface.BOLD : Typeface.NORMAL);
+    }
+
     private GradientDrawable background(int color, int radius, int strokeColor) {
         GradientDrawable shape = new GradientDrawable();
         shape.setColor(color);
@@ -379,8 +387,8 @@ public class OverlayService extends Service {
     private void createBall() {
         measureScreen();
         ball = new TextView(this);
-        ball.setTextSize(11f);
-        ball.setTypeface(null, 1);
+        ball.setTextSize(12f);
+        ball.setTypeface(prtsSans(true));
         int brandCol = isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600;
         int brandStroke = isLiteTelemetryMode() ? 0x9922d3ee : 0x99ffe600;
         ball.setTextColor(brandCol);
@@ -539,17 +547,10 @@ public class OverlayService extends Service {
 
     private int preferredStripWidth() {
         boolean landscape = usableWidth > usableHeight;
-        boolean compact2x2 = isLiteTelemetryMode() || "leak".equals(stripTab);
-        if (compact2x2) {
-            if (landscape) {
-                return Math.min(dp(376), Math.max(dp(308), usableWidth - dp(164)));
-            }
-            return Math.min(dp(336), Math.max(dp(268), usableWidth - dp(22)));
-        }
         if (landscape) {
-            return Math.min(dp(468), Math.max(dp(344), usableWidth - dp(120)));
+            return Math.min(dp(448), Math.max(dp(360), usableWidth - dp(120)));
         }
-        return Math.min(dp(404), Math.max(dp(280), usableWidth - dp(20)));
+        return Math.min(dp(364), Math.max(dp(280), usableWidth - dp(16)));
     }
 
     private void positionStripDefault() {
@@ -581,8 +582,9 @@ public class OverlayService extends Service {
         topRow.addView(stripPrevBtn);
 
         stripRoundBadge = new TextView(this);
-        stripRoundBadge.setTextSize(10f);
-        stripRoundBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        stripRoundBadge.setTextSize(12f);
+        stripRoundBadge.setTypeface(prtsSans(true));
+        stripRoundBadge.setFontFeatureSettings("tnum");
         stripRoundBadge.setTextColor(0xff0b0c0e);
         stripRoundBadge.setPadding(dp(5), dp(1), dp(5), dp(1));
         stripRoundBadge.setBackground(background(0xffffe600, 2, 0xffffe600));
@@ -641,8 +643,8 @@ public class OverlayService extends Service {
         topRow.addView(stripLeakPills, pillsLp);
 
         stripTitleView = new TextView(this);
-        stripTitleView.setTextSize(11f);
-        stripTitleView.setTypeface(null, Typeface.BOLD);
+        stripTitleView.setTextSize(12.5f);
+        stripTitleView.setTypeface(prtsSans(true));
         stripTitleView.setTextColor(0xfff1f5f9);
         stripTitleView.setSingleLine(true);
         stripTitleView.setEllipsize(TextUtils.TruncateAt.END);
@@ -720,8 +722,8 @@ public class OverlayService extends Service {
         guideFocusRow.addView(guideFocusAccent, accLp);
 
         guideFocusKey = new TextView(this);
-        guideFocusKey.setTextSize(9.5f);
-        guideFocusKey.setTypeface(null, Typeface.BOLD);
+        guideFocusKey.setTextSize(11f);
+        guideFocusKey.setTypeface(prtsSans(true));
         guideFocusKey.setTextColor(0xff00e5ff);
         guideFocusKey.setSingleLine(true);
         LinearLayout.LayoutParams fkLp = new LinearLayout.LayoutParams(-2, -2);
@@ -739,8 +741,8 @@ public class OverlayService extends Service {
 
         guideAllWavesBtn = new TextView(this);
         guideAllWavesBtn.setText("完整");
-        guideAllWavesBtn.setTextSize(9.5f);
-        guideAllWavesBtn.setTypeface(null, Typeface.BOLD);
+        guideAllWavesBtn.setTextSize(11f);
+        guideAllWavesBtn.setTypeface(prtsSans(true));
         guideAllWavesBtn.setTextColor(0xff00e5ff);
         guideAllWavesBtn.setPadding(dp(5), dp(1), dp(5), dp(1));
         guideAllWavesBtn.setBackground(background(0xff0f222c, 2, 0x8800e5ff));
@@ -755,7 +757,8 @@ public class OverlayService extends Service {
         guideFocusRow.addView(guideAllWavesBtn, awLp);
 
         guideFocusFallbackVal = new TextView(this);
-        guideFocusFallbackVal.setTextSize(10f);
+        guideFocusFallbackVal.setTextSize(11.5f);
+        guideFocusFallbackVal.setTypeface(prtsSans(false));
         guideFocusFallbackVal.setTextColor(0xffe2e8f0);
         guideFocusFallbackVal.setMaxLines(2);
         guideFocusFallbackVal.setEllipsize(TextUtils.TruncateAt.END);
@@ -763,8 +766,9 @@ public class OverlayService extends Service {
         guideFocusRow.addView(guideFocusFallbackVal, new LinearLayout.LayoutParams(0, -2, 1f));
 
         guideFocusProg = new TextView(this);
-        guideFocusProg.setTextSize(9.5f);
-        guideFocusProg.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        guideFocusProg.setTextSize(11f);
+        guideFocusProg.setTypeface(prtsSans(true));
+        guideFocusProg.setFontFeatureSettings("tnum");
         guideFocusProg.setTextColor(0xffffe600);
         guideFocusProg.setSingleLine(true);
         LinearLayout.LayoutParams fpLp = new LinearLayout.LayoutParams(-2, -2);
@@ -774,7 +778,8 @@ public class OverlayService extends Service {
         guideContainer.addView(guideFocusRow, gfLp);
 
         guideBodyView = new TextView(this);
-        guideBodyView.setTextSize(10.5f);
+        guideBodyView.setTextSize(11.5f);
+        guideBodyView.setTypeface(prtsSans(false));
         guideBodyView.setTextColor(0xffe2e8f0);
         guideBodyView.setLineSpacing(dp(2), 1f);
         guideBodyView.setMaxLines(3);
@@ -816,8 +821,8 @@ public class OverlayService extends Service {
         lfLp.topMargin = dp(3);
 
         leakFooterTag = new TextView(this);
-        leakFooterTag.setTextSize(9f);
-        leakFooterTag.setTypeface(null, Typeface.BOLD);
+        leakFooterTag.setTextSize(10.5f);
+        leakFooterTag.setTypeface(prtsSans(true));
         leakFooterTag.setTextColor(0xfffb923c);
         leakFooterTag.setSingleLine(true);
         LinearLayout.LayoutParams lftLp = new LinearLayout.LayoutParams(-2, -2);
@@ -843,7 +848,7 @@ public class OverlayService extends Service {
 
         bossHpTrack = new FrameLayout(this);
         bossHpTrack.setBackground(background(0xff1e0c11, 3, 0x88ff4d4f));
-        LinearLayout.LayoutParams hpTrackLp = new LinearLayout.LayoutParams(-1, dp(19));
+        LinearLayout.LayoutParams hpTrackLp = new LinearLayout.LayoutParams(-1, dp(21));
         hpTrackLp.topMargin = dp(4);
 
         LinearLayout hpFillWrap = new LinearLayout(this);
@@ -860,15 +865,17 @@ public class OverlayService extends Service {
         hpTextRow.setGravity(Gravity.CENTER_VERTICAL);
         hpTextRow.setPadding(dp(6), 0, dp(6), 0);
         bossHpLeftText = new TextView(this);
-        bossHpLeftText.setTextSize(9.5f);
-        bossHpLeftText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        bossHpLeftText.setTextSize(11f);
+        bossHpLeftText.setTypeface(prtsSans(true));
+        bossHpLeftText.setFontFeatureSettings("tnum");
         bossHpLeftText.setTextColor(0xffffffff);
         bossHpLeftText.setSingleLine(true);
         hpTextRow.addView(bossHpLeftText, new LinearLayout.LayoutParams(0, -2, 1f));
 
         bossHpRightText = new TextView(this);
-        bossHpRightText.setTextSize(9.5f);
-        bossHpRightText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        bossHpRightText.setTextSize(11f);
+        bossHpRightText.setTypeface(prtsSans(true));
+        bossHpRightText.setFontFeatureSettings("tnum");
         bossHpRightText.setTextColor(0xfffef08a);
         bossHpRightText.setSingleLine(true);
         hpTextRow.addView(bossHpRightText, new LinearLayout.LayoutParams(-2, -2));
@@ -917,23 +924,24 @@ public class OverlayService extends Service {
         int unlockCol = isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600;
         unlockChip = new TextView(this);
         unlockChip.setText("解锁");
-        unlockChip.setTextSize(10.5f);
-        unlockChip.setTypeface(null, Typeface.BOLD);
+        unlockChip.setTextSize(11.5f);
+        unlockChip.setTypeface(prtsSans(true));
         unlockChip.setTextColor(unlockCol);
         unlockChip.setGravity(Gravity.CENTER);
         unlockChip.setBackground(background(0xee0b0d11, 3, unlockCol));
         unlockChip.setContentDescription("解锁触控穿透迷你条");
-        unlockParams = params(dp(38), dp(26), false, true);
+        unlockParams = params(dp(42), dp(28), false, true);
         unlockChip.setOnClickListener(v -> setStripLocked(false));
         refreshStripAndBallContent();
     }
 
     private TextView leakSummaryPill(LinearLayout parent, boolean gapLeft) {
         TextView tv = new TextView(this);
-        tv.setTextSize(9f);
-        tv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tv.setTextSize(11f);
+        tv.setTypeface(prtsSans(true));
+        tv.setFontFeatureSettings("tnum");
         tv.setSingleLine(true);
-        tv.setPadding(dp(4), dp(1), dp(4), dp(1));
+        tv.setPadding(dp(5), dp(1), dp(5), dp(1));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         if (gapLeft) lp.leftMargin = dp(3);
         parent.addView(tv, lp);
@@ -960,8 +968,8 @@ public class OverlayService extends Service {
     private TextView capsuleChip(String label, View.OnClickListener action) {
         TextView tv = new TextView(this);
         tv.setText(label);
-        tv.setTextSize(9.5f);
-        tv.setTypeface(null, Typeface.BOLD);
+        tv.setTextSize(11f);
+        tv.setTypeface(prtsSans(true));
         tv.setPadding(dp(5), dp(1), dp(5), dp(1));
         tv.setSingleLine(true);
         tv.setOnClickListener(action);
@@ -981,10 +989,11 @@ public class OverlayService extends Service {
     private TextView stepButton(String label, View.OnClickListener action) {
         TextView btn = new TextView(this);
         btn.setText(label);
-        btn.setTextSize(10f);
+        btn.setTextSize(11.5f);
+        btn.setTypeface(prtsSans(true));
         btn.setTextColor(0xffffe600);
         btn.setGravity(Gravity.CENTER);
-        btn.setPadding(dp(4), dp(1), dp(4), dp(1));
+        btn.setPadding(dp(5), dp(1), dp(5), dp(1));
         btn.setBackground(background(0xff171c26, 2, 0xff2b3444));
         btn.setOnClickListener(action);
         return btn;
@@ -1032,8 +1041,8 @@ public class OverlayService extends Service {
     private TextView miniStripButton(LinearLayout host, String text, int color, View.OnClickListener action) {
         TextView btn = new TextView(this);
         btn.setText(text);
-        btn.setTextSize(9.5f);
-        btn.setTypeface(null, Typeface.BOLD);
+        btn.setTextSize(11f);
+        btn.setTypeface(prtsSans(true));
         btn.setTextColor(color);
         btn.setPadding(dp(5), dp(2), dp(5), dp(2));
         btn.setBackground(background(0xff171c26, 2, 0xff2b3444));
@@ -1076,7 +1085,9 @@ public class OverlayService extends Service {
         }
 
         TextView label = new TextView(this);
-        label.setTextSize(9.5f);
+        label.setTextSize(11f);
+        label.setTypeface(prtsSans(false));
+        label.setFontFeatureSettings("tnum");
         label.setSingleLine(true);
         SpannableStringBuilder sb = new SpannableStringBuilder();
         String shortName = ec.name != null && ec.name.length() > 7 ? ec.name.substring(0, 7) : (ec.name != null ? ec.name : "");
@@ -1197,7 +1208,7 @@ public class OverlayService extends Service {
 
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(dp(5), dp(3), dp(5), dp(3));
+            card.setPadding(dp(5), dp(2), dp(5), dp(2));
             int selfBg = liteMode ? 0x1a22d3ee : 0x1affe600;
             int selfBorder = liteMode ? 0x9922d3ee : 0x99ffe600;
             int cardBg = row.isSelf ? selfBg : (row.escaped > 0 ? 0x1aff4d4f : 0xff131a24);
@@ -1219,10 +1230,10 @@ public class OverlayService extends Service {
             if (row.isSelf) {
                 TextView me = new TextView(this);
                 me.setText("我");
-                me.setTextSize(8f);
-                me.setTypeface(null, Typeface.BOLD);
+                me.setTextSize(10f);
+                me.setTypeface(prtsSans(true));
                 me.setTextColor(0xff0b0d11);
-                me.setPadding(dp(2), 0, dp(2), 0);
+                me.setPadding(dp(3), 0, dp(3), 0);
                 int meCol = liteMode ? 0xff22d3ee : 0xffffe600;
                 me.setBackground(background(meCol, 1, meCol));
                 LinearLayout.LayoutParams meLp = new LinearLayout.LayoutParams(-2, -2);
@@ -1232,8 +1243,8 @@ public class OverlayService extends Service {
 
             TextView nameTv = new TextView(this);
             nameTv.setText(row.name);
-            nameTv.setTextSize(9.5f);
-            nameTv.setTypeface(null, row.isSelf ? Typeface.BOLD : Typeface.NORMAL);
+            nameTv.setTextSize(11.5f);
+            nameTv.setTypeface(prtsSans(row.isSelf));
             nameTv.setTextColor(row.isSelf ? (liteMode ? 0xff67e8f9 : 0xfffff8b0) : 0xffe2e8f0);
             nameTv.setSingleLine(true);
             nameTv.setEllipsize(TextUtils.TruncateAt.END);
@@ -1251,8 +1262,9 @@ public class OverlayService extends Service {
                 appendColored(hpSb, " " + row.shopLevel + "本", 0xff38bdf8);
             }
             hpTv.setText(hpSb);
-            hpTv.setTextSize(8.5f);
-            hpTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            hpTv.setTextSize(10.5f);
+            hpTv.setTypeface(prtsSans(true));
+            hpTv.setFontFeatureSettings("tnum");
             hpTv.setSingleLine(true);
             head.addView(hpTv);
             card.addView(head);
@@ -1272,8 +1284,9 @@ public class OverlayService extends Service {
                 if (shown > 0) {
                     TextView bondTv = new TextView(this);
                     bondTv.setText(bondSb);
-                    bondTv.setTextSize(8f);
-                    bondTv.setTypeface(null, Typeface.BOLD);
+                    bondTv.setTextSize(10f);
+                    bondTv.setTypeface(prtsSans(true));
+                    bondTv.setFontFeatureSettings("tnum");
                     bondTv.setSingleLine(true);
                     bondTv.setEllipsize(TextUtils.TruncateAt.END);
                     LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-1, -2);
@@ -1347,8 +1360,9 @@ public class OverlayService extends Service {
 
                 TextView tag = new TextView(this);
                 tag.setText(String.format(Locale.US, "%sR%02d", wIdx == 0 ? "下" : "预", w.round));
-                tag.setTextSize(8f);
-                tag.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                tag.setTextSize(10f);
+                tag.setTypeface(prtsSans(true));
+                tag.setFontFeatureSettings("tnum");
                 tag.setTextColor(isBossWave ? 0xffffffff : (wIdx == 0 ? 0xff061018 : 0xff7dd3fc));
                 tag.setPadding(dp(3), dp(1), dp(3), dp(1));
                 int tagBg = isBossWave ? 0xffff4d4f : (wIdx == 0 ? 0xff22d3ee : 0xff1e3a5f);
@@ -1412,8 +1426,8 @@ public class OverlayService extends Service {
 
         TextView tag = new TextView(this);
         tag.setText(label);
-        tag.setTextSize(8.5f);
-        tag.setTypeface(null, Typeface.BOLD);
+        tag.setTextSize(10.5f);
+        tag.setTypeface(prtsSans(true));
         tag.setTextColor(labelColor);
         tag.setSingleLine(true);
         LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
@@ -1433,8 +1447,9 @@ public class OverlayService extends Service {
 
         TextView num = new TextView(this);
         num.setText(rightText);
-        num.setTextSize(8.5f);
-        num.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        num.setTextSize(10.5f);
+        num.setTypeface(prtsSans(true));
+        num.setFontFeatureSettings("tnum");
         num.setSingleLine(true);
         num.setGravity(Gravity.END);
         LinearLayout.LayoutParams numLp = new LinearLayout.LayoutParams(-2, -2);
@@ -1456,7 +1471,8 @@ public class OverlayService extends Service {
         if (logs == null || logs.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText(vpnRunning ? "本机抓包已就绪，进入战斗后自动推送毫秒级 Logs 流水…" : "请开启本机抓包，战斗中实时回显漏怪、兜底与升本流水");
-            empty.setTextSize(10f);
+            empty.setTextSize(11.5f);
+            empty.setTypeface(prtsSans(false));
             empty.setTextColor(0xff94a3b8);
             empty.setPadding(dp(4), dp(6), dp(4), dp(6));
             logsList.addView(empty);
@@ -1513,8 +1529,9 @@ public class OverlayService extends Service {
 
             TextView tsTv = new TextView(this);
             tsTv.setText(String.format(Locale.US, "R%02d %s", Math.max(1, entry.round), fmt.format(new Date(entry.tsMs))));
-            tsTv.setTextSize(8.5f);
-            tsTv.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+            tsTv.setTextSize(10.5f);
+            tsTv.setTypeface(prtsNumeric(false));
+            tsTv.setFontFeatureSettings("tnum");
             tsTv.setTextColor(0xff64748b);
             tsTv.setSingleLine(true);
             LinearLayout.LayoutParams tsLp = new LinearLayout.LayoutParams(-2, -2);
@@ -1523,8 +1540,8 @@ public class OverlayService extends Service {
 
             TextView badge = new TextView(this);
             badge.setText(tagText);
-            badge.setTextSize(8.5f);
-            badge.setTypeface(null, Typeface.BOLD);
+            badge.setTextSize(10.5f);
+            badge.setTypeface(prtsSans(true));
             badge.setTextColor(badgeFg);
             badge.setPadding(dp(4), dp(1), dp(4), dp(1));
             badge.setBackground(background(badgeBg, 2, badgeBg));
@@ -1561,7 +1578,8 @@ public class OverlayService extends Service {
                 appendColored(sb, !entry.enemyName.isEmpty() ? (entry.detail + " · " + entry.enemyName) : entry.detail, 0xffe2e8f0);
             }
             msg.setText(sb);
-            msg.setTextSize(9.5f);
+            msg.setTextSize(11f);
+            msg.setTypeface(prtsSans(false));
             msg.setSingleLine(true);
             msg.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(msg, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1575,7 +1593,8 @@ public class OverlayService extends Service {
         if (waves == null || waves.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("暂无已同步波次数据，请进入对局后查看。");
-            empty.setTextSize(10f);
+            empty.setTextSize(11.5f);
+            empty.setTypeface(prtsSans(false));
             empty.setTextColor(0xff94a3b8);
             empty.setPadding(dp(4), dp(8), dp(4), dp(8));
             wavesList.addView(empty);
@@ -1605,8 +1624,9 @@ public class OverlayService extends Service {
 
             TextView rBadge = new TextView(this);
             rBadge.setText(isBossWave ? String.format(Locale.US, "R%02d·B", w.round) : String.format(Locale.US, "R%02d", w.round));
-            rBadge.setTextSize(9f);
-            rBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            rBadge.setTextSize(10.5f);
+            rBadge.setTypeface(prtsNumeric(true));
+            rBadge.setFontFeatureSettings("tnum");
             int rbBg = isBossWave ? 0xffff4d4f : (isCur ? 0xffffe600 : (isNext ? 0xff00e5ff : 0xff1e293b));
             int rbFg = (isCur || isNext) && !isBossWave ? 0xff0b0d11 : 0xffffffff;
             rBadge.setTextColor(rbFg);
@@ -1678,7 +1698,7 @@ public class OverlayService extends Service {
             BattleCaptureState.BossPlayerRow p = boss.players.get(i);
             FrameLayout row = new FrameLayout(this);
             row.setBackground(background(0xff11161f, 2, p.isSelf ? 0x99ffe600 : 0xff232d3d));
-            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, dp(21));
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, dp(24));
             if (i > 0) rowLp.topMargin = dp(3);
 
             // Proportional gradient fill (#1 = 100%)
@@ -1715,17 +1735,18 @@ public class OverlayService extends Service {
 
             TextView rankTv = new TextView(this);
             rankTv.setText("#" + p.rank);
-            rankTv.setTextSize(9.5f);
-            rankTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            rankTv.setTextSize(11f);
+            rankTv.setTypeface(prtsNumeric(true));
+            rankTv.setFontFeatureSettings("tnum");
             rankTv.setTextColor(p.rank == 1 ? 0xffffe600 : (p.isSelf ? 0xfffef08a : 0xff94a3b8));
-            rankTv.setMinWidth(dp(20));
+            rankTv.setMinWidth(dp(22));
             fg.addView(rankTv);
 
             if (p.isSelf) {
                 TextView me = new TextView(this);
                 me.setText("我");
-                me.setTextSize(8f);
-                me.setTypeface(null, Typeface.BOLD);
+                me.setTextSize(10f);
+                me.setTypeface(prtsSans(true));
                 me.setTextColor(0xff0b0d11);
                 me.setPadding(dp(3), 0, dp(3), 0);
                 me.setBackground(background(0xffffe600, 1, 0xffffe600));
@@ -1736,8 +1757,8 @@ public class OverlayService extends Service {
 
             TextView nameTv = new TextView(this);
             nameTv.setText(p.name);
-            nameTv.setTextSize(10f);
-            nameTv.setTypeface(null, Typeface.BOLD);
+            nameTv.setTextSize(11.5f);
+            nameTv.setTypeface(prtsSans(true));
             nameTv.setTextColor(0xffffffff);
             nameTv.setSingleLine(true);
             nameTv.setEllipsize(TextUtils.TruncateAt.END);
@@ -1745,31 +1766,34 @@ public class OverlayService extends Service {
 
             TextView dmgTv = new TextView(this);
             dmgTv.setText(p.damage > 0 ? fmtWan(p.damage) : "—");
-            dmgTv.setTextSize(10f);
-            dmgTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            dmgTv.setTextSize(11.5f);
+            dmgTv.setTypeface(prtsNumeric(true));
+            dmgTv.setFontFeatureSettings("tnum");
             dmgTv.setTextColor(0xffffffff);
             dmgTv.setGravity(Gravity.END);
-            dmgTv.setMinWidth(dp(38));
+            dmgTv.setMinWidth(dp(42));
             fg.addView(dmgTv);
 
             TextView dpsTv = new TextView(this);
             dpsTv.setText(p.dps > 0 ? (fmtComma(p.dps) + "/s") : "0/s");
-            dpsTv.setTextSize(9.5f);
-            dpsTv.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+            dpsTv.setTextSize(11f);
+            dpsTv.setTypeface(prtsNumeric(false));
+            dpsTv.setFontFeatureSettings("tnum");
             dpsTv.setTextColor(p.isSelf ? 0xfffef08a : 0xffbae6fd);
             dpsTv.setGravity(Gravity.END);
-            dpsTv.setMinWidth(dp(48));
+            dpsTv.setMinWidth(dp(50));
             LinearLayout.LayoutParams dpsLp = new LinearLayout.LayoutParams(-2, -2);
             dpsLp.leftMargin = dp(5);
             fg.addView(dpsTv, dpsLp);
 
             TextView shareTv = new TextView(this);
             shareTv.setText(String.format(Locale.US, "%.1f%%", p.sharePct));
-            shareTv.setTextSize(9.5f);
-            shareTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            shareTv.setTextSize(11f);
+            shareTv.setTypeface(prtsNumeric(true));
+            shareTv.setFontFeatureSettings("tnum");
             shareTv.setTextColor(0xffe2e8f0);
             shareTv.setGravity(Gravity.END);
-            shareTv.setMinWidth(dp(34));
+            shareTv.setMinWidth(dp(38));
             LinearLayout.LayoutParams shLp = new LinearLayout.LayoutParams(-2, -2);
             shLp.leftMargin = dp(4);
             fg.addView(shareTv, shLp);
@@ -2046,8 +2070,8 @@ public class OverlayService extends Service {
         int brandCol = lite ? 0xff22d3ee : 0xffffe600;
         TextView badge = new TextView(this);
         badge.setText(lite ? "LITE" : "PRTS");
-        badge.setTextSize(10f);
-        badge.setTypeface(null, 1);
+        badge.setTextSize(11.5f);
+        badge.setTypeface(prtsSans(true));
         badge.setTextColor(lite ? 0xff061318 : 0xff0b0d11);
         badge.setPadding(dp(5), dp(1), dp(5), dp(1));
         badge.setBackground(background(brandCol, 2, brandCol));
@@ -2057,7 +2081,8 @@ public class OverlayService extends Service {
         grip.setText(" ⠿ 拖动");
         grip.setContentDescription(getString(R.string.overlay_drag));
         grip.setTextColor(0xff94a3b8);
-        grip.setTextSize(11f);
+        grip.setTextSize(12f);
+        grip.setTypeface(prtsSans(false));
         grip.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.addView(grip, new LinearLayout.LayoutParams(0, dp(30), 1));
         makeDraggable(grip, panel, panelParams, false, null);
@@ -2123,7 +2148,8 @@ public class OverlayService extends Service {
     private Button toolbarChip(LinearLayout toolbar, String label, String description, int textColor, View.OnClickListener action) {
         Button button = new Button(this);
         button.setText(label);
-        button.setTextSize(11f);
+        button.setTextSize(11.5f);
+        button.setTypeface(prtsSans(false));
         button.setAllCaps(false);
         button.setContentDescription(description);
         button.setTooltipText(description);

@@ -6,6 +6,7 @@ import { REPORT_SEATS, hasBossDamage, isHiddenBossRound, reportBossRounds, type 
 import { EnemyAvatar } from './BattleReportSpawns';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { formatTelemetryTotal, isSoloMode } from './combatTelemetry';
+import { normalizeOperatorName } from './covenantBonds';
 import { formatAxisNumber, niceTicks, PRTS_CHART, PRTS_FONT_NUM, PRTS_FONT_SANS } from './prtsChartKit';
 
 const PHASES: Record<string, string> = {
@@ -252,7 +253,8 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     if (hit.damage <= 0) continue;
     const key = `${hit.seat}:${hit.charId || hit.identifier}`;
     const prev = opAggMap.get(key);
-    const name = hit.operatorName || `干员 #${hit.identifier}`;
+    const rawName = hit.operatorName || `干员 #${hit.identifier}`;
+    const name = normalizeOperatorName(rawName) || rawName;
     if (!prev) {
       opAggMap.set(key, { key, seat: hit.seat, name, identifier: hit.identifier, damage: hit.damage });
     } else {
@@ -261,9 +263,17 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
   }
   const opBars = [...opAggMap.values()].sort((a, b) => b.damage - a.damage);
   const opTotal = opBars.reduce((acc, item) => acc + item.damage, 0);
+  const shareDenom = teamTotalDamage > 0 ? Math.max(teamTotalDamage, opTotal) : opTotal;
   const opMax = Math.max(1, ...opBars.map(item => item.damage));
   const opScale = niceTicks(opMax, 4);
   const mvpOp = opBars[0] ?? null;
+  const hasLiveBossDamage = Boolean(
+    data && (
+      Object.values(data.bossDamage).some(v => v > 0)
+      || Object.values(data.bossUplink).some(v => v > 0)
+      || Object.values(data.bossPercent).some(v => v > 0)
+    ),
+  );
 
   // Segmented Boss HP Bar slices (proportional to Boss Max HP, scaled down cleanly if overkill)
   const rawSegTotalPct = bossMaxHp && bossMaxHp > 0
@@ -338,8 +348,10 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
               <span className="d-muted">
                 {data.bossStatus === 'settlement' ? '已取得服务器伤害结算'
                   : data.bossEnded ? '首领阶段已结束'
-                    : data.bossStatus === 'reported' ? '实时伤害快照'
-                      : data.bossOfficial.length ? '已收到榜单，未取得服务器伤害结算'
+                    : data.bossStatus === 'reported'
+                      ? (data.bossOfficial.length ? '已同步实时伤害与官方榜单' : '实时伤害快照')
+                      : data.bossOfficial.length
+                        ? (hasLiveBossDamage ? '已同步实时伤害与官方榜单' : '已收到榜单，未取得服务器伤害结算')
                         : hasBreakdown ? '本端上报口径' : '等待伤害入表'}
                 {data.bossRoundInferred ? ' · 回合按最近确认进度关联，等待场景校正' : ''}
               </span>
@@ -369,7 +381,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                   <small>主力输出</small>
                   <b>
                     {mvpOp.name}
-                    <em>{opTotal > 0 ? `${leaderDigits.format((mvpOp.damage / opTotal) * 100)}%` : ''}</em>
+                    <em>{shareDenom > 0 ? `${leaderDigits.format((mvpOp.damage / shareDenom) * 100)}%` : ''}</em>
                   </b>
                 </div>
               )}
@@ -425,11 +437,17 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
               <BossContributionDonut
                 slices={donutSlices}
                 centerValue={
-                  defeated ? '100%'
-                    : bossDamagePct !== null ? `${leaderDigits.format(bossDamagePct)}%`
-                      : formatTelemetryTotal(teamTotalDamage)
+                  !useSoloOpDonut && teamTotalDamage > 0
+                    ? formatTelemetryTotal(teamTotalDamage)
+                    : defeated ? '100%'
+                      : bossDamagePct !== null ? `${leaderDigits.format(bossDamagePct)}%`
+                        : formatTelemetryTotal(teamTotalDamage)
                 }
-                centerSub={bossDamagePct !== null ? '削血进度' : '累计输出'}
+                centerSub={
+                  !useSoloOpDonut && teamTotalDamage > 0
+                    ? '全队输出'
+                    : bossDamagePct !== null ? '削血进度' : '累计输出'
+                }
               />
 
               <div className="d-boss-contrib-list">
@@ -484,12 +502,18 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
               <>
                 <header className="d-tele-subhead">
                   <span><b className="d-prts-slash">//</b>参战干员首领输出排行（Top {Math.min(10, opBars.length)}）</span>
-                  <small>{data.bossOfficial.length ? '源自官方榜单' : '源自本端上报'} · 合计 {formatTelemetryTotal(opTotal)}</small>
+                  <small>
+                    {data.bossOfficial.length
+                      ? (teamTotalDamage > opTotal * 1.01
+                          ? `官方前${opBars.length}干员合计 ${formatTelemetryTotal(opTotal)}（其余席位见左侧总览）`
+                          : `源自官方榜单 · 合计 ${formatTelemetryTotal(opTotal)}`)
+                      : `源自本端上报 · 合计 ${formatTelemetryTotal(opTotal)}`}
+                  </small>
                 </header>
 
                 <div className="d-boss-op-chart-body">
                   {opBars.slice(0, 10).map((op, idx) => {
-                    const pct = opTotal > 0 ? (op.damage / opTotal) * 100 : 0;
+                    const pct = shareDenom > 0 ? (op.damage / shareDenom) * 100 : 0;
                     const barW = Math.max(2.5, (op.damage / opScale.top) * 100);
                     const barColor = solo
                       ? PRTS_CHART.series[idx % PRTS_CHART.series.length]
@@ -574,7 +598,10 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
             {[...data.bossOfficial, ...data.bossUplinkRows].map((hit, i) => <tr key={i}>
               <th scope="row">{i < data.bossOfficial.length ? '官方榜单' : '本端上报'}</th>
               <td>{seatName(hit.seat, report, perspective)}</td>
-              <td>{hit.operatorName ? <span className="d-boss-op"><CompactOperatorBadge name={hit.operatorName} size={20} /><span>{hit.operatorName}</span><small className="d-muted">#{hit.identifier}</small></span> : hit.identifier}</td>
+              <td>{hit.operatorName ? (() => {
+                const clean = normalizeOperatorName(hit.operatorName) || hit.operatorName;
+                return <span className="d-boss-op"><CompactOperatorBadge name={clean} size={20} /><span>{clean}</span><small className="d-muted">#{hit.identifier}</small></span>;
+              })() : hit.identifier}</td>
               <td>{hit.source === null ? '—' : bossSourceLabels[hit.source] ?? '未知'}</td><td>{formatReportNumber(hit.damage)}</td>
             </tr>)}
           </tbody>

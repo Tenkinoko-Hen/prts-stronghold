@@ -1239,6 +1239,26 @@ class MumuCaptureDetectionTests(unittest.TestCase):
                 stream.close()
         self.assertEqual(sources, [{'client': 'mumu', 'mumuWindow': win}])
 
+    def test_set_shops_treats_negative_position_as_bench_not_deployed(self):
+        stats = MatchStats()
+        stats.set_shops([{
+            'seat': 1,
+            'round': 6,
+            'shop_level': 4,
+            'skill_id': '',
+            'pieces': {1: 101, 2: 102, 3: 103},
+            'positions': {1: 4, 2: -1},
+            'equips': {},
+            'traps': {},
+            'shop': [],
+        }])
+        snap = stats.snapshot()
+        lineup = snap['lineups'][1]
+        self.assertEqual(lineup['piece_count'], 3)
+        self.assertEqual(lineup['deployed_count'], 1)
+        self.assertEqual([u['inst_id'] for u in lineup['deployed']], [1])
+        self.assertEqual(sorted(u['inst_id'] for u in lineup['bench']), [2, 3])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -459,6 +459,22 @@ public final class VpnCodecAndWireTest {
         List<StrongholdWireDecoder.Event> pEvs = d2.feed(StrongholdWireDecoder.DIR_DOWN, f300Partial, 0, f300Partial.length);
         check(pEvs.size() == 1 && pEvs.get(0).bannedBonds.size() == 2, "partial opening 300 rescues banned_bonds");
 
+        // 7. 校验 EnemyPortraitAtlas boss_1..boss_17 映射与 _2 / _3 尾缀回退
+        java.util.Map<String, Integer> atlasMap = new java.util.HashMap<>();
+        atlasMap.put("enemy_9013_acstmk", 10);
+        atlasMap.put("enemy_9013_acstmk_2", 11);
+        atlasMap.put("enemy_2124_dyjsfg", 12);
+        atlasMap.put("enemy_1006_shield", 20);
+        atlasMap.put("enemy_1005_yokai", 30);
+        atlasMap.put("enemy_1005_yokai_3", 32);
+        check(Integer.valueOf(10).equals(EnemyPortraitAtlas.resolvePortraitIndex("boss_1", atlasMap)), "boss_1 maps to enemy_9013_acstmk");
+        check(Integer.valueOf(11).equals(EnemyPortraitAtlas.resolvePortraitIndex("boss_8", atlasMap)), "boss_8 maps to enemy_9013_acstmk_2");
+        check(Integer.valueOf(12).equals(EnemyPortraitAtlas.resolvePortraitIndex("boss_17", atlasMap)), "boss_17 maps to enemy_2124_dyjsfg");
+        check(Integer.valueOf(20).equals(EnemyPortraitAtlas.resolvePortraitIndex("enemy_1006_shield_2", atlasMap)), "_2 suffix falls back to base id");
+        check(Integer.valueOf(20).equals(EnemyPortraitAtlas.resolvePortraitIndex("enemy_1006_shield_3", atlasMap)), "_3 suffix falls back to base id");
+        check(Integer.valueOf(32).equals(EnemyPortraitAtlas.resolvePortraitIndex("enemy_1005_yokai_3", atlasMap)), "exact _3 match wins over base fallback");
+        check(EnemyPortraitAtlas.resolvePortraitIndex("boss_18", atlasMap) == null, "out-of-range boss_18 returns null");
+
         System.out.println("VpnCodecAndWire: " + checks + " checks passed");
     }
 }

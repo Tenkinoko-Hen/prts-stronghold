@@ -10,7 +10,16 @@ import type { CovenantScan } from './covenantScan';
 import { MobileGuide } from './MobileGuide';
 import MatchReport from './MatchReport';
 import { isSecondScreenActive, MobileLanPanel, useMobileLanSync } from './MobileLanPanel';
-import { MobileCaptureToggle, useMobileCaptureSync } from './MobileCapturePanel';
+import {
+  MobileBossRankCard,
+  MobileCaptureToggle,
+  MobileLeakEnemiesPanel,
+  MobileNextWavesPanel,
+  MobileSeatCards,
+  resolveMobileLeakEnemies,
+  resolveMobileNextTwoWaves,
+  useMobileCaptureSync,
+} from './MobileCapturePanel';
 import { MobileSecondScreen } from './MobileSecondScreen';
 import type { RoundSyncProgress } from './RoundSync';
 import { StrategyBadge } from '../components/StrategyBadge';
@@ -325,6 +334,9 @@ export default function MobileApp() {
         const totLeak = reportCum ? (cap?.leak?.cumLeaks ?? cap?.leak?.totalLeaks ?? 0) : (curRec?.totalLeaks ?? 0);
         const totAssist = reportCum ? (cap?.leak?.cumAssisted ?? cap?.leak?.assistKills ?? 0) : (curRec?.totalAssisted ?? 0);
         const totEsc = reportCum ? (cap?.leak?.cumEscaped ?? cap?.leak?.uncoveredLeaks ?? 0) : (curRec?.totalEscaped ?? 0);
+        const leakEnemies = resolveMobileLeakEnemies(cap, reportCum, effRound, capRound);
+        const nextTwoWaves = resolveMobileNextTwoWaves(cap, capRound);
+        const boss = cap?.boss;
         return (
           <div className="mlite-full-brand" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <MobileCaptureToggle
@@ -354,90 +366,63 @@ export default function MobileApp() {
                     <span className={`mlite-pill${totEsc > 0 ? ' is-escape' : ''}`}>{totEsc > 0 ? `逃 ${totEsc}` : '零逃'}</span>
                   </div>
                 </div>
-                <section className="mlite-seat-grid" aria-label="4人实时兜漏与盟约态势">
-                  {dispSeats.map(s => {
-                    const aPct = (s.assisted / maxM) * 100;
-                    const cPct = (s.covered / maxM) * 100;
-                    const ePct = (s.escaped / maxM) * 100;
-                    const visibleBonds = (s.bonds ?? []).filter(b => b.active || b.count >= 2).slice(0, 4);
-                    return (
-                      <div key={s.seat} className={`mlite-seat-card${s.isSelf ? ' is-self' : ''}${s.escaped > 0 ? ' is-escaped' : ''}`}>
-                        <div className="mlite-seat-top">
-                          <span className="mlite-seat-name">
-                            {s.isSelf && <b className="mlite-me-tag">我</b>}
-                            {s.name}
-                          </span>
-                          <span className="mlite-hp-tier">
-                            <b style={{ color: s.hp >= 0 && s.hp <= 5 ? '#ff7875' : '#34d399' }}>♥{s.hp >= 0 ? s.hp : '—'}</b>
-                            {s.shopLevel > 0 && <span className="mlite-tier-badge">{s.shopLevel}本</span>}
-                          </span>
-                        </div>
-                        {visibleBonds.length > 0 && (
-                          <div className="mlite-bonds-row">
-                            {visibleBonds.map(b => (
-                              <span key={b.name} className={`mlite-bond-chip${b.active ? ' is-active' : ''}`}>{b.name}{b.count}</span>
-                            ))}
-                          </div>
-                        )}
-                        <div className="mlite-track-row">
-                          <span style={{ color: s.assisted > 0 ? '#00e5ff' : '#64748b' }}>兜</span>
-                          <div className="mlite-track">{aPct > 0 && <span style={{ width: `${aPct}%`, background: '#00e5ff' }} />}</div>
-                          <span className="mlite-track-num" style={{ color: s.assisted > 0 ? '#67e8f9' : '#475569' }}>{s.assisted > 0 ? `+${s.assisted}` : '0'}</span>
-                        </div>
-                        <div className="mlite-track-row">
-                          <span style={{ color: s.escaped > 0 ? '#ff6b6b' : s.leaked > 0 ? '#fbbf24' : '#64748b' }}>漏</span>
-                          <div className="mlite-track">
-                            {cPct > 0 && <span style={{ width: `${cPct}%`, background: '#fb923c' }} />}
-                            {ePct > 0 && <span style={{ width: `${ePct}%`, background: '#ff4d4f' }} />}
-                          </div>
-                          <span className="mlite-track-num">
-                            {s.leaked === 0 ? <span style={{ color: '#475569' }}>0</span> : s.escaped === 0 ? <span style={{ color: '#fbbf24' }}>{s.leaked}</span> : <><span style={{ color: '#fbbf24' }}>{s.leaked}</span><span style={{ color: '#ff8080', marginLeft: 2 }}>逃{s.escaped}</span></>}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </section>
-                {capRounds.length > 0 && (
-                  <section className="mlite-panel" aria-label="本局回合漏兜矩阵">
-                    <div className="mlite-panel-head">
-                      <span>// 本局 R01–R{String(capRound).padStart(2, '0')} 回合漏兜矩阵</span>
-                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>漏{cap?.leak?.cumLeaks ?? 0} · 兜{cap?.leak?.cumAssisted ?? 0} · 逃{cap?.leak?.cumEscaped ?? 0}</span>
-                    </div>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table className="mlite-matrix-table">
-                        <thead>
-                          <tr>
-                            <th style={{ textAlign: 'left' }}>回合</th>
-                            {baseSeats.map(s => (
-                              <th key={s.seat} style={{ color: s.isSelf ? '#ffe600' : undefined }}>{s.isSelf ? '我·' : ''}{s.name.slice(0, 5)}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...capRounds].reverse().map(r => (
-                            <tr key={r.round}>
-                              <td style={{ textAlign: 'left', fontWeight: 800, color: r.totalEscaped > 0 ? '#ff8080' : '#cbd5e1' }}>R{String(r.round).padStart(2, '0')}</td>
-                              {r.seats.map(cell => (
-                                <td key={cell.seat}>
-                                  {cell.assisted === 0 && cell.leaked === 0 ? (
-                                    <span style={{ color: '#475569' }}>0</span>
-                                  ) : (
-                                    <span style={{ display: 'inline-flex', gap: 4, justifyContent: 'center' }}>
-                                      {cell.assisted > 0 && <b style={{ color: '#67e8f9' }}>兜+{cell.assisted}</b>}
-                                      {cell.leaked > 0 && <b style={{ color: cell.escaped > 0 ? '#ff8080' : '#fbbf24' }}>漏{cell.leaked}{cell.escaped > 0 ? `(逃${cell.escaped})` : ''}</b>}
-                                    </span>
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                )}
+                <MobileSeatCards seats={dispSeats} maxMetric={maxM} />
               </>
+            )}
+            <MobileLeakEnemiesPanel
+              enemies={leakEnemies}
+              cumulative={reportCum}
+              effectiveRound={effRound}
+              iconClassName="m-enemy-icon"
+            />
+            {(nextTwoWaves.length > 0 || Boolean(cap?.running)) && (
+              <MobileNextWavesPanel
+                waves={nextTwoWaves}
+                totalWavesCount={cap?.allWaves?.length ?? 0}
+                emptyText={cap?.running ? '等待服务端同步下两波出怪清单…' : undefined}
+                waveIconSize={15}
+                iconClassName="m-enemy-icon"
+              />
+            )}
+            <MobileBossRankCard boss={boss} brand="full" iconClassName="m-enemy-icon" />
+            {dispSeats.length > 0 && capRounds.length > 0 && (
+              <section className="mlite-panel" aria-label="本局回合漏兜矩阵">
+                <div className="mlite-panel-head">
+                  <span>// 本局 R01–R{String(capRound).padStart(2, '0')} 回合漏兜矩阵</span>
+                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>漏{cap?.leak?.cumLeaks ?? 0} · 兜{cap?.leak?.cumAssisted ?? 0} · 逃{cap?.leak?.cumEscaped ?? 0}</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="mlite-matrix-table">
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>回合</th>
+                        {baseSeats.map(s => (
+                          <th key={s.seat} style={{ color: s.isSelf ? '#ffe600' : undefined }}>{s.isSelf ? '我·' : ''}{s.name.slice(0, 5)}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...capRounds].reverse().map(r => (
+                        <tr key={r.round}>
+                          <td style={{ textAlign: 'left', fontWeight: 800, color: r.totalEscaped > 0 ? '#ff8080' : '#cbd5e1' }}>R{String(r.round).padStart(2, '0')}</td>
+                          {r.seats.map(cell => (
+                            <td key={cell.seat}>
+                              {cell.assisted === 0 && cell.leaked === 0 ? (
+                                <span style={{ color: '#475569' }}>0</span>
+                              ) : (
+                                <span style={{ display: 'inline-flex', gap: 4, justifyContent: 'center' }}>
+                                  {cell.assisted > 0 && <b style={{ color: '#67e8f9' }}>兜+{cell.assisted}</b>}
+                                  {cell.leaked > 0 && <b style={{ color: cell.escaped > 0 ? '#ff8080' : '#fbbf24' }}>漏{cell.leaked}{cell.escaped > 0 ? `(逃${cell.escaped})` : ''}</b>}
+                                </span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             )}
             <MatchReport />
           </div>

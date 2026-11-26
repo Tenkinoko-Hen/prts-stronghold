@@ -1071,10 +1071,11 @@ public class OverlayService extends Service {
         LinearLayout chip = new LinearLayout(this);
         chip.setOrientation(LinearLayout.HORIZONTAL);
         chip.setGravity(Gravity.CENTER_VERTICAL);
-        chip.setPadding(dp(2), dp(1), dp(5), dp(1));
         chip.setBackground(background(0xff131a25, 2, strokeColor));
 
-        Bitmap icon = EnemyPortraitAtlas.getIcon(this, ec.enemyId);
+        String enemyId = ec != null ? ec.enemyId : "";
+        Bitmap icon = (enemyId != null && !enemyId.isEmpty()) ? EnemyPortraitAtlas.getIcon(this, enemyId) : null;
+        chip.setPadding(icon != null ? dp(2) : dp(5), dp(1), dp(5), dp(1));
         if (icon != null) {
             ImageView iv = new ImageView(this);
             iv.setImageBitmap(icon);
@@ -1090,9 +1091,13 @@ public class OverlayService extends Service {
         label.setFontFeatureSettings("tnum");
         label.setSingleLine(true);
         SpannableStringBuilder sb = new SpannableStringBuilder();
-        String shortName = ec.name != null && ec.name.length() > 7 ? ec.name.substring(0, 7) : (ec.name != null ? ec.name : "");
+        String rawName = (ec != null && ec.name != null && !ec.name.trim().isEmpty())
+            ? ec.name.trim()
+            : ((enemyId != null && !enemyId.trim().isEmpty()) ? enemyId.trim() : "敌怪");
+        String shortName = rawName.length() > 7 ? rawName.substring(0, 7) : rawName;
+        int count = ec != null ? Math.max(0, ec.count) : 0;
         appendColored(sb, shortName, 0xffe2e8f0);
-        appendColored(sb, " ×" + ec.count, countColor);
+        appendColored(sb, " ×" + count, countColor);
         label.setText(sb);
         chip.addView(label);
 
@@ -1401,13 +1406,17 @@ public class OverlayService extends Service {
             }
         }
 
-        // Lite 窄版 HUD：下方单行双拼并排展示「下波 R+1 ｜ 预 R+2」（纵向省出 32dp，不压第 2 排高台格）
+        // Full 与 Lite 漏兜页统一在 2x2 卡片下方单行并排展示「下Rxx ｜ 预Rxx」实机怪物图标芯片（Boss 波红、首波按品牌区分）
         leakNextWavesBox.removeAllViews();
-        if (liteMode && snap != null && snap.nextTwoWaves != null && !snap.nextTwoWaves.isEmpty()) {
+        if (snap != null && snap.nextTwoWaves != null && !snap.nextTwoWaves.isEmpty()) {
             leakNextWavesBox.setVisibility(View.VISIBLE);
             LinearLayout dualWaveRow = new LinearLayout(this);
             dualWaveRow.setOrientation(LinearLayout.HORIZONTAL);
             dualWaveRow.setGravity(Gravity.CENTER_VERTICAL);
+            int firstAccent = liteMode ? 0xff22d3ee : 0xffffe600;
+            int firstBg = liteMode ? 0x1a22d3ee : 0x1affe600;
+            int firstBorder = liteMode ? 0x6622d3ee : 0x66ffe600;
+            int firstTagFg = liteMode ? 0xff061018 : 0xff0b0d11;
             int waveLimit = Math.min(2, snap.nextTwoWaves.size());
             for (int wIdx = 0; wIdx < waveLimit; wIdx++) {
                 BattleCaptureState.RoundWave w = snap.nextTwoWaves.get(wIdx);
@@ -1416,8 +1425,8 @@ public class OverlayService extends Service {
                 wCell.setOrientation(LinearLayout.HORIZONTAL);
                 wCell.setGravity(Gravity.CENTER_VERTICAL);
                 wCell.setPadding(dp(4), dp(2), dp(4), dp(2));
-                int wBg = isBossWave ? 0x22ff4d4f : (wIdx == 0 ? 0x1a22d3ee : 0xff0d1520);
-                int wBorder = isBossWave ? 0x88ff4d4f : (wIdx == 0 ? 0x6622d3ee : 0xff223044);
+                int wBg = isBossWave ? 0x22ff4d4f : (wIdx == 0 ? firstBg : 0xff0d1520);
+                int wBorder = isBossWave ? 0x88ff4d4f : (wIdx == 0 ? firstBorder : 0xff223044);
                 wCell.setBackground(background(wBg, 2, wBorder));
                 LinearLayout.LayoutParams wcLp = new LinearLayout.LayoutParams(0, -2, 1f);
                 if (wIdx > 0) wcLp.leftMargin = dp(4);
@@ -1427,9 +1436,9 @@ public class OverlayService extends Service {
                 tag.setTextSize(10f);
                 tag.setTypeface(prtsSans(true));
                 tag.setFontFeatureSettings("tnum");
-                tag.setTextColor(isBossWave ? 0xffffffff : (wIdx == 0 ? 0xff061018 : 0xff7dd3fc));
+                tag.setTextColor(isBossWave ? 0xffffffff : (wIdx == 0 ? firstTagFg : 0xff7dd3fc));
                 tag.setPadding(dp(3), dp(1), dp(3), dp(1));
-                int tagBg = isBossWave ? 0xffff4d4f : (wIdx == 0 ? 0xff22d3ee : 0xff1e3a5f);
+                int tagBg = isBossWave ? 0xffff4d4f : (wIdx == 0 ? firstAccent : 0xff1e3a5f);
                 tag.setBackground(background(tagBg, 2, tagBg));
                 LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-2, -2);
                 tLp.rightMargin = dp(4);
@@ -1441,9 +1450,12 @@ public class OverlayService extends Service {
                 LinearLayout chips = new LinearLayout(this);
                 chips.setOrientation(LinearLayout.HORIZONTAL);
                 chips.setGravity(Gravity.CENTER_VERTICAL);
-                int maxE = waveLimit >= 2 ? Math.min(4, w.enemies.size()) : Math.min(6, w.enemies.size());
+                List<BattleCaptureState.EnemyCount> waveEnemies = w.enemies != null
+                    ? w.enemies
+                    : java.util.Collections.<BattleCaptureState.EnemyCount>emptyList();
+                int maxE = waveLimit >= 2 ? Math.min(4, waveEnemies.size()) : Math.min(6, waveEnemies.size());
                 for (int j = 0; j < maxE; j++) {
-                    chips.addView(buildEnemyChip(w.enemies.get(j), isBossWave ? 0xfffca5a5 : 0xfffde047, 0xff243347, 13));
+                    chips.addView(buildEnemyChip(waveEnemies.get(j), isBossWave ? 0xfffca5a5 : 0xfffde047, 0xff243347, 13));
                 }
                 hsv.addView(chips, new FrameLayout.LayoutParams(-2, -2));
                 wCell.addView(hsv, new LinearLayout.LayoutParams(0, -2, 1f));

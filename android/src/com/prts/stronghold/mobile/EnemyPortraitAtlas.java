@@ -52,6 +52,16 @@ final class EnemyPortraitAtlas {
         return trimmed;
     }
 
+    static Integer resolvePortraitIndex(String rawEnemyId, Map<String, Integer> indexMap) {
+        if (rawEnemyId == null || rawEnemyId.isEmpty() || indexMap == null) return null;
+        String enemyId = resolveBossEnemyId(rawEnemyId);
+        Integer idx = indexMap.get(enemyId);
+        if (idx == null && (enemyId.endsWith("_2") || enemyId.endsWith("_3"))) {
+            idx = indexMap.get(enemyId.substring(0, enemyId.length() - 2));
+        }
+        return idx;
+    }
+
     static synchronized Bitmap getIcon(Context context, String rawEnemyId) {
         if (context == null || rawEnemyId == null || rawEnemyId.isEmpty()) return null;
         String enemyId = resolveBossEnemyId(rawEnemyId);
@@ -61,10 +71,7 @@ final class EnemyPortraitAtlas {
         ensureLoaded(context.getApplicationContext());
         if (atlasBitmap == null || atlasBitmap.isRecycled()) return null;
 
-        Integer idx = INDEX_MAP.get(enemyId);
-        if (idx == null && enemyId.endsWith("_2")) {
-            idx = INDEX_MAP.get(enemyId.substring(0, enemyId.length() - 2));
-        }
+        Integer idx = resolvePortraitIndex(enemyId, INDEX_MAP);
         if (idx == null || idx < 0 || columns <= 0 || rows <= 0) return null;
 
         int col = idx % columns;

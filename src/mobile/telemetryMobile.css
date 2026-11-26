@@ -3,7 +3,7 @@
   min-height: 100dvh;
   background: #080c12;
   color: #f1f5f9;
-  font-family: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  font-family: var(--font-sans);
   display: flex;
   flex-direction: column;
   padding-bottom: 48px;
@@ -60,7 +60,8 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 800;
   color: #e2e8f0;
@@ -82,7 +83,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: Consolas, "JetBrains Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
@@ -131,6 +132,19 @@
 .mlite-full-brand .mlite-panel-head {
   color: #ffe600;
 }
+.mlite-full-brand .mlite-wave-row.is-next1 {
+  background: rgba(255, 230, 0, 0.09);
+  border-left-color: #ffe600;
+}
+.mlite-full-brand .mlite-wave-row.is-next1 .mlite-wave-badge {
+  background: #ffe600;
+  color: #0b0d11;
+}
+.mlite-full-brand .mlite-link-btn {
+  border-color: rgba(255, 230, 0, 0.45);
+  background: rgba(255, 230, 0, 0.1);
+  color: #ffe600;
+}
 .mlite-seat-card.is-escaped {
   background: rgba(255, 77, 79, 0.09);
   border-color: rgba(255, 77, 79, 0.58);
@@ -164,7 +178,8 @@
   flex-shrink: 0;
 }
 .mlite-hp-tier {
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 10px;
   font-weight: 800;
   display: inline-flex;
@@ -184,9 +199,12 @@
 .mlite-bonds-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 3px;
 }
 .mlite-bond-chip {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 9.5px;
   font-weight: 700;
   padding: 0 4px;
@@ -201,12 +219,37 @@
   background: rgba(34, 211, 238, 0.14);
   color: #67e8f9;
 }
+.mlite-bond-chip.is-high {
+  border-color: rgba(250, 204, 21, 0.72);
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde047;
+}
+.mlite-bond-chip.is-max {
+  border-color: rgba(251, 191, 36, 0.94);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.32), rgba(250, 204, 21, 0.22));
+  color: #fff08a;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.28);
+}
+.mlite-bond-more {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 0 4px;
+  border-radius: 2px;
+  border: 1px solid rgba(56, 189, 248, 0.48);
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+  white-space: nowrap;
+  cursor: help;
+}
 
 .mlite-track-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 9.5px;
   font-weight: 800;
 }
@@ -225,7 +268,7 @@
   white-space: nowrap;
 }
 
-/* Panels (Next 2 Waves / Boss DPS / Full Waves / Matrix) */
+/* Panels (Leak Enemies / Next 2 Waves / Boss DPS / Full Waves / Matrix) */
 .mlite-panel {
   background: #0c121b;
   border: 1px solid #1d2a3d;
@@ -243,6 +286,51 @@
   font-size: 11px;
   font-weight: 800;
   color: #67e8f9;
+}
+.mlite-leak-panel {
+  background: rgba(255, 77, 79, 0.08);
+  border-color: rgba(255, 122, 0, 0.65);
+}
+.mlite-leak-panel .mlite-panel-head,
+.mlite-full-brand .mlite-leak-panel .mlite-panel-head {
+  color: #fdba74;
+}
+.mlite-boss-panel {
+  border-color: rgba(255, 77, 79, 0.55);
+}
+.mlite-boss-panel .mlite-panel-head,
+.mlite-full-brand .mlite-boss-panel .mlite-panel-head {
+  color: #fca5a5;
+}
+.mlite-boss-total {
+  color: #fde047;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.mlite-boss-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mlite-boss-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.mlite-boss-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mlite-boss-share {
+  color: #94a3b8;
+  min-width: 42px;
+  text-align: right;
 }
 .mlite-link-btn {
   border: 1px solid rgba(34, 211, 238, 0.45);
@@ -290,7 +378,8 @@
   text-align: center;
   padding: 1px 5px;
   border-radius: 2px;
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 10px;
   font-weight: 900;
   background: #1e293b;
@@ -320,23 +409,39 @@
   color: #e2e8f0;
 }
 .mlite-enemy-chip b {
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: #fde047;
   font-size: 9.5px;
 }
+.mlite-enemy-chip.is-leak {
+  border-color: rgba(255, 77, 79, 0.62);
+  background: rgba(255, 77, 79, 0.14);
+  color: #fee2e2;
+}
+.mlite-enemy-chip.is-leak b {
+  color: #ff8080;
+}
 
-.mlite-enemy-icon {
+.mlite-enemy-icon,
+.m-enemy-icon {
   display: inline-block;
+  flex: none;
+  flex-shrink: 0;
+  vertical-align: middle;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  background-clip: border-box;
   border-radius: 2px;
   background-color: #0b0f16;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .mlite-matrix-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 10.5px;
   text-align: center;
 }

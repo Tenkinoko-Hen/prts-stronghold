@@ -1,11 +1,16 @@
 // 青逝痕 Tenkinoko 制作
 import { useMemo, useState } from 'react';
-import { Activity, BookOpen, ChevronLeft, ChevronRight, ListTree, Swords } from 'lucide-react';
-import enemyPortraitsJson from '../desktop/enemyPortraits.json';
-import enemyPortraitsUrl from '../desktop/enemyPortraits.webp';
+import { Activity, BookOpen, ChevronLeft, ChevronRight, ListTree } from 'lucide-react';
 import MatchReport from './MatchReport';
 import {
+  MobileBossRankCard,
   MobileCaptureToggle,
+  MobileEnemyIcon,
+  MobileLeakEnemiesPanel,
+  MobileNextWavesPanel,
+  MobileSeatCards,
+  resolveMobileLeakEnemies,
+  resolveMobileNextTwoWaves,
   useMobileCaptureSync,
   type MobileCaptureSeat,
   type MobileCaptureWave,
@@ -13,34 +18,6 @@ import {
 import './telemetryMobile.css';
 
 type LiteMobileTab = 'live' | 'waves' | 'report';
-
-const portraitSlots = new Map(enemyPortraitsJson.ids.map((id, idx) => [id, idx]));
-const portraitRows = Math.ceil(enemyPortraitsJson.ids.length / enemyPortraitsJson.columns);
-
-function LiteEnemyIcon({ id, size = 15 }: { id?: string; size?: number }) {
-  const index = id ? portraitSlots.get(id) : undefined;
-  if (index === undefined) return null;
-  const col = index % enemyPortraitsJson.columns;
-  const row = Math.floor(index / enemyPortraitsJson.columns);
-  return (
-    <span
-      className="mlite-enemy-icon"
-      aria-hidden="true"
-      style={{
-        width: size,
-        height: size,
-        backgroundImage: `url(${enemyPortraitsUrl})`,
-        backgroundSize: `${enemyPortraitsJson.columns * 100}% ${portraitRows * 100}%`,
-        backgroundPosition: `${(col * 100) / (enemyPortraitsJson.columns - 1)}% ${(row * 100) / (portraitRows - 1)}%`,
-      }}
-    />
-  );
-}
-
-function fmtWan(n: number): string {
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
-  return n.toLocaleString('zh-CN');
-}
 
 export default function TelemetryMobileApp() {
   const { capture, supported, start, stop, restart } = useMobileCaptureSync();
@@ -51,11 +28,10 @@ export default function TelemetryMobileApp() {
   const curRound = Math.max(1, Math.min(15, capture?.round || 1));
   const rounds = useMemo(() => capture?.rounds ?? [], [capture?.rounds]);
   const allWaves: MobileCaptureWave[] = useMemo(() => capture?.allWaves ?? [], [capture?.allWaves]);
-  const nextTwoWaves: MobileCaptureWave[] = useMemo(() => {
-    if (capture?.nextTwoWaves && capture.nextTwoWaves.length > 0) return capture.nextTwoWaves;
-    const upcoming = allWaves.filter(w => w.round >= curRound).slice(0, 2);
-    return upcoming.length > 0 ? upcoming : allWaves.slice(-2);
-  }, [allWaves, capture?.nextTwoWaves, curRound]);
+  const nextTwoWaves: MobileCaptureWave[] = useMemo(
+    () => resolveMobileNextTwoWaves(capture, curRound),
+    [capture, curRound],
+  );
 
   const effectiveRound = cumulative ? 0 : Math.max(1, Math.min(curRound, selectedRound));
 
@@ -79,6 +55,11 @@ export default function TelemetryMobileApp() {
   const maxMetric = useMemo(
     () => Math.max(1, ...displaySeats.map(s => Math.max(s.leaked, s.assisted))),
     [displaySeats],
+  );
+
+  const leakEnemies = useMemo(
+    () => resolveMobileLeakEnemies(capture, cumulative, effectiveRound, curRound),
+    [capture, cumulative, effectiveRound, curRound],
   );
 
   const summaryTotals = useMemo(() => {
@@ -220,146 +201,33 @@ export default function TelemetryMobileApp() {
 
               {/* 2. 2x2 Four-Player Dual-Track Cards (+ HP + Shop Tier + Active Covenants) */}
               {displaySeats.length > 0 ? (
-                <section className="mlite-seat-grid" aria-label="4人实时兜漏与盟约态势">
-                  {displaySeats.map(s => {
-                    const aPct = (s.assisted / maxMetric) * 100;
-                    const cPct = (s.covered / maxMetric) * 100;
-                    const ePct = (s.escaped / maxMetric) * 100;
-                    const visibleBonds = (s.bonds ?? []).filter(b => b.active || b.count >= 2).slice(0, 4);
-                    return (
-                      <div
-                        key={s.seat}
-                        className={`mlite-seat-card${s.isSelf ? ' is-self' : ''}${s.escaped > 0 ? ' is-escaped' : ''}`}
-                      >
-                        <div className="mlite-seat-top">
-                          <span className="mlite-seat-name">
-                            {s.isSelf && <b className="mlite-me-tag">我</b>}
-                            {s.name}
-                          </span>
-                          <span className="mlite-hp-tier">
-                            <b style={{ color: s.hp >= 0 && s.hp <= 5 ? '#ff7875' : '#34d399' }}>
-                              ♥{s.hp >= 0 ? s.hp : '—'}
-                            </b>
-                            {s.shopLevel > 0 && <span className="mlite-tier-badge">{s.shopLevel}本</span>}
-                          </span>
-                        </div>
-
-                        {visibleBonds.length > 0 && (
-                          <div className="mlite-bonds-row" aria-label="当前盟约">
-                            {visibleBonds.map(b => (
-                              <span
-                                key={b.name}
-                                className={`mlite-bond-chip${b.active ? ' is-active' : ''}`}
-                              >
-                                {b.name}{b.count}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mlite-track-row">
-                          <span style={{ color: s.assisted > 0 ? '#00e5ff' : '#64748b' }}>兜</span>
-                          <div className="mlite-track">
-                            {aPct > 0 && <span style={{ width: `${aPct}%`, background: '#00e5ff' }} />}
-                          </div>
-                          <span className="mlite-track-num" style={{ color: s.assisted > 0 ? '#67e8f9' : '#475569' }}>
-                            {s.assisted > 0 ? `+${s.assisted}` : '0'}
-                          </span>
-                        </div>
-
-                        <div className="mlite-track-row">
-                          <span style={{ color: s.escaped > 0 ? '#ff6b6b' : s.leaked > 0 ? '#fbbf24' : '#64748b' }}>漏</span>
-                          <div className="mlite-track">
-                            {cPct > 0 && <span style={{ width: `${cPct}%`, background: '#fb923c' }} />}
-                            {ePct > 0 && <span style={{ width: `${ePct}%`, background: '#ff4d4f' }} />}
-                          </div>
-                          <span className="mlite-track-num">
-                            {s.leaked === 0 ? (
-                              <span style={{ color: '#475569' }}>0</span>
-                            ) : s.escaped === 0 ? (
-                              <span style={{ color: '#fbbf24' }}>{s.leaked}</span>
-                            ) : (
-                              <>
-                                <span style={{ color: '#fbbf24' }}>{s.leaked}</span>
-                                <span style={{ color: '#ff8080', marginLeft: 2 }}>逃{s.escaped}</span>
-                              </>
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </section>
+                <MobileSeatCards seats={displaySeats} maxMetric={maxMetric} />
               ) : (
                 <section className="mlite-panel">
                   <div className="mlite-empty">开启上方「本机实时抓包」进入对局后，自动显示 4 人双轨兜漏、本数与实时激活盟约</div>
                 </section>
               )}
 
+              {/* 2.5 Leaked Enemies Strip (本回合/累计高漏怪种) */}
+              <MobileLeakEnemiesPanel
+                enemies={leakEnemies}
+                cumulative={cumulative}
+                effectiveRound={effectiveRound}
+                iconClassName="mlite-enemy-icon"
+              />
+
               {/* 3. Next 2 Waves Forecast (未来两波怪潮预计) */}
-              <section className="mlite-panel" aria-label="未来两波怪潮预计">
-                <div className="mlite-panel-head">
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <ListTree size={12} />未来两波怪潮预计
-                  </span>
-                  {allWaves.length > 0 && (
-                    <button type="button" className="mlite-link-btn" onClick={() => setTab('waves')}>
-                      完整({allWaves.length}) →
-                    </button>
-                  )}
-                </div>
-                {nextTwoWaves.length > 0 ? (
-                  nextTwoWaves.map((w, idx) => (
-                    <div
-                      key={w.round}
-                      className={`mlite-wave-row${w.round >= 14 ? ' is-boss' : idx === 0 ? ' is-next1' : ' is-next2'}`}
-                    >
-                      <span className="mlite-wave-badge">
-                        {idx === 0 ? `下波 R${String(w.round).padStart(2, '0')}` : `预 R${String(w.round).padStart(2, '0')}`}
-                      </span>
-                      <div className="mlite-enemy-chips">
-                        {w.enemies.map(e => (
-                          <span key={`${w.round}-${e.id}-${e.name}`} className="mlite-enemy-chip">
-                            <LiteEnemyIcon id={e.id} size={14} />
-                            <span>{e.name}</span>
-                            <b>×{e.count}</b>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="mlite-empty" style={{ padding: '8px 6px' }}>等待服务端同步下两波出怪清单…</div>
-                )}
-              </section>
+              <MobileNextWavesPanel
+                waves={nextTwoWaves}
+                totalWavesCount={allWaves.length}
+                onOpenAllWaves={() => setTab('waves')}
+                emptyText="等待服务端同步下两波出怪清单…"
+                waveIconSize={14}
+                iconClassName="mlite-enemy-icon"
+              />
 
               {/* 4. Boss MMO Ranking & DPS Card (auto-shown during Boss stage) */}
-              {boss && (boss.teamDamage > 0 || boss.hp >= 0) && (
-                <section className="mlite-panel" style={{ borderColor: 'rgba(255,77,79,0.55)' }}>
-                  <div className="mlite-panel-head" style={{ color: '#fca5a5' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                      <Swords size={12} />
-                      <LiteEnemyIcon id={boss.enemyId} size={16} />
-                      {boss.name} · {boss.hpPct >= 0 ? `HP ${boss.hpPct}%` : '首领战'}
-                    </span>
-                    <span style={{ color: '#fde047', fontFamily: 'Consolas, monospace' }}>
-                      全队 {fmtWan(boss.teamDamage)} ({fmtWan(boss.teamDps)}/s)
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {boss.players.map(p => (
-                      <div key={p.seat} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontFamily: 'Consolas, monospace' }}>
-                        <b style={{ color: p.rank === 1 ? '#fde047' : '#94a3b8', minWidth: 20 }}>#{p.rank}</b>
-                        <span style={{ flex: 1, color: p.isSelf ? '#67e8f9' : '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {p.isSelf ? '我·' : ''}{p.name}
-                        </span>
-                        <b style={{ color: '#ffffff' }}>{fmtWan(p.damage)}</b>
-                        <span style={{ color: '#94a3b8', minWidth: 42, textAlign: 'right' }}>{p.sharePct.toFixed(1)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
+              <MobileBossRankCard boss={boss} brand="telemetry" iconClassName="mlite-enemy-icon" />
             </>
           )}
 
@@ -394,7 +262,7 @@ export default function TelemetryMobileApp() {
                       <div className="mlite-enemy-chips">
                         {w.enemies.map(e => (
                           <span key={`${w.round}-${e.id}-${e.name}`} className="mlite-enemy-chip">
-                            <LiteEnemyIcon id={e.id} size={14} />
+                            <MobileEnemyIcon id={e.id} size={14} className="mlite-enemy-icon" />
                             <span>{e.name}</span>
                             <b>×{e.count}</b>
                           </span>

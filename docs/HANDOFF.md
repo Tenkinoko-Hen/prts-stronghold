@@ -109,11 +109,12 @@ npm run build
   - Windows 真机只读校验 `parsePnputilNpcapDrivers` / `parseSymlinkEvaluationDisabled` / `detectConflictingNetworkApps` 及已安装态 `prepareNpcapEnvironment` 零副作用全部通过
   - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **2,992 项断言直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
-- **当前 `v2.1.0` 本地四端候选测试包（均位于本机 `release/`，未入 Git、未打 tag、未发 GitHub Release）**：
-  - **PC 完整版**：`release/v2.1.0/PRTS-Stronghold-Full-2.1.0-Win64.exe`（含渲染崩溃自愈 + Npcap 自动预检修复）
-  - **PC 纯净版（Lite）**：`release/v2.1.0/PRTS-Stronghold-Lite-2.1.0-Win64.exe`（含渲染崩溃自愈 + Npcap 自动预检修复）
-  - **Android 完整版**：`release/PRTS-Stronghold-2.1.0-Android.apk`（143.04 MiB，VersionCode `210`，v2/v3 签名校验通过）
-  - **Android 纯净版（Lite）**：`release/telemetry-2.1.0/卫戍战报仪-Android-2.1.0.apk`（32.18 MiB，VersionCode `210`，v2/v3 签名校验通过）
+- **已发布最新正式版本（`v2.1.0` · Latest，2026-11-26 21:05 发布至 GitHub Release）**：
+  - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（对应 tag `v2.1.0` → `0541d6c`）
+  - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,623,807 字节，SHA-256: `e6d5c25cd63334fbc73e81b9d0fe6048d6270d287ed5a2b7fce69e728150dbd1`）
+  - **PC 纯净版（Lite）**：`PRTS-Stronghold-Lite-2.1.0-Win64.exe`（126.63 MiB / 132,781,466 字节，SHA-256: `1635179323558ada643951b0d68c244b782543611585800b275b155dc08b602f`）
+  - **Android 完整版**：`PRTS-Stronghold-2.1.0-Android.apk`（143.04 MiB / 149,984,238 字节，VersionCode `210`，SHA-256: `2770e7bf4e538a8f3390217dbca106d582597d3fc10110402d0e53cb16e41db8`，v2/v3 签名校验通过）
+  - **Android 纯净版（卫戍战报仪 Lite）**：`PRTS-Stronghold-Lite-2.1.0-Android.apk`（32.18 MiB / 33,746,446 字节，VersionCode `210`，SHA-256: `cf48ed430b4ed57a361229c5d5ef7c827a895e5d5f9e87f9cd2dfc559844d81c`，v2/v3 签名校验通过）
 - **最近一次正式发布版本**：
   - **主线完整版（`v2.0.0` · Latest）**：
     - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.42 MiB / 240,560,974 字节，SHA-256: `ff2d64b4…08a2b3e8`，已内置最新 `PRTS-Worker` 与去 AI 化文案）

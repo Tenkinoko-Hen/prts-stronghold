@@ -9,6 +9,12 @@ const { installHudOverlay } = require('./hud-overlay.cjs');
 const { installLanSync } = require('./lan-sync.cjs');
 const { computeMumuDrawerBounds, computeMumuHudBounds } = require('./mumu-layout.cjs');
 const { loadRuntimeProduct, brandingAssetPath } = require('./product-runtime.cjs');
+const {
+  applyStartupGpuWorkarounds,
+  buildSafeGpuRelaunchArgs,
+  createStartupLogger,
+  shouldRelaunchForChildProcessGone,
+} = require('./startup-guard.cjs');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'prts', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -18,21 +24,38 @@ const product = loadRuntimeProduct(app);
 const desktop = product.desktop;
 let mainWindow;
 let tray;
+let mainWindowShown = false;
+let isQuitting = false;
+let hasRelaunchedForGpu = false;
 
+const safeGpuMode = applyStartupGpuWorkarounds({ app, platform: process.platform, argv: process.argv });
+
+let userDataInitError = null;
 if (desktop.useIsolatedUserData) {
-  const profile = path.join(app.getPath('appData'), desktop.appId);
-  fs.mkdirSync(profile, { recursive: true });
-  app.setPath('userData', profile);
-  app.setPath('sessionData', profile);
+  try {
+    const profile = path.join(app.getPath('appData'), desktop.appId);
+    fs.mkdirSync(profile, { recursive: true });
+    app.setPath('userData', profile);
+    app.setPath('sessionData', profile);
+  } catch (err) {
+    userDataInitError = err;
+  }
 }
 if (process.platform === 'win32' && desktop.appId) {
   app.setAppUserModelId(desktop.appId);
 }
 
+const logStartup = createStartupLogger({ app, product, safeGpuMode });
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
+  isQuitting = true;
   app.quit();
 } else {
+  logStartup('startup');
+  if (userDataInitError) {
+    logStartup('userdata-init-failed', userDataInitError);
+  }
   app.on('second-instance', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -41,13 +64,46 @@ if (!gotSingleInstanceLock) {
   });
 }
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 // 全局异常兜底：防止多屏拔插或极端异步异常导致主进程闪退中断对局查阅
 process.on('uncaughtException', (err) => {
   console.error('[PRTS Main Guard] Uncaught exception:', err);
+  logStartup('uncaught-exception', err);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[PRTS Main Guard] Unhandled rejection:', reason);
+  logStartup('unhandled-rejection', reason);
 });
+
+if (gotSingleInstanceLock) {
+  app.on('child-process-gone', (_event, details) => {
+    logStartup('child-process-gone', {
+      type: details?.type,
+      reason: details?.reason,
+      exitCode: details?.exitCode,
+    });
+    if (shouldRelaunchForChildProcessGone(details, {
+      mainWindowShown,
+      safeGpuMode,
+      hasRelaunched: hasRelaunchedForGpu,
+      isQuitting,
+    })) {
+      hasRelaunchedForGpu = true;
+      isQuitting = true;
+      logStartup('gpu-safe-relaunch', {
+        type: details?.type,
+        reason: details?.reason,
+        exitCode: details?.exitCode,
+      });
+      try { app.releaseSingleInstanceLock(); } catch {}
+      app.relaunch({ args: buildSafeGpuRelaunchArgs(process.argv) });
+      app.exit(0);
+    }
+  });
+}
 
 if (gotSingleInstanceLock) app.whenReady().then(() => {
   const root = path.join(app.getAppPath(), 'dist');
@@ -161,7 +217,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
       additionalArguments: [`--prts-mode=${product.mode}`],
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: !safeGpuMode,
     },
   });
   const initialOnTop = getModeAlwaysOnTop(layoutState.mode);
@@ -357,6 +413,8 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
 
   ipcMain.handle('app-relaunch', (event) => {
     if (!isTrustedMainSender(event)) return;
+    isQuitting = true;
+    try { app.releaseSingleInstanceLock(); } catch {}
     app.relaunch();
     app.exit(0);
   });
@@ -629,23 +687,48 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     : null;
 
   if (process.platform === 'win32' && desktop.useTray) {
-    const showWindow = () => {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    };
-    const trayIcon = brandingAssetPath(app, product, 'tray.ico');
-    tray = new Tray(fs.existsSync(trayIcon) ? trayIcon : brandingAssetPath(app, product, 'app.ico'));
-    tray.setToolTip(product.windowTitle);
-    tray.on('click', showWindow);
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: `打开${product.name}`, click: showWindow },
-      { label: '退出', click: () => app.quit() },
-    ]));
+    try {
+      const showWindow = () => {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      };
+      const trayIcon = brandingAssetPath(app, product, 'tray.ico');
+      tray = new Tray(fs.existsSync(trayIcon) ? trayIcon : brandingAssetPath(app, product, 'app.ico'));
+      tray.setToolTip(product.windowTitle);
+      tray.on('click', showWindow);
+      tray.setContextMenu(Menu.buildFromTemplate([
+        { label: `打开${product.name}`, click: showWindow },
+        { label: '退出', click: () => app.quit() },
+      ]));
+    } catch (err) {
+      tray = null;
+      logStartup('tray-init-failed', err);
+    }
   }
 
+  let readyShowTimer = null;
+  const showMainWindow = () => {
+    if (readyShowTimer) {
+      clearTimeout(readyShowTimer);
+      readyShowTimer = null;
+    }
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindowShown) {
+      mainWindowShown = true;
+      if (!mainWindow.isVisible()) mainWindow.show();
+      battleReports?.start();
+    } else if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  };
+
   mainWindow.on('closed', () => {
-    tray?.destroy();
+    if (readyShowTimer) {
+      clearTimeout(readyShowTimer);
+      readyShowTimer = null;
+    }
+    try { tray?.destroy(); } catch {}
     hudOverlay?.dispose();
     lanSync?.dispose();
     covenantOcr?.dispose();
@@ -655,6 +738,10 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
   let rendererRecoverCount = 0;
   let lastRendererCrashAt = 0;
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logStartup('render-process-gone', {
+      reason: details?.reason,
+      exitCode: details?.exitCode,
+    });
     if (mainWindow.isDestroyed() || details?.reason === 'clean-exit') return;
     const now = Date.now();
     if (now - lastRendererCrashAt > 60_000) rendererRecoverCount = 0;
@@ -666,6 +753,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
       }, 250);
       return;
     }
+    showMainWindow();
     void dialog.showMessageBox({
       type: 'warning',
       title: `${product.name} · 界面异常恢复`,
@@ -682,6 +770,8 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
         mainWindow.loadURL('prts://app/');
       } else if (response === 1) {
         try { fs.rmSync(layoutFile, { force: true }); } catch {}
+        isQuitting = true;
+        try { app.releaseSingleInstanceLock(); } catch {}
         app.relaunch();
         app.exit(0);
       } else {
@@ -690,10 +780,43 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     }).catch(() => {});
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    battleReports?.start();
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL) => {
+    logStartup('did-fail-load', {
+      errorCode,
+      errorDescription: typeof errorDescription === 'string' ? errorDescription : '',
+    });
+    if (errorCode === -3) return;
+    showMainWindow();
+    if (!mainWindow.isDestroyed()) {
+      void dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: `${product.name} · 界面加载失败`,
+        message: '终端主界面未能正常加载。',
+        detail: `错误代码：${errorCode}${errorDescription ? `（${errorDescription}）` : ''}\n\n您可以尝试重新加载界面，或重启应用后再试。`,
+        buttons: ['重新加载界面', '关闭终端'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      }).then(({ response }) => {
+        if (mainWindow.isDestroyed()) return;
+        if (response === 0) {
+          mainWindow.loadURL('prts://app/');
+        } else {
+          app.quit();
+        }
+      }).catch(() => {});
+    }
   });
+
+  mainWindow.once('ready-to-show', () => {
+    showMainWindow();
+  });
+  readyShowTimer = setTimeout(() => {
+    readyShowTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindowShown) return;
+    logStartup('ready-to-show-timeout');
+    showMainWindow();
+  }, 8000);
   mainWindow.loadURL('prts://app/');
 });
 

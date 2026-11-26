@@ -101,10 +101,10 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 13:56（修复 **PC + Android 实时激活盟约 4 大根因（解析 `_CHAR_CHESS` 已穿戴转职装、校准 `炎:3 / 投资人:3 / 调和:1` 与调和核心 `+1`、整备区 `远见/奇迹/投资人` 激活、HUD 严格仅显已激活态）+ 同步 PC 端 Ban 选 OCR（多偏移采样 / 极速模拟 18 项 / 单人规程等级 15 分屏合并与底部 6 项探针）+ 脱敏 7B `_BOND` 诊断样本**，206/206 全栈测试 + Android 932 项 Java 测试 + 双产品构建全绿）
+- **最后更新**：2026-11-26 15:18（加固 **Windows 便携包启动容错与自动兼容自愈**：默认规避高权限 GPU 沙箱冲突，新增 `--prts-safe-gpu` 全套兼容重试、NSIS 启动期无窗崩自动二次拉起与退出码弹窗、`Tray` / `userData` / `ready-to-show` 8s 兜底及 32 KB 滚动 `startup.log`，根治内置 Administrator / UAC 关闭 / ToDesk 远程桌面闪退，212/212 全栈测试 + NSIS `makensis` 试编译 + 双产品构建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **206/206 全绿**（`tsc --noEmit` 通过 + TS 125/125 + Node 20/20 + Python 61/61）
+  - `npm test` **212/212 全绿**（`tsc --noEmit` 通过 + TS 125/125 + Node 26/26 + Python 61/61）
   - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **932 项直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：

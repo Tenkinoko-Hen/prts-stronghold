@@ -41,6 +41,8 @@ Function .onInit
   StrCpy $prtsCacheRoot ""
   StrCpy $prtsStageDir ""
   StrCpy $prtsCleanupInstDir "0"
+  StrCpy $prtsSawWindow "0"
+  StrCpy $prtsRetriedSafe "0"
   IfSilent prts_silent
     Call PrtsShowSplash
   prts_silent:

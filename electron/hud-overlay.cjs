@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const electron = require('electron');
 const { BrowserWindow, screen } = electron && typeof electron === 'object' ? electron : {};
+const { isSafeGpuMode } = require('./startup-guard.cjs');
 
 const HUD_SHORTCUT = 'CommandOrControl+Shift+F10';
 
@@ -168,7 +169,7 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
         additionalArguments: [`--prts-mode=${product.mode}`],
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true,
+        sandbox: !isSafeGpuMode({ argv: process.argv, commandLine: app?.commandLine }),
       },
     });
     hudWindow.setMenu(null);

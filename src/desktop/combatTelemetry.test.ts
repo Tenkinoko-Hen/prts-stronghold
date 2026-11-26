@@ -406,12 +406,99 @@ test('R8 all-players-leaked uses roundMetrics/skippedCosts and prevents false �
   assert.ok(hudLeak.totalEscaped >= 18);
   const s1 = hudLeak.cards.find(c => c.seat === 1)!;
   assert.ok(s1.leaked >= 6 && s1.escaped >= 6 && s1.covered === 0);
-  assert.ok(s1.bonds.shown.some(b => b.name === '精准' && b.count === 2 && b.active));
+  // Seat 1 in leak_r8 injects 8 active_bonds (max 999 stacks) -> HUD shows top 3 + hiddenCount 5
+  assert.equal(s1.bonds.shown.length, 3);
+  assert.equal(s1.bonds.hiddenCount, 5);
+  assert.deepEqual(
+    s1.bonds.shown.map(b => [b.name, b.count, b.tierTone]),
+    [
+      ['奥术', 999, 'max'],
+      ['精准', 245, 'high'],
+      ['乌萨斯', 128, 'high'],
+    ],
+  );
+  // Seat 2 keeps empty squad so static reference + smart-quote normalization remain covered
+  assert.equal(hudLeak.cards.find(c => c.seat === 2)?.bonds.shown.some(b => b.name === '奥术' && b.count >= 2 && b.active), true);
   assert.equal(hudLeak.cards.find(c => c.seat === 3)?.bonds.shown.some(b => b.name === '乌萨斯' && b.count === 3 && b.active), true);
 
   const stripHtml = renderToStaticMarkup(createElement(SeatTelemetryStrip, { report: parsed, focusSeat: 1 }));
   assert.doesNotMatch(stripHtml, /零逃/);
   assert.match(stripHtml, /逃\s*18|逃18/);
+  assert.match(stripHtml, /data-tier="max"[^>]*>奥术999/);
+  assert.match(stripHtml, /data-tier="high"[^>]*>精准245/);
+  assert.match(stripHtml, /data-tier="high"[^>]*>乌萨斯128/);
+  assert.match(stripHtml, /炎6/);
+
+  const compactStripHtml = renderToStaticMarkup(createElement(SeatTelemetryStrip, { report: parsed, focusSeat: 1, compact: true }));
+  assert.match(compactStripHtml, /奥术999/);
+  assert.match(compactStripHtml, /\+4/);
+});
+
+test('readSeatLineups and computeSeatCovenants handle active_bonds up to 999 stacks, 8 bonds sorting, and tierTone', () => {
+  const lineups = readSeatLineups({
+    1: {
+      round: 12,
+      shop_level: 6,
+      piece_count: 8,
+      deployed_count: 8,
+      active_bonds: [
+        { bond_id: 'yanShip', stacks: 6, active: true },
+        { bond_id: 'arcaneShip', stacks: 1500, active: true }, // clamps to 999
+        { bond_id: 'preciShip', stacks: 245, active: true },
+        { bond_id: 'ursusShip', stacks: 128, active: true },
+        { bond_id: 'kjeragShip', stacks: 64, active: true },
+        { bond_id: 'lethaniaShip', stacks: 32, active: true },
+        { bond_id: 'visiShip', stacks: 18, active: true },
+        { bond_id: 'swiftShip', stacks: 12, active: true },
+        { bond_id: 'raidShip', stacks: -3, active: false }, // negative clamps to 0 and is omitted
+      ],
+    },
+  });
+
+  const s1 = lineups[1];
+  assert.ok(s1.activeBonds);
+  assert.equal(s1.activeBonds.find(b => b.bondId === 'arcaneShip')?.stacks, 999);
+  assert.equal(s1.activeBonds.find(b => b.bondId === 'raidShip')?.stacks, 0);
+
+  const computed = computeSeatCovenants(s1, null);
+  assert.equal(computed.length, 8);
+  assert.equal(computed[0].name, '奥术');
+  assert.equal(computed[0].count, 999);
+  assert.equal(computed[0].tierTone, 'max');
+  assert.equal(computed[1].name, '精准');
+  assert.equal(computed[1].count, 245);
+  assert.equal(computed[1].tierTone, 'high');
+  assert.equal(computed[2].name, '乌萨斯');
+  assert.equal(computed[2].count, 128);
+  assert.equal(computed[2].tierTone, 'high');
+  assert.equal(computed[3].tierTone, 'normal');
+
+  // Verify clamping even when activeBonds is constructed directly without readSeatLineups
+  const directClamped = computeSeatCovenants({
+    ...s1,
+    activeBonds: [
+      { bondId: 'arcaneShip', stacks: 2048, active: true },
+      { bondId: 'sargonShip', stacks: 500, active: true },
+      { bondId: 'egirShip', stacks: 100, active: true },
+      { bondId: 'preciShip', stacks: 99, active: true },
+      { bondId: 'soloShip', stacks: 2, active: false },
+    ],
+  });
+  assert.equal(directClamped[0].count, 999);
+  assert.equal(directClamped[0].tierTone, 'max');
+  assert.equal(directClamped[1].tierTone, 'max');
+  assert.equal(directClamped[2].tierTone, 'high');
+  assert.equal(directClamped[3].tierTone, 'normal');
+  assert.equal(directClamped[4].active, false);
+
+  const wide8 = visibleSeatCovenants(s1, null, 8);
+  assert.equal(wide8.shown.length, 8);
+  assert.equal(wide8.hiddenCount, 0);
+
+  const hud3 = visibleSeatCovenants(s1, null, 3);
+  assert.equal(hud3.shown.length, 3);
+  assert.equal(hud3.hiddenCount, 5);
+  assert.equal(hud3.all.length, 8);
 });
 
 test('R14 HUD Boss ranking merges bossOfficial/bossPercent alongside partial bossDamage without dropping #3', () => {

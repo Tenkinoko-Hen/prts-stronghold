@@ -1,5 +1,5 @@
 // 青逝痕 Tenkinoko 制作
-import { mapBannedBondsToCovenants } from './covenantBonds';
+import { covenantThreshold, mapBannedBondsToCovenants, mapBondIdToCovenant } from './covenantBonds';
 
 export type TelemetryCaliber = 'active' | 'pulse' | 'span';
 export type TelemetryMetricMode = 'damage' | 'healing';
@@ -124,6 +124,7 @@ export interface SeatLineup {
   equips: EquipUnit[];
   shopGoods: ShopGood[];
   squad: SquadSlot[];
+  activeBonds?: Array<{ bondId: string; stacks: number; active: boolean }>;
 }
 
 export interface TimelinePoint {
@@ -434,6 +435,27 @@ export function readSeatLineups(raw: unknown): Record<number, SeatLineup> {
         isBanned: slot.is_banned === true,
       }];
     });
+    const activeBonds = Array.isArray(entry.active_bonds)
+      ? entry.active_bonds.flatMap(item => {
+          const row = asObj(item);
+          const bondId = asStr(row?.bond_id) || asStr(row?.bondId);
+          if (!row || !bondId) return [];
+          const rawStacks = typeof row.stacks === 'number' && Number.isFinite(row.stacks)
+            ? row.stacks
+            : typeof row.count === 'number' && Number.isFinite(row.count)
+              ? row.count
+              : 0;
+          const stacks = Math.min(999, Math.max(0, Math.trunc(rawStacks)));
+          const mappedName = mapBondIdToCovenant(bondId);
+          const threshold = mappedName ? covenantThreshold(mappedName) : 2;
+          const active = typeof row.active === 'boolean'
+            ? row.active
+            : mappedName === '独行'
+              ? stacks === 1
+              : stacks >= threshold;
+          return [{ bondId, stacks, active }];
+        })
+      : undefined;
     const roundNo = asNum(entry.round);
     const shopLevel = asNum(entry.shop_level);
     result[seatId] = {
@@ -449,6 +471,7 @@ export function readSeatLineups(raw: unknown): Record<number, SeatLineup> {
       equips: readEquips(entry.equips),
       shopGoods: readShopGoods(entry.shop_goods),
       squad,
+      ...(activeBonds && activeBonds.length > 0 ? { activeBonds } : {}),
     };
   }
   return result;

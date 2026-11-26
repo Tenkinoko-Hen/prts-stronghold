@@ -25,7 +25,8 @@ function createLeakR8Report() {
     ],
   };
 
-  // Intentionally empty squad covenants so static reference + quote normalization are verified
+  // Seat 1 injects 8 active_bonds (up to 999 stacks) for high-stack covenant stress testing;
+  // Seat 2 keeps empty squad covenants so static reference + smart-quote normalization stay verified.
   const lineups = {
     1: {
       round: 8,
@@ -43,6 +44,16 @@ function createLeakR8Report() {
       equips: [],
       shop_goods: [],
       squad: [],
+      active_bonds: [
+        { bond_id: 'arcaneShip', stacks: 999, active: true },
+        { bond_id: 'preciShip', stacks: 245, active: true },
+        { bond_id: 'ursusShip', stacks: 128, active: true },
+        { bond_id: 'kjeragShip', stacks: 64, active: true },
+        { bond_id: 'lethaniaShip', stacks: 32, active: true },
+        { bond_id: 'visiShip', stacks: 18, active: true },
+        { bond_id: 'swiftShip', stacks: 12, active: true },
+        { bond_id: 'yanShip', stacks: 6, active: true },
+      ],
     },
     2: {
       round: 8,

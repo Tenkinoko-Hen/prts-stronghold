@@ -6,7 +6,7 @@ import { REPORT_SEATS, roundMetrics, type BattleReport } from './battleReportDat
 import { seatDisplayText } from './BattleReportPanels';
 import type { ReportSeat } from './battleReports';
 import { isSoloMode } from './combatTelemetry';
-import { visibleSeatCovenants } from './covenantBonds';
+import { formatCovenantsTooltip, visibleSeatCovenants } from './covenantBonds';
 
 export interface SeatTelemetryStripProps {
   report: BattleReport;
@@ -65,7 +65,7 @@ export function SeatTelemetryStrip({
         assists += as?.value ?? 0;
       }
       const covered = Math.max(0, leaks - escaped);
-      const bonds = visibleSeatCovenants(lineup, report.deckPool, compact ? 3 : 4);
+      const bonds = visibleSeatCovenants(lineup, report.deckPool, compact ? 4 : 8);
       return {
         seat: s,
         label: seatDisplayText(s, report),
@@ -216,19 +216,29 @@ export function SeatTelemetryStrip({
               </div>
 
               {!card.eliminated && card.bonds.shown.length > 0 && (
-                <div className="d-unified-bonds" aria-label="当前激活盟约">
+                <div
+                  className="d-unified-bonds"
+                  aria-label="当前激活盟约"
+                  title={formatCovenantsTooltip(card.bonds.all)}
+                >
                   {card.bonds.shown.map(b => (
                     <span
                       key={b.name}
                       className="d-unified-bond-chip"
                       data-active={b.active}
+                      data-tier={b.tierTone ?? 'normal'}
                       title={`${b.name} ${b.count}/${b.threshold}${b.active ? '（已激活）' : ''}`}
                     >
                       {compact ? b.shortName : b.name}{b.count}
                     </span>
                   ))}
                   {card.bonds.hiddenCount > 0 && (
-                    <span className="d-unified-bond-more">+{card.bonds.hiddenCount}</span>
+                    <span
+                      className="d-unified-bond-more"
+                      title={formatCovenantsTooltip(card.bonds.all)}
+                    >
+                      +{card.bonds.hiddenCount}
+                    </span>
                   )}
                 </div>
               )}

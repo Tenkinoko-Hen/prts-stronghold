@@ -34,7 +34,7 @@ export interface SeatLeakCard {
   assisted: number;
   covered: number;
   escaped: number;
-  bonds: { shown: SeatCovenantStatus[]; hiddenCount: number };
+  bonds: { shown: SeatCovenantStatus[]; hiddenCount: number; all: SeatCovenantStatus[] };
 }
 
 export interface BossTeamRow {

@@ -85,12 +85,21 @@ const SHORT_COVENANT_LABELS: Readonly<Record<string, string>> = {
   协防干员: '协防',
 };
 
+export type CovenantTierTone = 'normal' | 'high' | 'max';
+
 export interface SeatCovenantStatus {
   name: string;
   shortName: string;
   count: number;
   threshold: number;
   active: boolean;
+  tierTone?: CovenantTierTone;
+}
+
+export function covenantTierTone(count: number): CovenantTierTone {
+  if (count >= 500) return 'max';
+  if (count >= 100) return 'high';
+  return 'normal';
 }
 
 const BOND_ID_ALIASES: Readonly<Record<string, string>> = {
@@ -130,15 +139,60 @@ export function shortCovenantName(name: string): string {
   return SHORT_COVENANT_LABELS[name] ?? (name.length > 2 ? name.slice(0, 2) : name);
 }
 
+function sortSeatCovenants(list: SeatCovenantStatus[]): SeatCovenantStatus[] {
+  return list.sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+}
+
+function clampBondStacks(raw: number): number {
+  if (!Number.isFinite(raw)) return 0;
+  return Math.min(999, Math.max(0, Math.trunc(raw)));
+}
+
 /**
  * 计算指定席位当前场上已部署干员 + 转职装备提供的实时盟约人数与激活态。
- * 同名干员在场多枚仅计 1 次；独行仅在人数 === 1 时视为激活。
+ * 若服务端已提供 activeBonds（层数最高 999），优先使用；否则回退至在场不重复干员 + 转职装备估算。
  */
 export function computeSeatCovenants(
   lineup: SeatLineup | undefined,
   deckPool?: DeckPoolSnapshot | null,
 ): SeatCovenantStatus[] {
   if (!lineup) return [];
+
+  if (lineup.activeBonds && lineup.activeBonds.length > 0) {
+    const byName = new Map<string, { count: number; active: boolean }>();
+    for (const item of lineup.activeBonds) {
+      const name = mapBondIdToCovenant(item.bondId);
+      if (!name) continue;
+      const count = clampBondStacks(item.stacks);
+      if (count <= 0) continue;
+      const prev = byName.get(name);
+      if (!prev) {
+        byName.set(name, { count, active: Boolean(item.active) });
+      } else {
+        byName.set(name, {
+          count: clampBondStacks(Math.max(prev.count, count)),
+          active: prev.active || Boolean(item.active),
+        });
+      }
+    }
+    const directList: SeatCovenantStatus[] = [];
+    for (const [name, entry] of byName.entries()) {
+      directList.push({
+        name,
+        shortName: shortCovenantName(name),
+        count: entry.count,
+        threshold: covenantThreshold(name),
+        active: entry.active,
+        tierTone: covenantTierTone(entry.count),
+      });
+    }
+    return sortSeatCovenants(directList);
+  }
+
   const counts = new Map<string, number>();
 
   // 1. 预建干员盟约索引（优先开局 squad，回退 deckPool.operators）
@@ -202,7 +256,8 @@ export function computeSeatCovenants(
   }
 
   const list: SeatCovenantStatus[] = [];
-  for (const [name, count] of counts.entries()) {
+  for (const [name, rawCount] of counts.entries()) {
+    const count = clampBondStacks(rawCount);
     if (count <= 0) continue;
     const threshold = covenantThreshold(name);
     const active = name === '独行' ? count === 1 : count >= threshold;
@@ -212,24 +267,29 @@ export function computeSeatCovenants(
       count,
       threshold,
       active,
+      tierTone: covenantTierTone(count),
     });
   }
 
-  return list.sort((a, b) => {
-    if (a.active !== b.active) return a.active ? -1 : 1;
-    if (b.count !== a.count) return b.count - a.count;
-    return a.name.localeCompare(b.name, 'zh-CN');
-  });
+  return sortSeatCovenants(list);
 }
 
 export function visibleSeatCovenants(
   lineup: SeatLineup | undefined,
   deckPool?: DeckPoolSnapshot | null,
   maxItems = 4,
-): { shown: SeatCovenantStatus[]; hiddenCount: number } {
+): { shown: SeatCovenantStatus[]; hiddenCount: number; all: SeatCovenantStatus[] } {
   const all = computeSeatCovenants(lineup, deckPool).filter(b => b.active || b.count >= 2);
+  const limit = Math.max(0, Math.trunc(maxItems));
   return {
-    shown: all.slice(0, maxItems),
-    hiddenCount: Math.max(0, all.length - maxItems),
+    shown: all.slice(0, limit),
+    hiddenCount: Math.max(0, all.length - limit),
+    all,
   };
+}
+
+export function formatCovenantsTooltip(bonds: SeatCovenantStatus[]): string {
+  return bonds
+    .map(b => `${b.name} ${b.count}${b.active ? '' : `/${b.threshold}（未激活）`}`)
+    .join(' · ');
 }

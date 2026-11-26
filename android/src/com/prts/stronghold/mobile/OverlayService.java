@@ -1269,29 +1269,93 @@ public class OverlayService extends Service {
             head.addView(hpTv);
             card.addView(head);
 
-            // Active Covenants Line (已激活盟约人数，含转职加成，自动过滤未触发项)
+            // Active Covenants Line (支持最高 999 层、单行最多 3 枚高亮胶囊 + 醒目 +N 溢出)
             if (row.bonds != null && !row.bonds.isEmpty()) {
-                SpannableStringBuilder bondSb = new SpannableStringBuilder();
-                int shown = 0;
+                List<BattleCaptureState.BondStatus> visibleBonds = new java.util.ArrayList<>();
                 for (BattleCaptureState.BondStatus bs : row.bonds) {
-                    if (!bs.active && bs.count < 2) continue;
-                    if (shown > 0) appendColored(bondSb, " · ", 0xff475569);
-                    String shortName = bs.name.length() > 3 ? bs.name.substring(0, 2) : bs.name;
-                    appendColored(bondSb, shortName + bs.count, bs.active ? 0xff67e8f9 : 0xff94a3b8);
-                    shown++;
-                    if (shown >= 3) break;
+                    if (bs.active || bs.count >= 2) {
+                        visibleBonds.add(bs);
+                    }
                 }
-                if (shown > 0) {
-                    TextView bondTv = new TextView(this);
-                    bondTv.setText(bondSb);
-                    bondTv.setTextSize(10f);
-                    bondTv.setTypeface(prtsSans(true));
-                    bondTv.setFontFeatureSettings("tnum");
-                    bondTv.setSingleLine(true);
-                    bondTv.setEllipsize(TextUtils.TruncateAt.END);
+                if (!visibleBonds.isEmpty()) {
+                    LinearLayout bondRow = new LinearLayout(this);
+                    bondRow.setOrientation(LinearLayout.HORIZONTAL);
+                    bondRow.setGravity(Gravity.CENTER_VERTICAL);
                     LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-1, -2);
-                    bLp.topMargin = dp(1);
-                    card.addView(bondTv, bLp);
+                    bLp.topMargin = dp(2);
+
+                    int maxShown = 3;
+                    int shownCount = Math.min(maxShown, visibleBonds.size());
+                    int hiddenCount = Math.max(0, visibleBonds.size() - shownCount);
+                    StringBuilder allBondsSb = new StringBuilder();
+                    for (int bi = 0; bi < visibleBonds.size(); bi++) {
+                        BattleCaptureState.BondStatus bs = visibleBonds.get(bi);
+                        int c = Math.min(999, Math.max(0, bs.count));
+                        if (bi > 0) allBondsSb.append(" · ");
+                        allBondsSb.append(bs.name).append(' ').append(c);
+                    }
+
+                    for (int bi = 0; bi < shownCount; bi++) {
+                        BattleCaptureState.BondStatus bs = visibleBonds.get(bi);
+                        int displayCount = Math.min(999, Math.max(0, bs.count));
+                        boolean isMax = displayCount >= 500;
+                        boolean isHigh = displayCount >= 100;
+                        int chipBg = isMax
+                            ? 0x44f59e0b
+                            : isHigh
+                                ? 0x2efacc15
+                                : bs.active
+                                    ? 0x2622d3ee
+                                    : 0x1e94a3b8;
+                        int chipStroke = isMax
+                            ? 0xebfbbf24
+                            : isHigh
+                                ? 0xaefacc15
+                                : bs.active
+                                    ? 0x7322d3ee
+                                    : 0x4894a3b8;
+                        int chipFg = isMax
+                            ? 0xfffff08a
+                            : isHigh
+                                ? 0xfffde047
+                                : bs.active
+                                    ? 0xff67e8f9
+                                    : 0xff94a3b8;
+
+                        String shortName = bs.name.length() > 2 ? bs.name.substring(0, 2) : bs.name;
+                        TextView chip = new TextView(this);
+                        chip.setText(shortName + displayCount);
+                        chip.setTextSize(9.5f);
+                        chip.setTypeface(prtsSans(true));
+                        chip.setFontFeatureSettings("tnum");
+                        chip.setSingleLine(true);
+                        chip.setTextColor(chipFg);
+                        chip.setPadding(dp(3), 0, dp(3), 0);
+                        chip.setBackground(background(chipBg, 2, chipStroke));
+                        LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(-2, -2);
+                        if (bi > 0) cLp.leftMargin = dp(2);
+                        bondRow.addView(chip, cLp);
+                    }
+
+                    if (hiddenCount > 0) {
+                        final String allBondsText = row.name + " 盟约：" + allBondsSb.toString();
+                        TextView moreTv = new TextView(this);
+                        moreTv.setText("+" + hiddenCount);
+                        moreTv.setTextSize(9.5f);
+                        moreTv.setTypeface(prtsNumeric(true));
+                        moreTv.setFontFeatureSettings("tnum");
+                        moreTv.setSingleLine(true);
+                        moreTv.setTextColor(0xff7dd3fc);
+                        moreTv.setPadding(dp(3), 0, dp(3), 0);
+                        moreTv.setBackground(background(0x2438bdf8, 2, 0x7338bdf8));
+                        if (!stripLocked) {
+                            moreTv.setOnClickListener(v -> Toast.makeText(OverlayService.this, allBondsText, Toast.LENGTH_SHORT).show());
+                        }
+                        LinearLayout.LayoutParams mLp = new LinearLayout.LayoutParams(-2, -2);
+                        mLp.leftMargin = dp(2);
+                        bondRow.addView(moreTv, mLp);
+                    }
+                    card.addView(bondRow, bLp);
                 }
             }
 

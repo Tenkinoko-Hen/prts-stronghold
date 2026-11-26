@@ -237,7 +237,7 @@ function AssistFlowVisual({ rows, report, seat }: { rows: BattleRound[]; report:
                       <span className="d-bar-track" aria-hidden="true">
                         <i className={`is-out seat-fill-${owner}`} style={{ width: `${Math.max(6, (count / myScale) * 100)}%` }} />
                       </span>
-                      <strong className="d-bar-val">+{count}</strong>
+                      <strong className="d-bar-val">+{count}<small>只</small></strong>
                     </li>
                   ))}
                 </ul>
@@ -258,7 +258,7 @@ function AssistFlowVisual({ rows, report, seat }: { rows: BattleRound[]; report:
                     <span className="d-bar-track" aria-hidden="true">
                       <i className={`is-in seat-fill-${killer}`} style={{ width: `${Math.max(6, (count / myScale) * 100)}%` }} />
                     </span>
-                    <strong className="d-bar-val">{count}</strong>
+                    <strong className="d-bar-val">{count}<small>只</small></strong>
                   </li>
                 ))}
               </ul>
@@ -278,13 +278,13 @@ function AssistFlowVisual({ rows, report, seat }: { rows: BattleRound[]; report:
               <li key={`${killer}:${owner}`}>
                 <span className="d-bar-pair">
                   {seatName(killer, report)}
-                  <ArrowRight size={11} aria-label="兜底" />
+                  <ArrowRight size={12} strokeWidth={2.2} aria-label="兜底" />
                   {owner === killer ? <small>自补</small> : seatName(owner, report)}
                 </span>
                 <span className="d-bar-track" aria-hidden="true">
                   <i className={`is-peer seat-fill-${killer}`} style={{ width: `${Math.max(6, (count / otherScale) * 100)}%` }} />
                 </span>
-                <strong className="d-bar-val">{count}</strong>
+                <strong className="d-bar-val">{count}<small>只</small></strong>
               </li>
             ))}
           </ul>

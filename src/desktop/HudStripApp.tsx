@@ -17,7 +17,7 @@ import { seatDisplayText } from './BattleReportPanels';
 import { EnemyAvatar } from './BattleReportSpawns';
 import { CompactOperatorBadge } from './BattleReportTelemetry';
 import { formatTelemetryRate, formatTelemetryTotal, isSoloMode, type DeckPoolOperator } from './combatTelemetry';
-import { normalizeOperatorName } from './covenantBonds';
+import { formatCovenantsTooltip, normalizeOperatorName } from './covenantBonds';
 import { computeOperatorOdds } from './deckPoolMath';
 import { HUD_SCALE_SPECS, buildHudBossTeamData, buildHudLeakData } from './hudTelemetryViewModel';
 import { PRTS_CHART } from './prtsChartKit';
@@ -123,6 +123,7 @@ export default function HudStripApp({
   const [leakSelectedRound, setLeakSelectedRound] = useState<number>(1);
   const [dpsSub, setDpsSub] = useState<HudDpsSub>('team');
   const [showAllWaves, setShowAllWaves] = useState(false);
+  const [expandedBondSeat, setExpandedBondSeat] = useState<number | null>(null);
   const [storageTick, setStorageTick] = useState(0);
   const autoSwitchedBossRoundRef = useRef(0);
 
@@ -163,6 +164,7 @@ export default function HudStripApp({
   const handleSelectTab = (tab: HudTab) => {
     if (state.locked) return;
     setActiveTab(tab);
+    setExpandedBondSeat(null);
     if (!previewState) {
       try {
         localStorage.setItem(HUD_PAGE_STORAGE_KEY, tab);
@@ -1023,17 +1025,22 @@ export default function HudStripApp({
               <div style={{ display: 'grid', gridTemplateColumns: soloMode ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '3px 4px' }}>
                 {(() => {
                   const maxMetric = Math.max(1, ...leakData.cards.map(c => Math.max(c.leaked, c.assisted)));
-                  return leakData.cards.map(card => {
+                  const bondPad = activeScale === 'sm' ? '0 3px' : '0 4px';
+                  const bondGap = activeScale === 'sm' ? '2px' : '3px';
+                  return leakData.cards.map((card, cardIdx) => {
                     const assistPct = (card.assisted / maxMetric) * 100;
                     const coveredPct = (card.covered / maxMetric) * 100;
                     const escapedPct = (card.escaped / maxMetric) * 100;
                     const leakDisplay = card.leaked === 0
                       ? '0'
                       : metricText({ value: card.leaked, quality: card.leakQuality });
+                    const allBondsTitle = formatCovenantsTooltip(card.bonds.all);
+                    const bondsExpanded = !state.locked && expandedBondSeat === card.seat && card.bonds.all.length > 0;
                     return (
                       <div
                         key={card.seat}
                         style={{
+                          position: 'relative',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '1.5px',
@@ -1085,29 +1092,143 @@ export default function HudStripApp({
                         </div>
 
                         {!card.eliminated && card.bonds.shown.length > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', overflow: 'hidden' }}>
-                            {card.bonds.shown.map(b => (
+                          <div
+                            title={allBondsTitle}
+                            style={{ display: 'flex', alignItems: 'center', gap: bondGap, overflow: 'hidden', flexWrap: 'nowrap', minWidth: 0 }}
+                          >
+                            {card.bonds.shown.map(b => {
+                              const isMax = b.tierTone === 'max';
+                              const isHigh = b.tierTone === 'high';
+                              return (
+                                <span
+                                  key={b.name}
+                                  data-tier={b.tierTone ?? 'normal'}
+                                  title={`${b.name} ${b.count}/${b.threshold}${b.active ? '（已激活）' : ''}`}
+                                  style={{
+                                    padding: bondPad,
+                                    fontFamily: 'var(--font-sans)',
+                                    fontSize: fs(10.5),
+                                    lineHeight: 1.22,
+                                    fontWeight: 700,
+                                    fontVariantNumeric: 'tabular-nums',
+                                    borderRadius: '2px',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                    background: isMax
+                                      ? 'linear-gradient(90deg, rgba(245, 158, 11, 0.30), rgba(250, 204, 21, 0.22))'
+                                      : isHigh
+                                        ? 'rgba(250, 204, 21, 0.18)'
+                                        : b.active
+                                          ? 'rgba(34, 211, 238, 0.15)'
+                                          : 'rgba(148, 163, 184, 0.12)',
+                                    border: `1px solid ${isMax
+                                      ? 'rgba(251, 191, 36, 0.92)'
+                                      : isHigh
+                                        ? 'rgba(250, 204, 21, 0.68)'
+                                        : b.active
+                                          ? 'rgba(34, 211, 238, 0.45)'
+                                          : 'rgba(148, 163, 184, 0.28)'}`,
+                                    color: isMax ? '#fff08a' : isHigh ? '#fde047' : b.active ? '#67e8f9' : '#94a3b8',
+                                  }}
+                                >
+                                  {b.shortName}{b.count}
+                                </span>
+                              );
+                            })}
+                            {card.bonds.hiddenCount > 0 && (
+                              state.locked ? (
+                                <span
+                                  title={allBondsTitle}
+                                  style={{
+                                    padding: bondPad,
+                                    fontSize: fs(10.5),
+                                    lineHeight: 1.22,
+                                    fontWeight: 800,
+                                    borderRadius: '2px',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                    color: '#7dd3fc',
+                                    background: 'rgba(56, 189, 248, 0.14)',
+                                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                                    fontFamily: 'var(--font-mono)',
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  +{card.bonds.hiddenCount}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  title={allBondsTitle}
+                                  onClick={() => setExpandedBondSeat(prev => (prev === card.seat ? null : card.seat))}
+                                  style={{
+                                    padding: bondPad,
+                                    fontSize: fs(10.5),
+                                    lineHeight: 1.22,
+                                    fontWeight: 800,
+                                    borderRadius: '2px',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                    cursor: 'pointer',
+                                    color: bondsExpanded ? '#061318' : '#7dd3fc',
+                                    background: bondsExpanded ? '#38bdf8' : 'rgba(56, 189, 248, 0.16)',
+                                    border: '1px solid rgba(56, 189, 248, 0.55)',
+                                    fontFamily: 'var(--font-mono)',
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  +{card.bonds.hiddenCount}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        )}
+
+                        {bondsExpanded && (
+                          <div
+                            role="dialog"
+                            aria-label={`${card.label} 全部盟约`}
+                            onClick={() => setExpandedBondSeat(null)}
+                            style={{
+                              position: 'absolute',
+                              ...(cardIdx < 2 ? { top: '20px' } : { bottom: '20px' }),
+                              left: '4px',
+                              right: '4px',
+                              zIndex: 20,
+                              padding: '4px 6px',
+                              background: '#0b1018',
+                              border: '1px solid rgba(250, 204, 21, 0.65)',
+                              borderRadius: '2px',
+                              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.72)',
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '3px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {card.bonds.all.map(b => (
                               <span
                                 key={b.name}
                                 style={{
                                   padding: '0 4px',
-                                  fontFamily: 'var(--font-sans)',
-                                  fontSize: fs(11),
-                                  lineHeight: 1.2,
-                                  fontWeight: 700,
                                   borderRadius: '2px',
+                                  fontSize: fs(10.5),
+                                  lineHeight: 1.25,
+                                  fontWeight: 700,
                                   whiteSpace: 'nowrap',
-                                  background: b.active ? 'rgba(34, 211, 238, 0.15)' : 'rgba(148, 163, 184, 0.12)',
-                                  border: `1px solid ${b.active ? 'rgba(34, 211, 238, 0.45)' : 'rgba(148, 163, 184, 0.28)'}`,
-                                  color: b.active ? '#67e8f9' : '#94a3b8',
+                                  fontVariantNumeric: 'tabular-nums',
+                                  background: b.tierTone === 'max'
+                                    ? 'rgba(245, 158, 11, 0.28)'
+                                    : b.tierTone === 'high'
+                                      ? 'rgba(250, 204, 21, 0.16)'
+                                      : 'rgba(34, 211, 238, 0.14)',
+                                  border: `1px solid ${b.tierTone === 'max' || b.tierTone === 'high' ? 'rgba(250, 204, 21, 0.65)' : 'rgba(34, 211, 238, 0.42)'}`,
+                                  color: b.tierTone === 'max' ? '#fff08a' : b.tierTone === 'high' ? '#fde047' : '#67e8f9',
                                 }}
                               >
-                                {b.shortName}{b.count}
+                                {b.name}{b.count}
                               </span>
                             ))}
-                            {card.bonds.hiddenCount > 0 && (
-                              <span style={{ fontSize: fs(11), color: '#64748b', fontFamily: 'var(--font-mono)' }}>+{card.bonds.hiddenCount}</span>
-                            )}
                           </div>
                         )}
 

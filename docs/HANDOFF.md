@@ -101,12 +101,11 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 10:52（完成 **全端 HUD 字体统一 + 24 寸 2K 屏三档缩放 / 小米 14 字号重构 + 5 项实机战报数据与口径 Bug 根治**，191/191 全栈测试 + Android 872 项直跑测试 + Chrome CDP 真机视口实测截图全绿）
+- **最后更新**：2026-11-26 11:18（完成 **协防兜底条高对比度提亮 + 全端支持最多 8 盟约与 999 层叠层显示**，192/192 全栈测试 + Android 872 项直跑测试 + 双产品构建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **191/191 全绿**（`tsc --noEmit` 通过 + TS 116/116 + Node 15/15 + Python 60/60）
-  - Android Java 单元与高压稳定性测试 **872 项直跑全绿**（`OverlayService.java` 静态审计 `Typeface.MONOSPACE` / `setTypeface(null` / `<10f` 均为 0 处）
-  - Chrome CDP 真机视口实测截图全绿（`sm 500×248` / `md 580×280` / `lg 660×316` 漏兜页均 `scrollHeight === clientHeight` 零裁切，`Source Han Sans CN` 命中，小米 14 `840×378` & `378×840` 零横向溢出）
+  - `npm test` **192/192 全绿**（`tsc --noEmit` 通过 + TS 117/117 + Node 15/15 + Python 60/60）
+  - Android `aapt2` + `javac`（65 个源码 + 7 个测试）及 Java 单元与高压稳定性测试 **872 项直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
   - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）
@@ -122,6 +121,9 @@ npm run build
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker；本机已安装并登录 `gh` CLI（大文件上传如遇代理重置可配合 `curl --http1.1 --limit-rate 3M`）。
 - **近期已完成里程碑**：
+  - **协防兜底条高对比度升级 + 全端 8 盟约 / 999 层叠层适配**（192/192 全栈测试 + Android 872 项直跑测试 + 双产品构建全绿）：
+    - **协防进度条卡片（`battleReports.css` / `BattleReportRounds.tsx`）**：升级四席位色条为高饱和渐变（含 4 席亮紫 `#7c3aed -> #c084fc`）、10px 25% 微刻度轨道与右侧亮边高光；强化 `is-out` / `is-in` / `is-peer` 卡片左侧 3px 主题强调边与标题对比度，数字升级为等宽带框徽章并标 `只`。
+    - **8 盟约 + 999 层全端适配（`combatTelemetry.ts` / `covenantBonds.ts` / `SeatTelemetryStrip.tsx` / `HudStripApp.tsx` / `OverlayService.java`）**：新增 `active_bonds` 解析与 `0..999` 钳位及 `high (>=100)` / `max (>=500)` 终末地金黄/橙金分级；PC 主界面宽屏支持最多 8 盟约自动换行、紧凑 4 盟约 `+N` 溢出悬浮全览；PC HUD 与 Android 原生悬浮窗单行展示最高 3 枚胶囊 + 醒目 `+N`（非穿透态可点击展开/Toast 查阅全部盟约），保持零横向裁切、零垂直滚动条。
   - **全端 HUD 字体统一 + 2K/小米 14 字号重构 + 5 项实局数据口径 Bug 根治**（191/191 全栈测试 + Android 872 项直跑测试 + CDP 三档零裁切实测全绿）：
     - **PC 悬浮窗（`hud-overlay.cjs` / `HudStripApp.tsx` / `hudTelemetryViewModel.ts`）**：全量中文字体统一回 `Source Han Sans CN`（`var(--font-sans)`），仅纯数字/短码走 `var(--font-mono)`；新增持久化 3 档缩放（`sm 500×248` / `md 580×280` 2K 默认 / `lg 660×316`）与顶栏 `小/中/大` 快捷切换，最低字号 `≥11px`（`sm ≥10.5px`），三档漏兜 2×2+高漏底栏一屏零滚动条无裁切，底部双波无半截头像裁切。
     - **Android 原生悬浮窗（`OverlayService.java`）**：彻底移除 `Typeface.MONOSPACE`，统一 `prtsSans` + `prtsNumeric`（`sans-serif-condensed` + `tnum`），按小米 14 6.36" 横屏（`~840×378dp`）提档至 `10–12.5sp`、横屏宽 `448dp`。

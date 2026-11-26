@@ -19,11 +19,46 @@ const ALLOWED_DETAIL_KEYS = new Set([
   'message',
   'code',
   'stack',
+  'mainWindowShown',
+  'rendererRecoverCount',
 ]);
 
-function isSafeGpuMode({ argv = process.argv, commandLine } = {}) {
+const STARTUP_PREFS_FILENAME = 'startup-prefs.json';
+
+function readStartupPrefs(userDataDir) {
+  if (!userDataDir || typeof userDataDir !== 'string') return {};
+  try {
+    const prefsPath = path.join(userDataDir, STARTUP_PREFS_FILENAME);
+    if (!fs.existsSync(prefsPath)) return {};
+    const parsed = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStartupPrefs(userDataDir, prefs) {
+  if (!userDataDir || typeof userDataDir !== 'string') return false;
+  try {
+    fs.mkdirSync(userDataDir, { recursive: true });
+    const payload = {
+      preferSafeGpu: Boolean(prefs?.preferSafeGpu),
+      reason: typeof prefs?.reason === 'string' ? prefs.reason : '',
+      updatedAt: typeof prefs?.updatedAt === 'string' && prefs.updatedAt ? prefs.updatedAt : new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(userDataDir, STARTUP_PREFS_FILENAME), JSON.stringify(payload, null, 2), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSafeGpuMode({ argv = process.argv, commandLine, startupPrefs } = {}) {
   const args = Array.isArray(argv) ? argv : [];
-  if (args.includes('--prts-safe-gpu') || args.includes('--disable-gpu')) {
+  if (args.includes('--prts-normal-gpu')) {
+    return false;
+  }
+  if (args.includes('--prts-safe-gpu') || args.includes('--disable-gpu') || Boolean(startupPrefs?.preferSafeGpu)) {
     return true;
   }
   try {
@@ -33,9 +68,9 @@ function isSafeGpuMode({ argv = process.argv, commandLine } = {}) {
   }
 }
 
-function applyStartupGpuWorkarounds({ app, platform = process.platform, argv = process.argv } = {}) {
+function applyStartupGpuWorkarounds({ app, platform = process.platform, argv = process.argv, startupPrefs } = {}) {
   const commandLine = app?.commandLine;
-  const safeGpuMode = isSafeGpuMode({ argv, commandLine });
+  const safeGpuMode = isSafeGpuMode({ argv, commandLine, startupPrefs });
   if (platform === 'win32') {
     try {
       commandLine?.appendSwitch?.('disable-gpu-sandbox');
@@ -61,7 +96,9 @@ function applyStartupGpuWorkarounds({ app, platform = process.platform, argv = p
 }
 
 function buildSafeGpuRelaunchArgs(argv = process.argv) {
-  const baseArgs = Array.isArray(argv) ? argv.slice(1).filter((arg) => typeof arg === 'string') : [];
+  const baseArgs = Array.isArray(argv)
+    ? argv.slice(1).filter((arg) => typeof arg === 'string' && arg !== '--prts-normal-gpu')
+    : [];
   const merged = [...baseArgs];
   for (const flag of SAFE_GPU_RELAUNCH_FLAGS) {
     if (!merged.includes(flag)) merged.push(flag);
@@ -76,6 +113,16 @@ function shouldRelaunchForChildProcessGone(
   if (isQuitting || safeGpuMode || hasRelaunched) return false;
   if (details?.type !== 'GPU') return false;
   return !mainWindowShown || details?.reason !== 'clean-exit';
+}
+
+function shouldRelaunchForRenderProcessGone(
+  details,
+  { mainWindowShown = false, safeGpuMode = false, hasRelaunched = false, isQuitting = false, rendererRecoverCount = 0 } = {},
+) {
+  if (isQuitting || safeGpuMode || hasRelaunched || !details || details.reason === 'clean-exit') {
+    return false;
+  }
+  return !mainWindowShown || details.reason === 'launch-failed' || rendererRecoverCount >= 1;
 }
 
 function truncateString(value, maxLen) {
@@ -240,10 +287,13 @@ function createStartupLogger({ app, product, safeGpuMode = false, maxBytes = MAX
 module.exports = {
   MAX_STARTUP_LOG_BYTES,
   SAFE_GPU_RELAUNCH_FLAGS,
+  readStartupPrefs,
+  writeStartupPrefs,
   isSafeGpuMode,
   applyStartupGpuWorkarounds,
   buildSafeGpuRelaunchArgs,
   shouldRelaunchForChildProcessGone,
+  shouldRelaunchForRenderProcessGone,
   formatErrorForLog,
   sanitizeLogDetails,
   appendStartupLog,

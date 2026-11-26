@@ -101,17 +101,19 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 16:13（修复全栈深测 **3 项 P0 稳定性漏洞 + 5 项 P1 流畅度与 OCR 提速优化**：Android OCR `addOnCompleteListener`/OOM 防 `busy` 死锁、PC WinRT `SoftwareBitmap.Dispose()` 与串行排队、Android VPN 2048 有界队列 + 100ms 悬浮窗合并节流、PC 两阶段 `320×180` 门控抓屏 + 0-Ban/对局中自动停轮询 + BMP 零压缩直喂提速、Android 精准左列补扫门控 + 图集后台异步预热 + 按需 `updateViewLayout`、PC 轻量 `readLightBattleSyncMeta` 去重解析，217/217 全栈测试 + WinRT BMP 实机烟测 + Android 2,992 项 Java 断言 + 双产品构建全绿）
+- **最后更新**：2026-11-26 19:27（修复内测 PC 端两项真实环境问题：① Windows 渲染进程 `render-process-gone` 无限弹窗死循环自愈——开窗前/沙盒启动失败/60s 内二次崩溃自动切换 `--prts-safe-gpu --disable-gpu --disable-gpu-sandbox --no-sandbox` 兼容模式并在成功渲染后写入 `startup-prefs.json` 持久记忆、支持 `--prts-normal-gpu` 退出、修复恢复弹窗误导文案与无参重启；② Npcap 一键安装全自动预检修复——安装前自动 `stopAndWait` 停止自家采集 Worker、自动清理缺失 `wpcap.dll` 时的残留 `npcap`/`npf` 服务与严格白名单 `npcap.inf` 驱动库、自动恢复被禁用的 L2L/L2R 本地符号链接策略以根治 `0x800705b7`、失败后解析 Npcap 日志与只读检测冲突网卡软件并自动恢复内置本路采集；226/226 全栈单测 + 4 模式实机 Electron 烟测 + 真实 Windows `pnputil`/`reg`/`tasklist` 解析验证全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **217/217 全绿**（`tsc --noEmit` 通过 + TS 127/127 + Node 29/29 + Python 61/61）
+  - `npm test` **226/226 全绿**（`tsc --noEmit` 通过 + TS 127/127 + Node 38/38 + Python 61/61）
+  - Electron 45 四模式实机烟测（标准启动 → `--prts-safe-gpu` 持久写入 `startup-prefs.json` → 无参自动继承兼容模式 → `--prts-normal-gpu` 清除偏好）全部通过
+  - Windows 真机只读校验 `parsePnputilNpcapDrivers` / `parseSymlinkEvaluationDisabled` / `detectConflictingNetworkApps` 及已安装态 `prepareNpcapEnvironment` 零副作用全部通过
   - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **2,992 项断言直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
-- **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
-  - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）
-  - **PC 纯净版（Lite）**：`release/v2.0.6/PRTS-Stronghold-Lite-2.0.6-Win64.exe`（132,635,289 字节 / 126.49 MiB，SHA-256: `8075851d…b6fb09b1`）
-  - **Android 完整版**：`release/PRTS-Stronghold-2.0.6-Android.apk`（149,881,762 字节 / 142.94 MiB，VersionCode `206`，SHA-256: `4ae34e01…93d719fb`，v2/v3 签名校验通过）
-  - **Android 纯净版（Lite）**：`release/telemetry-2.0.6/卫戍战报仪-Android-2.0.6.apk`（33,557,954 字节 / 32.00 MiB，VersionCode `206`，SHA-256: `e017bfa6…709a506f`，v2/v3 签名校验通过）
+- **当前 `v2.1.0` 本地四端候选测试包（均位于本机 `release/`，未入 Git、未打 tag、未发 GitHub Release）**：
+  - **PC 完整版**：`release/v2.1.0/PRTS-Stronghold-Full-2.1.0-Win64.exe`（含渲染崩溃自愈 + Npcap 自动预检修复）
+  - **PC 纯净版（Lite）**：`release/v2.1.0/PRTS-Stronghold-Lite-2.1.0-Win64.exe`（含渲染崩溃自愈 + Npcap 自动预检修复）
+  - **Android 完整版**：`release/PRTS-Stronghold-2.1.0-Android.apk`（143.04 MiB，VersionCode `210`，v2/v3 签名校验通过）
+  - **Android 纯净版（Lite）**：`release/telemetry-2.1.0/卫戍战报仪-Android-2.1.0.apk`（32.18 MiB，VersionCode `210`，v2/v3 签名校验通过）
 - **最近一次正式发布版本**：
   - **主线完整版（`v2.0.0` · Latest）**：
     - Windows 便携包：`PRTS-Stronghold-2.0.0-Windows-x64.exe`（229.42 MiB / 240,560,974 字节，SHA-256: `ff2d64b4…08a2b3e8`，已内置最新 `PRTS-Worker` 与去 AI 化文案）

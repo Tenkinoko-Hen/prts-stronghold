@@ -13,7 +13,10 @@ const {
   applyStartupGpuWorkarounds,
   buildSafeGpuRelaunchArgs,
   createStartupLogger,
+  readStartupPrefs,
   shouldRelaunchForChildProcessGone,
+  shouldRelaunchForRenderProcessGone,
+  writeStartupPrefs,
 } = require('./startup-guard.cjs');
 
 protocol.registerSchemesAsPrivileged([
@@ -27,8 +30,6 @@ let tray;
 let mainWindowShown = false;
 let isQuitting = false;
 let hasRelaunchedForGpu = false;
-
-const safeGpuMode = applyStartupGpuWorkarounds({ app, platform: process.platform, argv: process.argv });
 
 let userDataInitError = null;
 if (desktop.useIsolatedUserData) {
@@ -44,6 +45,20 @@ if (desktop.useIsolatedUserData) {
 if (process.platform === 'win32' && desktop.appId) {
   app.setAppUserModelId(desktop.appId);
 }
+
+let userDataDir = '';
+try {
+  userDataDir = app.getPath('userData');
+} catch {
+  userDataDir = '';
+}
+const startupPrefs = readStartupPrefs(userDataDir);
+const safeGpuMode = applyStartupGpuWorkarounds({
+  app,
+  platform: process.platform,
+  argv: process.argv,
+  startupPrefs,
+});
 
 const logStartup = createStartupLogger({ app, product, safeGpuMode });
 
@@ -415,7 +430,9 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     if (!isTrustedMainSender(event)) return;
     isQuitting = true;
     try { app.releaseSingleInstanceLock(); } catch {}
-    app.relaunch();
+    app.relaunch({
+      args: safeGpuMode ? buildSafeGpuRelaunchArgs(process.argv) : process.argv.slice(1),
+    });
     app.exit(0);
   });
   ipcMain.handle('set-always-on-top', (event, flag) => {
@@ -734,32 +751,87 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     covenantOcr?.dispose();
     battleReports?.dispose();
   });
-  // 渲染进程 OOM / 显卡驱动重置自愈：优先自动重载 2 次，仍异常则提供一键重置布局重启
+  // 渲染进程异常自愈：开窗前/沙盒启动失败/60 秒内二次崩溃自动切换兼容模式重启，已处于兼容模式或重启后仍失败再弹窗提示
   let rendererRecoverCount = 0;
   let lastRendererCrashAt = 0;
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (mainWindow.isDestroyed()) return;
+    if (
+      safeGpuMode
+      && process.argv.includes('--prts-safe-gpu')
+      && !process.argv.includes('--prts-normal-gpu')
+      && !startupPrefs.preferSafeGpu
+    ) {
+      if (writeStartupPrefs(userDataDir, {
+        preferSafeGpu: true,
+        reason: 'auto-recovery',
+        updatedAt: new Date().toISOString(),
+      })) {
+        startupPrefs.preferSafeGpu = true;
+        logStartup('safe-gpu-pref-saved');
+      }
+    } else if (process.argv.includes('--prts-normal-gpu') && startupPrefs.preferSafeGpu) {
+      if (writeStartupPrefs(userDataDir, {
+        preferSafeGpu: false,
+        reason: 'manual-normal-gpu',
+        updatedAt: new Date().toISOString(),
+      })) {
+        startupPrefs.preferSafeGpu = false;
+        logStartup('safe-gpu-pref-cleared');
+      }
+    }
+  });
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     logStartup('render-process-gone', {
       reason: details?.reason,
       exitCode: details?.exitCode,
+      mainWindowShown,
+      rendererRecoverCount,
     });
-    if (mainWindow.isDestroyed() || details?.reason === 'clean-exit') return;
+    if (isQuitting || mainWindow.isDestroyed() || details?.reason === 'clean-exit') return;
     const now = Date.now();
     if (now - lastRendererCrashAt > 60_000) rendererRecoverCount = 0;
     lastRendererCrashAt = now;
-    if (rendererRecoverCount < 2) {
+    if (shouldRelaunchForRenderProcessGone(details, {
+      mainWindowShown,
+      safeGpuMode,
+      hasRelaunched: hasRelaunchedForGpu,
+      isQuitting,
+      rendererRecoverCount,
+    })) {
+      hasRelaunchedForGpu = true;
+      isQuitting = true;
+      logStartup('renderer-safe-relaunch', {
+        reason: details?.reason,
+        exitCode: details?.exitCode,
+        mainWindowShown,
+        rendererRecoverCount,
+      });
+      try { app.releaseSingleInstanceLock(); } catch {}
+      app.relaunch({ args: buildSafeGpuRelaunchArgs(process.argv) });
+      app.exit(0);
+      return;
+    }
+    if (rendererRecoverCount < 1) {
       rendererRecoverCount += 1;
       setTimeout(() => {
         if (!mainWindow.isDestroyed()) mainWindow.loadURL('prts://app/');
       }, 250);
       return;
     }
+    const reasonText = typeof details?.reason === 'string' && details.reason ? details.reason : 'unknown';
+    const exitCodeText = Number.isFinite(details?.exitCode) ? `（退出码：${details.exitCode}）` : '';
+    const modeText = safeGpuMode ? '当前已处于兼容渲染模式' : '当前处于标准渲染模式';
+    const actionHint = safeGpuMode
+      ? '您可以尝试重新加载界面，或重置窗口布局后重启终端。'
+      : '您可以尝试重新加载界面，或以兼容模式重启终端（自动禁用硬件加速与渲染沙盒）。';
     showMainWindow();
-    void dialog.showMessageBox({
+    void dialog.showMessageBox(mainWindow, {
       type: 'warning',
       title: `${product.name} · 界面异常恢复`,
-      message: '终端渲染进程因显存或系统资源压力中断（《明日方舟》运行不受影响）。',
-      detail: '您可以选择重新加载界面，或重置窗口布局后自动重启本终端。',
-      buttons: ['重新加载界面', '重置布局并重启', '关闭终端'],
+      message: '终端渲染进程意外中断（《明日方舟》运行不受影响）。',
+      detail: `中断原因：${reasonText}${exitCodeText} · ${modeText}。\n\n${actionHint}\n如问题反复出现，请查看 %APPDATA% 下应用目录中的 startup.log 并反馈给开发者。`,
+      buttons: ['重新加载界面', safeGpuMode ? '重置布局并重启' : '以兼容模式重启', '关闭终端'],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
@@ -772,7 +844,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
         try { fs.rmSync(layoutFile, { force: true }); } catch {}
         isQuitting = true;
         try { app.releaseSingleInstanceLock(); } catch {}
-        app.relaunch();
+        app.relaunch({ args: buildSafeGpuRelaunchArgs(process.argv) });
         app.exit(0);
       } else {
         app.quit();

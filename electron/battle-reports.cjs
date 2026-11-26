@@ -134,19 +134,23 @@ function installBattleReports({
   onPublish,
   spawnFn,
   screenApi,
+  hasNpcapFn = hasNpcap,
+  runNpcapInstallerFn = runNpcapInstaller,
   startupTimeoutMs = 25_000,
   restartBaseDelayMs = 1_500,
   maxAutoRestarts = 3,
   healthyResetMs = 20_000,
 }) {
   const spawnWorker = spawnFn || spawn;
+  const checkNpcap = typeof hasNpcapFn === 'function' ? hasNpcapFn : hasNpcap;
+  const launchNpcapInstaller = typeof runNpcapInstallerFn === 'function' ? runNpcapInstallerFn : runNpcapInstaller;
   let state = {
     status: 'starting',
     report: null,
     reportRun: 0,
     clientSource: 'none',
     mumuWindow: null,
-    npcapInstalled: hasNpcap(),
+    npcapInstalled: checkNpcap(),
     npcapInstall: { status: 'idle', message: '' },
     failureReason: '',
     autoRestartCount: 0,
@@ -175,21 +179,20 @@ function installBattleReports({
     return state;
   }
 
-  function hotSwitchToNpcap(message) {
-    const installed = hasNpcap();
+  function hotSwitchToNpcap(message, shouldResume = state.status !== 'paused') {
+    const installed = checkNpcap();
     if (!installed) return publish({ npcapInstalled: false });
-    const wasPaused = state.status === 'paused';
     stop();
     publish({
       npcapInstalled: true,
       npcapInstall: { status: 'installed', message: message || 'Npcap 已安装，已自动切换至驱动采集通道。' },
     });
-    if (!wasPaused) start();
+    if (shouldResume) start(false);
     return state;
   }
 
   const onWindowFocus = () => {
-    if (!disposed && !installingNpcap && !state.npcapInstalled && hasNpcap()) {
+    if (!disposed && !installingNpcap && !state.npcapInstalled && checkNpcap()) {
       hotSwitchToNpcap('检测到 Npcap 已就绪，已自动切换至驱动采集通道。');
     }
   };
@@ -212,6 +215,31 @@ function installBattleReports({
         publish({ clientSource: 'none', mumuWindow: null, restarting: false });
       }
     }
+  }
+
+  function stopAndWait(timeoutMs = 1500) {
+    const previous = worker;
+    if (!previous || typeof previous.once !== 'function') {
+      stop();
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        previous.removeListener?.('close', done);
+        previous.removeListener?.('exit', done);
+        resolve();
+      };
+      previous.once('close', done);
+      previous.once('exit', done);
+      timer = setTimeout(done, Math.max(0, timeoutMs));
+      if (typeof timer.unref === 'function') timer.unref();
+      stop();
+    });
   }
 
   function buildFailureAdvice(errCode, timedOut) {
@@ -487,7 +515,7 @@ function installBattleReports({
   });
   const handlers = {
     'battle-reports-get': () => {
-      if (!state.npcapInstalled && hasNpcap()) {
+      if (!state.npcapInstalled && checkNpcap()) {
         return hotSwitchToNpcap('检测到 Npcap 已就绪，已自动切换至驱动采集通道。');
       }
       return state;
@@ -504,26 +532,36 @@ function installBattleReports({
     'battle-reports-restart': () => manualRestart(),
     'battle-reports-install-npcap': async () => {
       if (installingNpcap) return state;
-      if (hasNpcap()) return hotSwitchToNpcap('Npcap 已安装，已切换至驱动采集通道。');
+      if (checkNpcap()) return hotSwitchToNpcap('Npcap 已安装，已切换至驱动采集通道。');
       installingNpcap = true;
+      const shouldResumeWorker = state.status !== 'paused';
+      let installSucceeded = false;
       try {
-        const result = await runNpcapInstaller({
+        await stopAndWait(1500);
+        if (disposed) return state;
+        const result = await launchNpcapInstaller({
           onProgress: (installStatus, message) => {
             publish({ npcapInstall: { status: installStatus, message } });
           },
         });
-        if (result.installed) {
+        if (disposed) return state;
+        if (result?.installed) {
+          installSucceeded = true;
           return hotSwitchToNpcap(
             `Npcap ${result.version ? `v${result.version} ` : ''}安装完成，已自动切换至驱动采集通道（无需重启软件）。`,
+            shouldResumeWorker,
           );
         }
         return publish({
           npcapInstalled: false,
-          npcapInstall: { status: 'error', message: '安装向导已关闭但未检测到 Npcap，请确认完成安装或重试。' },
+          npcapInstall: {
+            status: 'error',
+            message: result?.failureMessage || '安装向导已关闭但未检测到 Npcap，请确认完成安装或重试。',
+          },
         });
       } catch (err) {
         return publish({
-          npcapInstalled: hasNpcap(),
+          npcapInstalled: checkNpcap(),
           npcapInstall: {
             status: 'error',
             message: err instanceof Error ? err.message : '拉起 Npcap 官方安装失败，请点击打开官网手动安装。',
@@ -531,10 +569,13 @@ function installBattleReports({
         });
       } finally {
         installingNpcap = false;
+        if (!disposed && !installSucceeded && shouldResumeWorker && state.status !== 'paused' && !worker) {
+          start(false);
+        }
       }
     },
     'battle-reports-recheck-npcap': () => {
-      if (hasNpcap()) return hotSwitchToNpcap('检测到 Npcap 已安装，已自动切换至驱动采集通道。');
+      if (checkNpcap()) return hotSwitchToNpcap('检测到 Npcap 已安装，已自动切换至驱动采集通道。');
       return publish({
         npcapInstalled: false,
         npcapInstall: { status: 'idle', message: '尚未检测到 Npcap（wpcap.dll）。' },
@@ -557,6 +598,7 @@ function installBattleReports({
   return {
     start: () => start(false),
     restart: manualRestart,
+    stopAndWait,
     dispose() {
       disposed = true;
       if (!mainWindow.isDestroyed()) mainWindow.removeListener('focus', onWindowFocus);

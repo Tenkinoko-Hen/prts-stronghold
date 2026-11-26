@@ -13,7 +13,17 @@ const {
   parseSourceMessage,
   parseUnknownDetails,
 } = require('../electron/battle-reports.cjs');
-const { pickLatestNpcapInstaller } = require('../electron/npcap-installer.cjs');
+const {
+  detectConflictingNetworkApps,
+  formatNpcapFailureMessage,
+  inspectNpcapFailure,
+  parseNpcapInstallLog,
+  parsePnputilNpcapDrivers,
+  parseSymlinkEvaluationDisabled,
+  pickLatestNpcapInstaller,
+  prepareNpcapEnvironment,
+  runNpcapInstaller,
+} = require('../electron/npcap-installer.cjs');
 const {
   classifyBadgeBgra,
   evaluateOcrLines,
@@ -736,5 +746,402 @@ test('HUD overlay exposes sm/md/lg presets, picks md on 2K displays, and persist
   } finally {
     overlay.dispose();
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('parsePnputilNpcapDrivers handles EN/ZH pnputil output with strict Npcap allowlist and deduplication', () => {
+  const sample = `
+Microsoft PnP Utility
+
+Published Name:     oem12.inf
+Original Name:      npcap.inf
+Provider Name:      Insecure.Com LLC.
+Class Name:         NetService
+
+Published Name:     oem14.inf
+Original Name:      npcap.inf
+Provider Name:      Nmap Project
+Class Name:         NetService
+
+Published Name:     oem15.inf
+Original Name:      wintun.inf
+Provider Name:      WireGuard LLC
+
+Published Name:     oem16.inf
+Original Name:      npcap.inf
+Provider Name:      SomeOtherVendor Inc.
+
+Published Name:     oem17.inf
+Original Name:      custom-net.inf
+Provider Name:      Npcap Helper ThirdParty
+
+Microsoft PnP 工具
+
+发布名称:           OEM12.INF
+原始名称:           Npcap.INF
+提供程序名称:       Npcap
+
+发布名称:           oem21.inf
+原始名称:           npcap.inf
+提供程序名称:       Insecure.Com LLC.
+`;
+  assert.deepEqual(parsePnputilNpcapDrivers(sample), ['oem12.inf', 'oem14.inf', 'oem21.inf']);
+  assert.deepEqual(parsePnputilNpcapDrivers(''), []);
+});
+
+test('parseSymlinkEvaluationDisabled, parseNpcapInstallLog, and detectConflictingNetworkApps parse Windows diagnostics accurately', () => {
+  assert.equal(
+    parseSymlinkEvaluationDisabled(`
+HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem
+    SymlinkLocalToLocalEvaluation    REG_DWORD    0x0
+    SymlinkLocalToRemoteEvaluation    REG_DWORD    0x1
+`),
+    true,
+  );
+  assert.equal(
+    parseSymlinkEvaluationDisabled(`
+HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem
+    SymlinkLocalToLocalEvaluation    REG_DWORD    0x1
+    SymlinkLocalToRemoteEvaluation    REG_DWORD    0
+`),
+    true,
+  );
+  assert.equal(
+    parseSymlinkEvaluationDisabled(`
+HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem
+    SymlinkLocalToLocalEvaluation    REG_DWORD    0x1
+    SymlinkLocalToRemoteEvaluation    REG_DWORD    0x1
+    SymlinkRemoteToLocalEvaluation    REG_DWORD    0x0
+    SymlinkRemoteToRemoteEvaluation    REG_DWORD    0x0
+`),
+    false,
+  );
+
+  assert.deepEqual(
+    parseNpcapInstallLog('Error 0x800705b7 ERROR_SYMLINK_CLASS_DISABLED\nFailed to create the npcap service\nCannot completely uninstall Npcap, files in use\n0x80070430 marked for deletion 1072'),
+    {
+      symlinkDisabled: true,
+      filesInUse: true,
+      markedForDelete: true,
+      serviceCreateFailed: true,
+    },
+  );
+  assert.deepEqual(parseNpcapInstallLog('Npcap installed cleanly'), {
+    symlinkDisabled: false,
+    filesInUse: false,
+    markedForDelete: false,
+    serviceCreateFailed: false,
+  });
+
+  const tasklistCsv = [
+    '"System Idle Process","0","Services","0","8 K"',
+    '"Clash for Windows.exe","4120","Console","1","92,000 K"',
+    '"clash-verge.exe","4200","Console","1","80,000 K"',
+    '"clash-nyanpasu.exe","4300","Console","1","70,000 K"',
+    '"mihomo.exe","4400","Console","1","40,000 K"',
+    '"Wireshark.exe","4500","Console","1","120,000 K"',
+    '"dumpcap.exe","4504","Console","1","10,000 K"',
+    '"uu.exe","4600","Console","1","55,000 K"',
+    '"UUBooster.exe","4604","Console","1","30,000 K"',
+  ].join('\n');
+  assert.deepEqual(detectConflictingNetworkApps(tasklistCsv), [
+    'Clash for Windows',
+    'Clash Verge',
+    'Clash Nyanpasu',
+    'Mihomo/Clash',
+    'Wireshark',
+    'UU 加速器',
+  ]);
+});
+
+test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink/services/drivers safely, and detects 1072 reboot', async () => {
+  let commandCount = 0;
+  const skippedNonWin = await prepareNpcapEnvironment({
+    platform: 'linux',
+    hasNpcapFn: () => false,
+    runCommand: async () => { commandCount += 1; return { code: 0, stdout: '', stderr: '' }; },
+  });
+  assert.deepEqual(skippedNonWin, { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, needsReboot: false });
+  assert.equal(commandCount, 0);
+
+  const skippedInstalled = await prepareNpcapEnvironment({
+    platform: 'win32',
+    hasNpcapFn: () => true,
+    runCommand: async () => { commandCount += 1; return { code: 0, stdout: '', stderr: '' }; },
+  });
+  assert.deepEqual(skippedInstalled, { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, needsReboot: false });
+  assert.equal(commandCount, 0);
+
+  // Full cleanup: repairs L2L/L2R, stops & deletes npcap, preserves npf when legacy WinPcap exists, deletes only allowlisted oem drivers
+  const callsWithWinPcap = [];
+  let npcapPolls = 0;
+  const resWithWinPcap = await prepareNpcapEnvironment({
+    platform: 'win32',
+    hasNpcapFn: () => false,
+    hasLegacyWinPcapFn: () => true,
+    sleepFn: async () => {},
+    runCommand: async (file, args) => {
+      callsWithWinPcap.push([file, ...args]);
+      if (file === 'reg.exe') {
+        return { code: 0, stdout: '    SymlinkLocalToLocalEvaluation    REG_DWORD    0x0\n', stderr: '' };
+      }
+      if (file === 'sc.exe' && args[0] === 'query' && args[1] === 'npcap') {
+        npcapPolls += 1;
+        return npcapPolls === 1
+          ? { code: 0, stdout: 'STATE : 4 RUNNING', stderr: '' }
+          : { code: 0, stdout: 'STATE : 1 STOPPED', stderr: '' };
+      }
+      if (file === 'pnputil.exe' && args[0] === '/enum-drivers') {
+        return {
+          code: 0,
+          stdout: 'Published Name: oem9.inf\nOriginal Name: npcap.inf\nProvider Name: Nmap Project\n\nPublished Name: oem10.inf\nOriginal Name: realtek.inf\nProvider Name: Realtek\n',
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.deepEqual(resWithWinPcap, {
+    cleanedServices: ['npcap'],
+    cleanedDrivers: ['oem9.inf'],
+    repairedSymlink: true,
+    needsReboot: false,
+  });
+  assert.ok(callsWithWinPcap.some((c) => c.join(' ') === 'fsutil.exe behavior set SymlinkEvaluation L2L:1 L2R:1'));
+  assert.ok(!callsWithWinPcap.some((c) => c.join(' ').includes('npf')), 'must preserve legacy WinPcap npf service');
+  assert.ok(!callsWithWinPcap.some((c) => c.join(' ').includes('oem10.inf')), 'must never delete non-Npcap driver');
+
+  // When legacy WinPcap is absent and delete hits 1072 -> cleans npf and marks needsReboot
+  const res1072 = await prepareNpcapEnvironment({
+    platform: 'win32',
+    hasNpcapFn: () => false,
+    hasLegacyWinPcapFn: () => false,
+    sleepFn: async () => {},
+    runCommand: async (file, args) => {
+      if (file === 'reg.exe') return { code: 0, stdout: '    SymlinkLocalToLocalEvaluation    REG_DWORD    0x1\n', stderr: '' };
+      if (file === 'sc.exe' && args[0] === 'query' && args[1] === 'npcap') return { code: 1060, stdout: '', stderr: '' };
+      if (file === 'sc.exe' && args[0] === 'query' && args[1] === 'npf') return { code: 0, stdout: 'STATE : 1 STOPPED', stderr: '' };
+      if (file === 'sc.exe' && args[0] === 'stop' && args[1] === 'npf') return { code: 1062, stdout: '', stderr: '' };
+      if (file === 'sc.exe' && args[0] === 'delete' && args[1] === 'npf') {
+        return { code: 1072, stdout: '', stderr: '[SC] DeleteService FAILED 1072: The specified service has been marked for deletion.' };
+      }
+      return { code: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.deepEqual(res1072, {
+    cleanedServices: ['npf'],
+    cleanedDrivers: [],
+    repairedSymlink: false,
+    needsReboot: true,
+  });
+});
+
+test('formatNpcapFailureMessage and runNpcapInstaller diagnose 1072 reboot, conflicting apps, 0x800705b7, and fallback', async () => {
+  const os = require('node:os');
+  const m1 = formatNpcapFailureMessage({ prep: { needsReboot: true }, logDiag: {}, conflicts: ['Clash Verge'], exitCode: 1072 });
+  assert.ok(m1.includes('1072') && m1.includes('重启电脑'));
+  assert.ok(m1.includes('未安装 Npcap 前仍可通过内置通道正常记录本路战报'));
+
+  const m2 = formatNpcapFailureMessage({
+    prep: { needsReboot: false },
+    logDiag: { filesInUse: true },
+    conflicts: ['Clash for Windows', 'Wireshark'],
+    exitCode: 1,
+  });
+  assert.ok(m2.includes('Clash for Windows') && m2.includes('Wireshark'));
+  assert.ok(m2.includes('未安装 Npcap 前仍可通过内置通道正常记录本路战报'));
+
+  const m3 = formatNpcapFailureMessage({
+    prep: { needsReboot: false },
+    logDiag: { symlinkDisabled: true, serviceCreateFailed: true },
+    conflicts: [],
+    exitCode: 1,
+  });
+  assert.ok(m3.includes('0x800705b7') && m3.includes('符号链接'));
+  assert.ok(m3.includes('未安装 Npcap 前仍可通过内置通道正常记录本路战报'));
+
+  const m4 = formatNpcapFailureMessage({ prep: {}, logDiag: {}, conflicts: [], exitCode: 2 });
+  assert.ok(m4.includes('安装向导已关闭') && m4.includes('未安装 Npcap 前仍可通过内置通道正常记录本路战报'));
+
+  // runNpcapInstaller short-circuits before downloading if prep.needsReboot is true
+  let fetched = false;
+  const progressEvents = [];
+  const rebootResult = await runNpcapInstaller({
+    hasNpcapFn: () => false,
+    onProgress: (status, message) => progressEvents.push({ status, message }),
+    prepareEnvFn: async () => ({ cleanedServices: ['npcap'], cleanedDrivers: [], repairedSymlink: false, needsReboot: true }),
+    fetchFn: async () => { fetched = true; return ''; },
+  });
+  assert.equal(fetched, false);
+  assert.equal(rebootResult.installed, false);
+  assert.equal(rebootResult.exitCode, 1072);
+  assert.equal(rebootResult.needsReboot, true);
+  assert.ok(rebootResult.failureMessage.includes('1072'));
+  assert.ok(progressEvents.some((e) => e.status === 'installing' && e.message.includes('残留')));
+
+  // runNpcapInstaller inspects failure logs & conflicts when installer closes without wpcap.dll
+  const failedResult = await runNpcapInstaller({
+    hasNpcapFn: () => false,
+    prepareEnvFn: async () => ({ cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, needsReboot: false }),
+    fetchFn: async (url, opts) => {
+      if (opts?.destPath) {
+        fs.writeFileSync(opts.destPath, 'stub', 'utf8');
+        return { bytes: 4 };
+      }
+      assert.ok(url.includes('npcap.com/dist'));
+      return '<a href="npcap-1.80.exe">npcap-1.80.exe</a>';
+    },
+    spawnFn: () => {
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('close', 1));
+      return child;
+    },
+    inspectFailureFn: async () => ({
+      prep: { cleanedServices: [], cleanedDrivers: [], repairedSymlink: true, needsReboot: false },
+      logDiag: { symlinkDisabled: true, filesInUse: false, markedForDelete: false, serviceCreateFailed: true },
+      conflicts: ['Clash Verge'],
+    }),
+  });
+  assert.equal(failedResult.installed, false);
+  assert.equal(failedResult.version, '1.80');
+  assert.equal(failedResult.exitCode, 1);
+  assert.equal(failedResult.needsReboot, false);
+  assert.ok(failedResult.failureMessage.includes('Clash Verge'));
+
+  // inspectNpcapFailure reads fresh install.log tail, runs fsutil on 0x800705b7, and reads tasklist
+  const tmpProgFiles = fs.mkdtempSync(path.join(os.tmpdir(), 'prts-progfiles-'));
+  try {
+    const npcapLogDir = path.join(tmpProgFiles, 'Npcap');
+    fs.mkdirSync(npcapLogDir, { recursive: true });
+    fs.writeFileSync(path.join(npcapLogDir, 'NPFInstall.log'), 'Failed to create the npcap service: 0x800705b7\n', 'utf8');
+    const cmds = [];
+    const diag = await inspectNpcapFailure({
+      startedAt: Date.now(),
+      programFilesDir: tmpProgFiles,
+      hasNpcapFn: () => false,
+      prepareEnvFn: async () => ({ cleanedServices: [], cleanedDrivers: ['oem1.inf'], repairedSymlink: false, needsReboot: false }),
+      runCommand: async (file, args) => {
+        cmds.push([file, ...args]);
+        if (file === 'tasklist.exe') {
+          return { code: 0, stdout: '"Clash for Windows.exe","99","Console","1","50 K"\n', stderr: '' };
+        }
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.equal(diag.logDiag.symlinkDisabled, true);
+    assert.equal(diag.logDiag.serviceCreateFailed, true);
+    assert.equal(diag.prep.repairedSymlink, true);
+    assert.deepEqual(diag.conflicts, ['Clash for Windows']);
+    assert.ok(cmds.some((c) => c.join(' ') === 'fsutil.exe behavior set SymlinkEvaluation L2L:1 L2R:1'));
+    assert.ok(cmds.some((c) => c.join(' ') === 'tasklist.exe /FO CSV /NH'));
+  } finally {
+    fs.rmSync(tmpProgFiles, { recursive: true, force: true });
+  }
+});
+
+test('battle-reports-install-npcap stops worker before install, surfaces failureMessage, auto-resumes on failure, and respects pause', async () => {
+  const published = [];
+  const handlers = new Map();
+  const children = [];
+  let npcapPresent = false;
+  let workerRunningDuringInstall = null;
+  let nextInstallResult = {
+    installed: false,
+    version: '1.80',
+    exitCode: 1072,
+    needsReboot: true,
+    failureMessage: '已自动清理旧版残留（1072），请重启电脑一次后再试；未安装 Npcap 前仍可通过内置通道正常记录本路战报。',
+  };
+
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: 'prts://app/' },
+    send: () => {},
+  });
+
+  const br = installBattleReports({
+    app: { isPackaged: false, getAppPath: () => path.resolve(__dirname, '..') },
+    mainWindow: fakeMain,
+    ipcMain: {
+      handle: (name, fn) => handlers.set(name, fn),
+      removeHandler: (name) => handlers.delete(name),
+    },
+    product: loadProduct('stronghold'),
+    onPublish: (state) => published.push({ ...state }),
+    screenApi: null,
+    hasNpcapFn: () => npcapPresent,
+    runNpcapInstallerFn: async () => {
+      workerRunningDuringInstall = children.some((c) => !c.killed);
+      if (nextInstallResult.installed) {
+        npcapPresent = true;
+      }
+      return nextInstallResult;
+    },
+    spawnFn: () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        killed: false,
+        kill() {
+          this.killed = true;
+          process.nextTick(() => this.emit('close', 0));
+        },
+      });
+      children.push(child);
+      return child;
+    },
+  });
+
+  try {
+    const senderEvent = { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame };
+    br.start();
+    children[0].stdout.write(JSON.stringify({ kind: 'status', status: 'listening' }) + '\n');
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(children.length, 1);
+
+    // 1. Install fails -> worker stopped before installer, failureMessage published, and worker auto-resumed in finally
+    const failState = await handlers.get('battle-reports-install-npcap')(senderEvent);
+    assert.equal(children[0].killed, true);
+    assert.equal(workerRunningDuringInstall, false, 'worker must be stopped before Npcap installer runs');
+    assert.equal(failState.npcapInstall.status, 'error');
+    assert.ok(failState.npcapInstall.message.includes('1072'));
+    assert.equal(children.length, 2, 'worker must be automatically resumed after failed/cancelled install');
+
+    // 2. When paused before install, failure does not auto-resume worker
+    handlers.get('battle-reports-enable')(senderEvent, false);
+    assert.equal(children[1].killed, true);
+    const pausedFailState = await handlers.get('battle-reports-install-npcap')(senderEvent);
+    assert.equal(pausedFailState.status, 'paused');
+    assert.equal(children.length, 2, 'paused capture must stay paused after install failure');
+
+    // 3. When paused and installer succeeds -> hot-switches npcapInstalled without starting worker
+    nextInstallResult = { installed: true, version: '1.80', exitCode: 0 };
+    const pausedOkState = await handlers.get('battle-reports-install-npcap')(senderEvent);
+    assert.equal(pausedOkState.npcapInstalled, true);
+    assert.equal(pausedOkState.npcapInstall.status, 'installed');
+    assert.equal(children.length, 2, 'paused capture must stay paused after install success');
+
+    // 4. When running and installer succeeds -> stops worker before install, hot-switches, and starts new worker
+    npcapPresent = false;
+    handlers.get('battle-reports-enable')(senderEvent, true);
+    assert.equal(children.length, 3);
+    workerRunningDuringInstall = null;
+    const okState = await handlers.get('battle-reports-install-npcap')(senderEvent);
+    assert.equal(children[2].killed, true);
+    assert.equal(workerRunningDuringInstall, false, 'worker must be stopped before Npcap installer runs');
+    assert.equal(okState.npcapInstalled, true);
+    assert.equal(okState.npcapInstall.status, 'installed');
+    assert.ok(okState.npcapInstall.message.includes('v1.80'));
+    assert.equal(children.length, 4);
+
+    // 5. stopAndWait resolves promptly on timeout even if a hung child never emits close/exit
+    children[3].kill = () => {};
+    const t0 = Date.now();
+    await br.stopAndWait(25);
+    assert.ok(Date.now() - t0 < 400);
+  } finally {
+    br.dispose();
   }
 });

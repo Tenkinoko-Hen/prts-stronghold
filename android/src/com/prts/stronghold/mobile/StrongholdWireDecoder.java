@@ -583,13 +583,14 @@ final class StrongholdWireDecoder {
             r.skip(4);
             equips.add(r.u16());
         }
-        // positions: inst(i32) + position(i32) + 2 bytes -> deployed pieces
+        // positions: inst(i32) + position(i32) + 2 bytes -> deployed pieces (pos >= 0，排除 pos < 0 整备区)
         int posCnt = r.count();
         List<Integer> deployed = new ArrayList<>();
         for (int i = 0; i < posCnt; i++) {
             int inst = r.i32();
-            r.skip(6);
-            if (pieceByInst != null) {
+            int pos = r.i32();
+            r.skip(2);
+            if (pos >= 0 && pieceByInst != null) {
                 Integer cid = pieceByInst.get(inst);
                 if (cid != null) deployed.add(cid);
             }

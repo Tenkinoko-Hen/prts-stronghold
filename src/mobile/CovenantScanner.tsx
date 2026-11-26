@@ -48,10 +48,12 @@ export function useCovenantScanner(appliedId: string | undefined, onApply: (scan
 export function CovenantScanner({ appliedId, scanner }: { appliedId?: string; scanner: ReturnType<typeof useCovenantScanner> }) {
   const { scan, error, control, applyPartial, available, projectionReady } = scanner;
   const running = scan?.status === 'scanning' || scan?.status === 'permission';
+  const targetCount = scan?.targetCount || 26;
+  const modePrefix = scan?.modeLabel ? `${scan.modeLabel} ` : '';
   return <section className="m-card m-scan-card">
     <div className="m-scan-toolbar">
       <span>
-        {running ? `识别中 · ${scan?.seenCovenants.length || 0}/26` : appliedId ? '本局盟约' : '打开游戏盟约总览'}
+        {running ? `识别中 · ${modePrefix}${scan?.seenCovenants.length || 0}/${targetCount}` : appliedId ? '本局盟约' : '打开游戏盟约总览'}
         {projectionReady && !running && <em className="m-proj-badge">本局已授权</em>}
       </span>
       <div className="m-scan-actions">

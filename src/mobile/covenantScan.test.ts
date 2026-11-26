@@ -53,3 +53,22 @@ test('贾维特殊路线在叙拉古未受限时提示卡池条件', () => {
   assert.equal('viable', route.status);
   assert.equal(true, route.blockedReasons.some(reason => reason.includes('禁叙保莱')));
 });
+
+test('parseCovenantScan 安全解析 targetCount 与 modeLabel 并保留缺省兼容', () => {
+  const quickScanning = parseCovenantScan(JSON.stringify({
+    id: 'quick-1',
+    status: 'scanning',
+    message: '极速模拟：已确认 14/18 个盟约',
+    targetCount: 18,
+    modeLabel: '极速模拟',
+    seenCovenants: COVENANT_NAMES.slice(0, 14),
+    bannedCovenants: ['乌萨斯'],
+  }))!;
+  assert.equal(18, quickScanning.targetCount);
+  assert.equal('极速模拟', quickScanning.modeLabel);
+  assert.equal(false, quickScanning.complete);
+
+  const fallbackDefault = parseCovenantScan(result())!;
+  assert.equal(26, fallbackDefault.targetCount);
+  assert.equal('', fallbackDefault.modeLabel);
+});

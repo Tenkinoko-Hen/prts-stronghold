@@ -101,11 +101,11 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 11:43（补齐 **Android Full / Lite 全链路出怪与漏怪怪物图标（Web 页面 + 原生悬浮窗）与移动端 999 层盟约高亮**，196/196 全栈测试 + Android 879 项直跑测试 + 双产品构建全绿）
+- **最后更新**：2026-11-26 12:41（修复 **小米 14 真机实测 4 项 Android Bug：HUD 陈旧 `R1 · 已录 0 回合` / `1本`、实战四席盟约 143 干员静态兜底与整备区过滤、极速模拟 18 项与单人规程等级 15 20:9 宽屏/双行 Ban 选扫描**，198/198 全栈测试 + Android 920 项 Java 测试 + 双产品构建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **196/196 全绿**（`tsc --noEmit` 通过 + TS 121/121 + Node 15/15 + Python 60/60）
-  - Android `aapt2` + `javac`（65 个源码 + 7 个测试）及 Java 单元与高压稳定性测试 **879 项直跑全绿**
+  - `npm test` **198/198 全绿**（`tsc --noEmit` 通过 + TS 123/123 + Node 15/15 + Python 60/60）
+  - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 65 个源码 + 7 个测试）及 Java 单元与高压稳定性测试 **920 项直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
   - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）
@@ -121,6 +121,10 @@ npm run build
   - 宣传视频（输出至本地 `release/`，不入 Git）：`PRTS-Stronghold-2.0-Bilibili-16x9.mp4`（1920×1080）与 `PRTS-Stronghold-2.0-Douyin-9x16.mp4`（1080×1920）
   - 注意：若在新电脑打包最新 EXE，需先执行 `scripts/build-windows-worker.ps1 -Product stronghold`（或 `-Product telemetry` 打 Lite 版）生成本机 Worker；本机已安装并登录 `gh` CLI（大文件上传如遇代理重置可配合 `curl --http1.1 --limit-rate 3M`）。
 - **近期已完成里程碑**：
+  - **小米 14 真机实测 4 项 Android Bug 根治**（198/198 全栈测试 + Android 920 项 Java 测试 + 双产品构建全绿）：
+    - **HUD 文本与本数修复（`MatchReport.tsx` / `OverlayService.java`）**：抓包运行或手动录 0 回合时不再以旧记录本 `R1 · 已录 0 回合` 覆盖悬浮窗；未选跟打阵容时底栏显示清晰实时引导，顶栏优先展示我方抓包真实商店本数。
+    - **Android 实战四席盟约完整显示（`build-android.ps1` / `StrongholdEnemyCatalog.java` / `StrongholdWireDecoder.java` / `BattleCaptureState.java`）**：APK 打包接入 143 干员 `assets/operator_reference.json` 静态兜底与弯引号归一化，过滤 `position < 0` 整备区，修正 `独行` 恰好 1 人激活判定，彻底解决 `squadBondsBySeat` 为空时 HUD/弹窗不显示盟约的问题。
+    - **极速模拟（18 项）与单人规程等级 15（26 项）Ban 选扫描（`CovenantDetector.java` / `CovenantScanState.java` / `CovenantScanService.java` / `covenantScan.ts` / `CovenantScanner.tsx`）**：放开全高裁剪读取左上角模式标题与底缘文字；增补小米 14 20:9 宽屏高偏移圆心采样（`3.85/4.35 × th`）；支持极速模拟 18/18 自动完成并标记其余 8 项受限，以及单人模拟双屏累积、底排 6 枚零歧义探测与明确上滑提示。
   - **Android Full / Lite 出怪与漏怪怪物图标全链路补齐 + 移动端 999 层盟约高亮**（196/196 全栈测试 + Android 879 项直跑测试 + 双产品构建全绿）：
     - **统一敌怪图集解析（`MobileCapturePanel.tsx` / `EnemyPortraitAtlas.java`）**：导出 `resolveEnemyPortraitIndex` 与 `MobileEnemyIcon`，Web 与 Java 双端统一支持 `boss_1..boss_17` 映射及 `_2`/`_3` 去尾缀回退。
     - **Android Full / Lite WebView 同构（`MobileApp.tsx` / `TelemetryMobileApp.tsx` / `telemetryMobile.css`）**：双端战报/实况页统一补齐带实机怪物图标的「漏怪怪种条」「未来两波出怪」与「Boss 排行卡」，四席盟约支持 `0..999` 钳位、100+/500+ 金黄/橙金高亮与 `+N` 溢出提示，并清零残留 `Microsoft YaHei UI` / `Consolas`。

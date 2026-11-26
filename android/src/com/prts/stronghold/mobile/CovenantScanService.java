@@ -354,11 +354,11 @@ public class CovenantScanService extends Service {
         final String currentScanId = scanId;
         int fullW = full.getWidth();
         int fullH = full.getHeight();
-        // 只裁剪左侧盟约区域（跳过右侧地图预览与顶部栏），MLKit 识别像素减半且显著提准
+        // 保留顶部左上角模式标题（极速模拟 / 规程等级15）与屏幕底缘小字，仅裁掉右侧地图预览区域
         int cropX = 0;
-        int cropY = Math.max(0, Math.round(fullH * 0.11f));
+        int cropY = 0;
         int cropW = Math.max(1, Math.min(fullW, Math.round(fullW * 0.78f)));
-        int cropH = Math.max(1, Math.min(fullH - cropY, Math.round(fullH * 0.87f)));
+        int cropH = Math.max(1, fullH);
         Bitmap cropped = Bitmap.createBitmap(full, cropX, cropY, cropW, cropH);
         final int[] fullPixels = new int[fullW * fullH];
         full.getPixels(fullPixels, 0, fullW, 0, 0, fullW, fullH);
@@ -379,13 +379,15 @@ public class CovenantScanService extends Service {
             .addOnSuccessListener(workerHandler::post, text -> {
                 try {
                     if (finished || !"covenant".equals(activeMode) || !CovenantScanState.matches(currentScanId)) return;
-                    Map<String, Integer> found = extractCovenantsFromText(text, fullPixels, fullW, fullH, cropX, cropY, scale);
-                    // 如果核心盟约区域已识别出大部但缺了最左列单字「炎」/「灵巧」/「绝技」，对最左 22% 窄条做一次 2x 放大补扫
-                    if (found.size() >= 10 && (!found.containsKey("炎") || !found.containsKey("灵巧") || !found.containsKey("绝技"))) {
-                        runLeftStripRescue(fullPixels, fullW, fullH, found, currentScanId);
+                    ExtractionResult primary = extractCovenantsFromText(text, fullPixels, fullW, fullH, cropX, cropY, scale);
+                    Map<String, Integer> found = primary.found;
+                    boolean quickReady = "quick".equals(primary.modeHint) && countCore(found) >= 8 && countSub(found) >= 10;
+                    // 如果核心盟约区域已识别出大部但缺了最左列单字「炎」/「灵巧」/「绝技」，对最左 24% 窄条做一次 2x 放大补扫
+                    if (!quickReady && found.size() >= 10 && (!found.containsKey("炎") || !found.containsKey("灵巧") || !found.containsKey("绝技"))) {
+                        runLeftStripRescue(fullPixels, fullW, fullH, found, primary.modeHint, currentScanId);
                         return;
                     }
-                    applyCovenantObservation(found, currentScanId);
+                    applyCovenantObservation(found, currentScanId, primary.modeHint);
                 } finally {
                     ocrBitmap.recycle();
                     if (!finished && !pendingRescue) busy = false;
@@ -399,10 +401,26 @@ public class CovenantScanService extends Service {
 
     private volatile boolean pendingRescue = false;
 
-    private void runLeftStripRescue(int[] fullPixels, int fullW, int fullH, Map<String, Integer> baseFound, String currentScanId) {
+    private static int countCore(Map<String, Integer> found) {
+        int c = 0;
+        for (String k : found.keySet()) {
+            if (CovenantDetector.CORE_NAMES.contains(k)) c++;
+        }
+        return c;
+    }
+
+    private static int countSub(Map<String, Integer> found) {
+        int c = 0;
+        for (String k : found.keySet()) {
+            if (CovenantDetector.SUB_NAMES.contains(k)) c++;
+        }
+        return c;
+    }
+
+    private void runLeftStripRescue(int[] fullPixels, int fullW, int fullH, Map<String, Integer> baseFound, String baseModeHint, String currentScanId) {
         int leftW = Math.max(40, Math.round(fullW * 0.24f));
-        int leftY = Math.max(0, Math.round(fullH * 0.14f));
-        int leftH = Math.max(40, Math.min(fullH - leftY, Math.round(fullH * 0.82f)));
+        int leftY = 0;
+        int leftH = Math.max(40, fullH);
         Bitmap stripRaw = Bitmap.createBitmap(fullPixels, leftY * fullW, fullW, leftW, leftH, Bitmap.Config.ARGB_8888);
         int pad = 36;
         float up = 2.0f;
@@ -417,11 +435,12 @@ public class CovenantScanService extends Service {
             .addOnSuccessListener(workerHandler::post, rescueText -> {
                 try {
                     if (!finished && "covenant".equals(activeMode) && CovenantScanState.matches(currentScanId)) {
-                        Map<String, Integer> extra = extractCovenantsFromText(rescueText, fullPixels, fullW, fullH, -Math.round(pad / up), leftY, up);
-                        for (Map.Entry<String, Integer> e : extra.entrySet()) {
+                        ExtractionResult extra = extractCovenantsFromText(rescueText, fullPixels, fullW, fullH, -Math.round(pad / up), leftY, up);
+                        for (Map.Entry<String, Integer> e : extra.found.entrySet()) {
                             if (!baseFound.containsKey(e.getKey())) baseFound.put(e.getKey(), e.getValue());
                         }
-                        applyCovenantObservation(baseFound, currentScanId);
+                        String modeHint = (baseModeHint != null && !baseModeHint.isEmpty()) ? baseModeHint : extra.modeHint;
+                        applyCovenantObservation(baseFound, currentScanId, modeHint);
                     }
                 } finally {
                     padded.recycle();
@@ -436,25 +455,51 @@ public class CovenantScanService extends Service {
             });
     }
 
-    private void applyCovenantObservation(Map<String, Integer> found, String currentScanId) {
+    private void applyCovenantObservation(Map<String, Integer> found, String currentScanId, String modeHint) {
         if (found.isEmpty()) return;
-        boolean completed = CovenantScanState.observe(found);
+        boolean completed = CovenantScanState.observe(found, modeHint);
         if (completed) {
+            final String label = CovenantScanState.currentModeLabel();
+            final String doneMsg = "极速模拟".equals(label)
+                ? "极速模拟 18 项盟约已确认（其余 8 项自动标记受限）"
+                : ("单人模拟".equals(label)
+                    ? "单人模拟 26 项盟约已确认（本局共享待命，可直接开回合同步）"
+                    : "26 项盟约已确认（本局共享待命，可直接开回合同步）");
             mainHandler.post(() -> {
                 if (!finished && "covenant".equals(activeMode) && CovenantScanState.matches(currentScanId)) {
-                    finishCovenantMode("26 项盟约已确认（本局共享待命，可直接开回合同步）", false);
+                    finishCovenantMode(doneMsg, false);
                 }
             });
         }
     }
 
-    private Map<String, Integer> extractCovenantsFromText(
+    private static final class ExtractionResult {
+        final Map<String, Integer> found;
+        final String modeHint;
+        ExtractionResult(Map<String, Integer> found, String modeHint) {
+            this.found = found;
+            this.modeHint = modeHint;
+        }
+    }
+
+    private ExtractionResult extractCovenantsFromText(
         Text text, int[] pixels, int fullW, int fullH, int originX, int originY, float scale
     ) {
         Map<String, Integer> found = new HashMap<>();
         String page = text.getText().replaceAll("\\s+", "");
-        boolean headerHint = page.contains("核心盟约") || page.contains("附加盟约") || page.contains("确认本局");
+        String modeHint = "";
+        if (page.contains("极速模拟") || page.contains("极速")) {
+            modeHint = "quick";
+        } else if (page.contains("规程等级") || page.contains("单人模拟") || page.contains("选择一组")) {
+            modeHint = "solo";
+        }
+        boolean headerHint = page.contains("核心盟约") || page.contains("附加盟约") || page.contains("确认本局")
+            || page.contains("极速模拟") || page.contains("规程等级") || page.contains("单人模拟")
+            || page.contains("选择一组") || page.contains("激活的盟约");
         Map<String, Integer> candidate = new HashMap<>();
+        List<CovenantDetector.SubLabelBox> subHits = new ArrayList<>();
+        int coreSeen = 0;
+        double coreLeftCx = Double.NaN;
 
         for (Text.TextBlock block : text.getTextBlocks()) {
             for (Text.Line line : block.getLines()) {
@@ -498,7 +543,16 @@ public class CovenantScanService extends Service {
                     String matched = CovenantDetector.matchToken(sb.toString());
                     if (matched != null && !candidate.containsKey(matched)) {
                         int state = CovenantDetector.classify(pixels, fullW, fullH, l, t, r, b);
-                        if (state != 0) candidate.put(matched, state);
+                        if (state != 0) {
+                            candidate.put(matched, state);
+                            double cx = (l + r) / 2.0;
+                            if (CovenantDetector.CORE_NAMES.contains(matched)) {
+                                coreSeen++;
+                                coreLeftCx = Double.isNaN(coreLeftCx) ? cx : Math.min(coreLeftCx, cx);
+                            } else if (CovenantDetector.SUB_NAMES.contains(matched)) {
+                                subHits.add(new CovenantDetector.SubLabelBox(matched, cx, t, b - t));
+                            }
+                        }
                     }
                 }
 
@@ -519,15 +573,38 @@ public class CovenantScanService extends Service {
                         if (cb.bottom > b) b = cb.bottom;
                     }
                     int state = CovenantDetector.classify(pixels, fullW, fullH, l, t, r, b);
-                    if (state != 0) candidate.put(name, state);
+                    if (state != 0) {
+                        candidate.put(name, state);
+                        double cx = (l + r) / 2.0;
+                        if (CovenantDetector.CORE_NAMES.contains(name)) {
+                            coreSeen++;
+                            coreLeftCx = Double.isNaN(coreLeftCx) ? cx : Math.min(coreLeftCx, cx);
+                        } else if (CovenantDetector.SUB_NAMES.contains(name)) {
+                            subHits.add(new CovenantDetector.SubLabelBox(name, cx, t, b - t));
+                        }
+                    }
                 }
             }
         }
         // 允许带有标题或本帧已命中 >= 4 个盟约徽章（补扫窄条可能不含标题字）
         if (headerHint || candidate.size() >= 4 || originX < 0) {
+            if (originX >= 0 && !"quick".equals(modeHint) && ("solo".equals(modeHint) || coreSeen >= 9) && coreSeen >= 8) {
+                List<String> missingSub = new ArrayList<>();
+                for (String sub : CovenantDetector.SUB_NAMES) {
+                    if (!candidate.containsKey(sub)) missingSub.add(sub);
+                }
+                if (missingSub.size() == 6) {
+                    Map<String, Integer> inferred = CovenantDetector.probeBottomSixSubBadges(
+                        pixels, fullW, fullH, subHits, missingSub, coreLeftCx
+                    );
+                    if (!inferred.isEmpty()) {
+                        candidate.putAll(inferred);
+                    }
+                }
+            }
             found.putAll(candidate);
         }
-        return found;
+        return new ExtractionResult(found, modeHint);
     }
 
     private static final class CharBox {

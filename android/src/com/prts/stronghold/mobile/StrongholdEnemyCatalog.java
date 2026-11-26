@@ -7,11 +7,14 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
-/** 卫戍协议离线敌人词表与 26 项盟约 ID 映射（从打包的 assets/enemy_power.json 加载）。 */
+/** 卫戍协议离线敌人词表与 26 项盟约 ID 映射（从打包的 assets/enemy_power.json 等加载）。 */
 final class StrongholdEnemyCatalog {
     private static final Map<String, String> ENEMY_NAMES = new HashMap<>();
     private static final Map<Integer, String> TOKEN_ENEMY_IDS = new HashMap<>();
@@ -19,9 +22,12 @@ final class StrongholdEnemyCatalog {
     private static final Map<String, Integer> COVENANT_THRESHOLDS = new HashMap<>();
     private static final Map<Integer, String> CHESS_IDENT_TO_CHESS_ID = new HashMap<>();
     private static final Map<Integer, String> CHESS_IDENT_TO_CHAR_ID = new HashMap<>();
+    private static final Map<Integer, String> CHESS_IDENT_TO_NAME = new HashMap<>();
+    private static final Map<String, List<String>> OPERATOR_NAME_TO_COVENANTS = new HashMap<>();
     private static final Map<Integer, String> TRAP_IDENT_TO_BOND = new HashMap<>();
     private static volatile boolean loaded = false;
     private static volatile boolean catalogLoaded = false;
+    private static volatile boolean operatorRefLoaded = false;
 
     static {
         // 核心盟约（10）
@@ -93,6 +99,43 @@ final class StrongholdEnemyCatalog {
                 // 无资产时安全降级
             }
         }
+        if (!operatorRefLoaded) {
+            try (InputStream in = context.getAssets().open("operator_reference.json")) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                loadOperatorReferenceJson(new String(out.toByteArray(), StandardCharsets.UTF_8));
+            } catch (Exception ignored) {
+                // 无资产时安全降级
+            }
+        }
+    }
+
+    static String normalizeOperatorName(String name) {
+        if (name == null) return "";
+        StringBuilder sb = new StringBuilder(name.length());
+        boolean prevSpace = true;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '"' || c == '\'' || c == '“' || c == '”' || c == '‘' || c == '’') {
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                if (!prevSpace) {
+                    sb.append(' ');
+                    prevSpace = true;
+                }
+                continue;
+            }
+            sb.append(c);
+            prevSpace = false;
+        }
+        int len = sb.length();
+        if (len > 0 && sb.charAt(len - 1) == ' ') {
+            sb.setLength(len - 1);
+        }
+        return sb.toString();
     }
 
     static synchronized void loadStrongholdCatalogJson(String rawJson) {
@@ -110,8 +153,10 @@ final class StrongholdEnemyCatalog {
                         if (item != null) {
                             String chessId = item.optString("chess_id", "").trim();
                             String charId = item.optString("char_id", "").trim();
+                            String opName = item.optString("name", "").trim();
                             if (!chessId.isEmpty()) CHESS_IDENT_TO_CHESS_ID.put(ident, chessId);
                             if (!charId.isEmpty()) CHESS_IDENT_TO_CHAR_ID.put(ident, charId);
+                            if (!opName.isEmpty()) CHESS_IDENT_TO_NAME.put(ident, opName);
                         }
                     } catch (NumberFormatException ignored) {}
                 }
@@ -135,26 +180,91 @@ final class StrongholdEnemyCatalog {
         } catch (Exception ignored) {}
     }
 
+    static synchronized void loadOperatorReferenceJson(String rawJson) {
+        if (rawJson == null || rawJson.isEmpty()) return;
+        try {
+            JSONObject root = new JSONObject(rawJson);
+            JSONObject mode = root.optJSONObject("mode");
+            if (mode != null) {
+                Iterator<String> keys = mode.keys();
+                while (keys.hasNext()) {
+                    String rawName = keys.next();
+                    String norm = normalizeOperatorName(rawName);
+                    if (norm.isEmpty()) continue;
+                    JSONObject entry = mode.optJSONObject(rawName);
+                    if (entry == null) continue;
+                    JSONArray covArr = entry.optJSONArray("covenants");
+                    if (covArr == null || covArr.length() == 0) continue;
+                    List<String> covs = new ArrayList<>(covArr.length());
+                    for (int i = 0; i < covArr.length(); i++) {
+                        String c = covArr.optString(i, "").trim();
+                        if (!c.isEmpty() && !covs.contains(c)) {
+                            covs.add(c);
+                        }
+                    }
+                    if (!covs.isEmpty()) {
+                        OPERATOR_NAME_TO_COVENANTS.put(norm, Collections.unmodifiableList(covs));
+                    }
+                }
+            }
+            operatorRefLoaded = true;
+        } catch (Exception ignored) {}
+    }
+
     static synchronized void registerCatalogForTest(int chessIdent, String chessId, String charId) {
         if (chessId != null && !chessId.isEmpty()) CHESS_IDENT_TO_CHESS_ID.put(chessIdent, chessId);
         if (charId != null && !charId.isEmpty()) CHESS_IDENT_TO_CHAR_ID.put(chessIdent, charId);
+    }
+
+    static synchronized void registerOperatorCovenantsForTest(int chessIdent, String opName, List<String> covenants) {
+        String trimmed = opName != null ? opName.trim() : "";
+        String norm = normalizeOperatorName(trimmed);
+        if (chessIdent >= 0 && !trimmed.isEmpty()) {
+            CHESS_IDENT_TO_NAME.put(chessIdent, trimmed);
+        }
+        if (!norm.isEmpty() && covenants != null && !covenants.isEmpty()) {
+            List<String> clean = new ArrayList<>(covenants.size());
+            for (String cov : covenants) {
+                if (cov != null) {
+                    String c = cov.trim();
+                    if (!c.isEmpty() && !clean.contains(c)) clean.add(c);
+                }
+            }
+            if (!clean.isEmpty()) {
+                OPERATOR_NAME_TO_COVENANTS.put(norm, Collections.unmodifiableList(clean));
+            }
+        }
     }
 
     static synchronized void registerEquipBondForTest(int trapIdent, String giveBondId) {
         if (giveBondId != null && !giveBondId.isEmpty()) TRAP_IDENT_TO_BOND.put(trapIdent, giveBondId);
     }
 
-    static String chessIdForIdent(int chessIdent) {
+    static synchronized String chessIdForIdent(int chessIdent) {
         String s = CHESS_IDENT_TO_CHESS_ID.get(chessIdent);
         return s != null ? s : "";
     }
 
-    static String charIdForIdent(int chessIdent) {
+    static synchronized String charIdForIdent(int chessIdent) {
         String s = CHESS_IDENT_TO_CHAR_ID.get(chessIdent);
         return s != null ? s : "";
     }
 
-    static String equipGiveBond(int trapIdent) {
+    static synchronized String nameForIdent(int chessIdent) {
+        String s = CHESS_IDENT_TO_NAME.get(chessIdent);
+        return s != null ? s : "";
+    }
+
+    static synchronized List<String> covenantsForIdent(int chessIdent) {
+        String rawName = CHESS_IDENT_TO_NAME.get(chessIdent);
+        if (rawName == null || rawName.isEmpty()) return Collections.emptyList();
+        String norm = normalizeOperatorName(rawName);
+        if (norm.isEmpty()) return Collections.emptyList();
+        List<String> covs = OPERATOR_NAME_TO_COVENANTS.get(norm);
+        return covs != null ? covs : Collections.<String>emptyList();
+    }
+
+    static synchronized String equipGiveBond(int trapIdent) {
         String s = TRAP_IDENT_TO_BOND.get(trapIdent);
         return s != null ? s : "";
     }

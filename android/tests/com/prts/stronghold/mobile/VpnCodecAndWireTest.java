@@ -4,6 +4,7 @@ package com.prts.stronghold.mobile;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 
 /** 端到端校验 IPv4/TCP/UDP 报文编解码、卫戍二进制帧解码（300/302/303/311/313/367）及 v3.1 聚合状态（图标/4人漏兜/Boss MMO DPS）。 */
@@ -474,6 +475,108 @@ public final class VpnCodecAndWireTest {
         check(Integer.valueOf(20).equals(EnemyPortraitAtlas.resolvePortraitIndex("enemy_1006_shield_3", atlasMap)), "_3 suffix falls back to base id");
         check(Integer.valueOf(32).equals(EnemyPortraitAtlas.resolvePortraitIndex("enemy_1005_yokai_3", atlasMap)), "exact _3 match wins over base fallback");
         check(EnemyPortraitAtlas.resolvePortraitIndex("boss_18", atlasMap) == null, "out-of-range boss_18 returns null");
+
+        // 8. 校验 operatorReference 静态对照表回退、引号归一化、pos < 0 整备区过滤与「独行」激活判定
+        check("暴躁铁皮".equals(StrongholdEnemyCatalog.normalizeOperatorName("  “暴躁  铁皮”  ".replace("  铁皮", "铁皮"))),
+            "normalizeOperatorName strips quotes and whitespace");
+        check("暴躁铁皮".equals(StrongholdEnemyCatalog.normalizeOperatorName(" '“暴躁铁皮”' ")),
+            "normalizeOperatorName strips nested curly/straight quotes");
+        String mockCatalogJson = "{\"chess_by_id\":{"
+            + "\"501\":{\"chess_id\":\"chess_test_501\",\"char_id\":\"char_test_501\",\"name\":\"折桠\"},"
+            + "\"502\":{\"chess_id\":\"chess_test_502\",\"char_id\":\"char_test_502\",\"name\":\"“暴躁铁皮”\"},"
+            + "\"503\":{\"chess_id\":\"chess_test_503\",\"char_id\":\"char_test_503\",\"name\":\"艾丝黛尔\"}"
+            + "}}";
+        String mockOpRefJson = "{\"mode\":{"
+            + "\"折桠\":{\"covenants\":[\"乌萨斯\",\"不屈\"]},"
+            + "\"暴躁铁皮\":{\"covenants\":[\"不屈\",\"坚守\"]},"
+            + "\"艾丝黛尔\":{\"covenants\":[\"萨尔贡\",\"独行\"]}"
+            + "}}";
+        StrongholdEnemyCatalog.loadStrongholdCatalogJson(mockCatalogJson);
+        StrongholdEnemyCatalog.loadOperatorReferenceJson(mockOpRefJson);
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(504, "独行测试二号", Arrays.asList("独行"));
+        List<String> cov502 = StrongholdEnemyCatalog.covenantsForIdent(502);
+        check(cov502.size() == 2 && cov502.contains("不屈") && cov502.contains("坚守"),
+            "“暴躁铁皮” normalized lookup returns [不屈, 坚守]: " + cov502);
+
+        BattleCaptureState.resetMatch(); // 注意：不喂开局 300 帧 squadBondsBySeat！
+        // Seat 1: 501(pos=0 deployed) + 502(pos=3 deployed) + 503(pos=-1 bench, 必须排除)
+        ByteArrayOutputStream b306Fallback = new ByteArrayOutputStream();
+        DataOutputStream d306Fallback = new DataOutputStream(b306Fallback);
+        d306Fallback.writeByte(1); d306Fallback.writeShort(28); d306Fallback.writeByte(5); d306Fallback.writeByte(3);
+        d306Fallback.write(new byte[6]); d306Fallback.writeShort(0); d306Fallback.writeByte(1);
+        d306Fallback.writeShort(3);
+        d306Fallback.writeInt(9501); d306Fallback.writeShort(0); d306Fallback.writeShort(501); d306Fallback.write(new byte[3]);
+        d306Fallback.writeInt(9502); d306Fallback.writeShort(0); d306Fallback.writeShort(502); d306Fallback.write(new byte[3]);
+        d306Fallback.writeInt(9503); d306Fallback.writeShort(0); d306Fallback.writeShort(503); d306Fallback.write(new byte[3]);
+        d306Fallback.writeShort(0); d306Fallback.writeShort(0);
+        d306Fallback.writeShort(3);
+        d306Fallback.writeInt(9501); d306Fallback.writeInt(0); d306Fallback.writeShort(0);
+        d306Fallback.writeInt(9502); d306Fallback.writeInt(3); d306Fallback.writeShort(0);
+        d306Fallback.writeInt(9503); d306Fallback.writeInt(-1); d306Fallback.writeShort(0);
+        d306Fallback.writeShort(0); d306Fallback.writeShort(0); d306Fallback.writeByte(0);
+        d306Fallback.writeShort(0); d306Fallback.writeShort(0); d306Fallback.writeByte(0); d306Fallback.writeShort(0);
+        d306Fallback.writeShort(0); writeStr(d306Fallback, ""); d306Fallback.write(new byte[13]);
+        byte[] f306Fallback = wrapFrame(306, b306Fallback.toByteArray());
+        List<StrongholdWireDecoder.Event> fbEvs = decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Fallback, 0, f306Fallback.length);
+        check(fbEvs.size() == 1 && fbEvs.get(0).deployedChessBySeat.get(1).size() == 2
+            && !fbEvs.get(0).deployedChessBySeat.get(1).contains(503),
+            "pos < 0 bench piece excluded from deployedChessBySeat");
+        BattleCaptureState.accept(fbEvs.get(0));
+        List<BattleCaptureState.BondStatus> s1Bonds = BattleCaptureState.getSeatBonds(1);
+        boolean s1IndomActive = false, s1HasBenchSolo = false;
+        for (BattleCaptureState.BondStatus bs : s1Bonds) {
+            if ("不屈".equals(bs.name) && bs.count == 2 && bs.active) s1IndomActive = true;
+            if ("独行".equals(bs.name) || "萨尔贡".equals(bs.name)) s1HasBenchSolo = true;
+        }
+        check(s1IndomActive && !s1HasBenchSolo, "seat 1 computes active 不屈2 via operatorReference fallback without squadBondsBySeat");
+
+        // Seat 2: 仅 1 名独行干员(503, pos=1) -> 独行 count==1 且 active==true
+        ByteArrayOutputStream b306Solo1 = new ByteArrayOutputStream();
+        DataOutputStream d306Solo1 = new DataOutputStream(b306Solo1);
+        d306Solo1.writeByte(2); d306Solo1.writeShort(28); d306Solo1.writeByte(5); d306Solo1.writeByte(3);
+        d306Solo1.write(new byte[6]); d306Solo1.writeShort(0); d306Solo1.writeByte(1);
+        d306Solo1.writeShort(1);
+        d306Solo1.writeInt(9601); d306Solo1.writeShort(0); d306Solo1.writeShort(503); d306Solo1.write(new byte[3]);
+        d306Solo1.writeShort(0); d306Solo1.writeShort(0);
+        d306Solo1.writeShort(1);
+        d306Solo1.writeInt(9601); d306Solo1.writeInt(1); d306Solo1.writeShort(0);
+        d306Solo1.writeShort(0); d306Solo1.writeShort(0); d306Solo1.writeByte(0);
+        d306Solo1.writeShort(0); d306Solo1.writeShort(0); d306Solo1.writeByte(0); d306Solo1.writeShort(0);
+        d306Solo1.writeShort(0); writeStr(d306Solo1, ""); d306Solo1.write(new byte[13]);
+        byte[] f306Solo1 = wrapFrame(306, b306Solo1.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Solo1, 0, f306Solo1.length)) {
+            BattleCaptureState.accept(e);
+        }
+        boolean s2SoloActive = false;
+        for (BattleCaptureState.BondStatus bs : BattleCaptureState.getSeatBonds(2)) {
+            if ("独行".equals(bs.name) && bs.count == 1 && bs.active) s2SoloActive = true;
+        }
+        check(s2SoloActive, "独行 activates when count == 1");
+
+        // Seat 3: 2 名独行干员(503 + 504) -> 独行 count==2 且 active==false
+        ByteArrayOutputStream b306Solo2 = new ByteArrayOutputStream();
+        DataOutputStream d306Solo2 = new DataOutputStream(b306Solo2);
+        d306Solo2.writeByte(3); d306Solo2.writeShort(28); d306Solo2.writeByte(5); d306Solo2.writeByte(3);
+        d306Solo2.write(new byte[6]); d306Solo2.writeShort(0); d306Solo2.writeByte(1);
+        d306Solo2.writeShort(2);
+        d306Solo2.writeInt(9701); d306Solo2.writeShort(0); d306Solo2.writeShort(503); d306Solo2.write(new byte[3]);
+        d306Solo2.writeInt(9702); d306Solo2.writeShort(0); d306Solo2.writeShort(504); d306Solo2.write(new byte[3]);
+        d306Solo2.writeShort(0); d306Solo2.writeShort(0);
+        d306Solo2.writeShort(2);
+        d306Solo2.writeInt(9701); d306Solo2.writeInt(0); d306Solo2.writeShort(0);
+        d306Solo2.writeInt(9702); d306Solo2.writeInt(2); d306Solo2.writeShort(0);
+        d306Solo2.writeShort(0); d306Solo2.writeShort(0); d306Solo2.writeByte(0);
+        d306Solo2.writeShort(0); d306Solo2.writeShort(0); d306Solo2.writeByte(0); d306Solo2.writeShort(0);
+        d306Solo2.writeShort(0); writeStr(d306Solo2, ""); d306Solo2.write(new byte[13]);
+        byte[] f306Solo2 = wrapFrame(306, b306Solo2.toByteArray());
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Solo2, 0, f306Solo2.length)) {
+            BattleCaptureState.accept(e);
+        }
+        boolean s3SoloInactive = false;
+        for (BattleCaptureState.BondStatus bs : BattleCaptureState.getSeatBonds(3)) {
+            if ("独行".equals(bs.name) && bs.count == 2 && !bs.active) s3SoloInactive = true;
+        }
+        check(s3SoloInactive, "独行 deactivates when count == 2");
 
         System.out.println("VpnCodecAndWire: " + checks + " checks passed");
     }

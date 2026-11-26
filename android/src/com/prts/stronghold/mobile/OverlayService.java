@@ -1107,6 +1107,19 @@ public class OverlayService extends Service {
         return chip;
     }
 
+    private static boolean isBrandPlaceholderHeadline(String headline) {
+        if (headline == null) return false;
+        String h = headline.trim();
+        return "PRTS".equals(h) || "卫戍战报仪".equals(h) || "PRTS Stronghold".equals(h) || "PRTS Stronghold Lite".equals(h);
+    }
+
+    private static boolean isStaleManualReportDetail(String detail) {
+        if (detail == null) return false;
+        String d = detail.trim();
+        return d.contains("已录 0 回合")
+            || (isBrandPlaceholderHeadline(pendingHeadline) && d.contains("已录") && d.contains("回合"));
+    }
+
     private void renderGuideBody(
         BattleCaptureState.TelemetrySnapshot snap, boolean hasComp, boolean vpnRunning,
         boolean isUpgrade, boolean hasBanWarn, int curRound
@@ -1116,10 +1129,12 @@ public class OverlayService extends Service {
         boolean hasAllWaves = snap != null && vpnRunning && snap.allWaves != null && !snap.allWaves.isEmpty();
         guideAllWavesBtn.setVisibility((hasEnemyIcons && hasAllWaves && !stripLocked) ? View.VISIBLE : View.GONE);
 
-        String progRight = !pendingProgress.isEmpty()
+        String progRight = hasComp && !pendingProgress.isEmpty()
             ? pendingProgress
             : (snap != null && snap.selfHp >= 0 ? ("♥" + snap.selfHp) : "");
         int progCol = progRight.contains("齐牌") ? 0xff34d399 : (progRight.startsWith("♥") && snap != null && snap.selfHp <= 5 ? 0xffff7875 : 0xffffe600);
+        String noCompLiveMsg = String.format(Locale.US, "未选跟打方案 · 已同步 R%02d，点「展开」一键挑阵或切「漏兜」看 4 席态势", curRound);
+        boolean staleManual = isStaleManualReportDetail(pendingDetail);
 
         if (!hasComp && !vpnRunning) {
             guideFocusRow.setVisibility(View.GONE);
@@ -1148,12 +1163,16 @@ public class OverlayService extends Service {
                 guideFocusProg.setVisibility(View.GONE);
             }
 
-            StringBuilder body = new StringBuilder();
-            if (!pendingGrabHint.isEmpty()) body.append("抓：").append(pendingGrabHint).append(" ｜ ");
-            if (!pendingDetail.isEmpty()) body.append(pendingDetail);
-            else if (snap.banCount >= 0 && !hasComp) body.append("已自动同步 ").append(snap.banCount).append(" 项禁选，点「展开」一键选阵。");
-            else body.append("实时抓包同步中，可点顶栏「漏兜」查看 4 人漏怪与协防图表。");
-            guideBodyView.setText(body.toString());
+            if (vpnRunning && (!hasComp || staleManual)) {
+                guideBodyView.setText(noCompLiveMsg);
+            } else {
+                StringBuilder body = new StringBuilder();
+                if (!pendingGrabHint.isEmpty()) body.append("抓：").append(pendingGrabHint).append(" ｜ ");
+                if (!pendingDetail.isEmpty()) body.append(pendingDetail);
+                else if (snap.banCount >= 0 && !hasComp) body.append("已自动同步 ").append(snap.banCount).append(" 项禁选，点「展开」一键选阵。");
+                else body.append("实时抓包同步中，可点顶栏「漏兜」查看 4 人漏怪与协防图表。");
+                guideBodyView.setText(body.toString());
+            }
         } else if (hasBanWarn) {
             guideFocusRow.setVisibility(View.VISIBLE);
             guideFocusRow.setBackgroundColor(0x1af59e0b);
@@ -1166,9 +1185,9 @@ public class OverlayService extends Service {
             guideFocusProg.setVisibility(progRight.isEmpty() ? View.GONE : View.VISIBLE);
             guideFocusProg.setText(progRight);
             guideFocusProg.setTextColor(progCol);
-            guideBodyView.setText(!pendingDetail.isEmpty() ? pendingDetail : "当前阵容存在受限盟约，请核对替换组件或切换备选路线。");
+            guideBodyView.setText((!pendingDetail.isEmpty() && !staleManual) ? pendingDetail : "当前阵容存在受限盟约，请核对替换组件或切换备选路线。");
         } else {
-            boolean showFocus = !pendingGrabHint.isEmpty() || !progRight.isEmpty();
+            boolean showFocus = hasComp && (!pendingGrabHint.isEmpty() || !progRight.isEmpty());
             guideFocusRow.setVisibility(showFocus ? View.VISIBLE : View.GONE);
             guideFocusRow.setBackgroundColor(0x14ffffff);
             guideFocusAccent.setBackgroundColor(0xff00e5ff);
@@ -1180,9 +1199,13 @@ public class OverlayService extends Service {
             guideFocusProg.setVisibility(progRight.isEmpty() ? View.GONE : View.VISIBLE);
             guideFocusProg.setText(progRight);
             guideFocusProg.setTextColor(progCol);
-            guideBodyView.setText(!pendingDetail.isEmpty()
-                ? pendingDetail
-                : (vpnRunning ? "已连接本机抓包，进战斗后自动显示下波出怪图标与 4 人漏兜。" : "点 ◀ ▶ 切回合，或点顶栏「漏兜」看 4 人漏怪/兜底图表。"));
+            if (vpnRunning && (!hasComp || staleManual)) {
+                guideBodyView.setText(noCompLiveMsg);
+            } else {
+                guideBodyView.setText((!pendingDetail.isEmpty() && !staleManual)
+                    ? pendingDetail
+                    : (vpnRunning ? "已连接本机抓包，进战斗后自动显示下波出怪图标与 4 人漏兜。" : "点 ◀ ▶ 切回合，或点顶栏「漏兜」看 4 人漏怪/兜底图表。"));
+            }
         }
         guideBodyView.setMaxLines(stripBodyCompact ? 1 : 3);
     }
@@ -1887,8 +1910,19 @@ public class OverlayService extends Service {
 
         BattleCaptureState.TelemetrySnapshot snap = liveTelemetry;
         boolean vpnRunning = snap != null && snap.vpnRunning;
-        boolean hasComp = !pendingHeadline.isEmpty();
+        boolean brandOnlyHeadline = isBrandPlaceholderHeadline(pendingHeadline);
+        boolean hasComp = !pendingHeadline.isEmpty() && !brandOnlyHeadline;
         int curRound = effectiveCurrentRound();
+        int selfShopLevel = 0;
+        if (snap != null && snap.cumulativeLeak != null && snap.cumulativeLeak.seats != null) {
+            for (BattleCaptureState.SeatLeakRow seatRow : snap.cumulativeLeak.seats) {
+                if (seatRow != null && seatRow.isSelf && seatRow.shopLevel >= 1 && seatRow.shopLevel <= 6) {
+                    selfShopLevel = seatRow.shopLevel;
+                    break;
+                }
+            }
+        }
+        int displayTier = hasComp ? pendingTier : selfShopLevel;
         boolean isBossContext = (pendingRound >= 14)
             || (snap != null && ("boss".equals(snap.phase) || snap.currentRound >= 14 || snap.boss.teamDamage > 0 || snap.boss.bossHp >= 0));
         boolean isUpgrade = hasComp && !isBossContext && pendingTier >= 2 && pendingPrevTier > 0 && pendingTier > pendingPrevTier;
@@ -2020,7 +2054,7 @@ public class OverlayService extends Service {
             badgeText = String.format(Locale.US, "R%02d·↑升%d本", curRound, pendingTier);
             titleText = pendingHeadline;
         } else {
-            badgeText = pendingTier > 0 ? String.format(Locale.US, "R%02d·%d本", curRound, pendingTier) : String.format(Locale.US, "R%02d", curRound);
+            badgeText = displayTier > 0 ? String.format(Locale.US, "R%02d·%d本", curRound, displayTier) : String.format(Locale.US, "R%02d", curRound);
             titleText = hasComp ? pendingHeadline : (snap != null && snap.banCount >= 0 ? "已同步禁选 · 点展开选阵" : "本机实时抓包运行中");
         }
 

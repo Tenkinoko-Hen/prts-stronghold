@@ -7,6 +7,8 @@ export interface CovenantScan {
   status: 'idle' | 'permission' | 'scanning' | 'ready' | 'incomplete' | 'cancelled' | 'error';
   message: string;
   complete: boolean;
+  targetCount?: number;
+  modeLabel?: string;
   bannedCovenants: string[];
   seenCovenants: string[];
   missingCovenants: string[];
@@ -29,7 +31,20 @@ export function parseCovenantScan(raw: string): CovenantScan | null {
     if (banned.some(name => !seen.includes(name))) return null;
     const complete = seen.length === known.size;
     if (value.status === 'ready' && !complete) return null;
-    return { id: value.id, status: value.status, message: value.message, complete, seenCovenants: seen,
-      bannedCovenants: banned, missingCovenants: COVENANT_NAMES.filter(name => !seen.includes(name)) };
+    const targetCount = typeof value.targetCount === 'number' && Number.isFinite(value.targetCount) && value.targetCount > 0
+      ? Math.trunc(value.targetCount)
+      : known.size;
+    const modeLabel = typeof value.modeLabel === 'string' ? value.modeLabel.trim() : '';
+    return {
+      id: value.id,
+      status: value.status,
+      message: value.message,
+      complete,
+      targetCount,
+      modeLabel,
+      seenCovenants: seen,
+      bannedCovenants: banned,
+      missingCovenants: COVENANT_NAMES.filter(name => !seen.includes(name)),
+    };
   } catch { return null; }
 }

@@ -32,6 +32,7 @@ const {
 } = await import('./MobileCapturePanel');
 const { default: TelemetryMobileApp } = await import('./TelemetryMobileApp');
 const { default: MobileApp } = await import('./MobileApp');
+const { syncManualReportOverlayStrip } = await import('./MatchReport');
 
 function buildTestCaptureState() {
   return {
@@ -312,4 +313,43 @@ test('MobileApp report tab renders Full-brand leak icons, nextTwoWaves icons, Bo
   assert.match(html, /class="mlite-bond-chip is-active is-max"[^>]*>奥术999/);
   assert.match(html, /class="mlite-bond-chip is-active is-high"[^>]*>精准245/);
   assert.match(html, /class="mlite-bond-more"[^>]*title="[^"]*迅捷 4[^"]*灵巧 2"[^>]*>\+2/);
+});
+
+test('MatchReport skips PRTSOverlay.updateStrip when PRTSCapture is running or manual match has 0 rounds', () => {
+  const prevWindow = (globalThis as Record<string, unknown>).window;
+  let stripCalls = 0;
+  let lastDetail = '';
+  const overlayMock = {
+    updateStrip: (_r: number, _h: string, detail: string) => {
+      stripCalls++;
+      lastDetail = detail;
+    },
+  };
+  try {
+    // 1. PRTSCapture.isRunning() === true -> MUST NOT call updateStrip even with recorded rounds
+    (globalThis as Record<string, unknown>).window = {
+      PRTSCapture: { isRunning: () => true },
+      PRTSOverlay: overlayMock,
+    };
+    const matchWithRounds = { started: 1000, rounds: { '1': { leaks: 0, helps: 2 } } };
+    assert.equal(syncManualReportOverlayStrip(true, 1, matchWithRounds), false);
+    assert.equal(stripCalls, 0);
+
+    // 2. 0 recorded rounds (even when PRTSCapture is not running) -> MUST NOT call updateStrip
+    (globalThis as Record<string, unknown>).window = {
+      PRTSCapture: { isRunning: () => false },
+      PRTSOverlay: overlayMock,
+    };
+    const emptyMatch = { started: 1000, rounds: {} };
+    assert.equal(syncManualReportOverlayStrip(true, 1, emptyMatch), false);
+    assert.equal(stripCalls, 0);
+
+    // 3. Not capturing + >=1 recorded round -> calls updateStrip
+    assert.equal(syncManualReportOverlayStrip(true, 3, matchWithRounds), true);
+    assert.equal(stripCalls, 1);
+    assert.equal(lastDetail, 'R3 · 已录 1 回合');
+  } finally {
+    if (prevWindow === undefined) delete (globalThis as Record<string, unknown>).window;
+    else (globalThis as Record<string, unknown>).window = prevWindow;
+  }
 });

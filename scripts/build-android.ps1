@@ -122,6 +122,10 @@ try {
         if ((Test-Path -LiteralPath $strongholdCatalogPath) -and !$archive.GetEntry('assets/stronghold_catalog.json')) {
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $strongholdCatalogPath, 'assets/stronghold_catalog.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
         }
+        $operatorRefPath = Join-Path $projectRoot 'src\data\operatorReference.json'
+        if ((Test-Path -LiteralPath $operatorRefPath) -and !$archive.GetEntry('assets/operator_reference.json')) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $operatorRefPath, 'assets/operator_reference.json', [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
         $enemyAtlasWebp = Join-Path $projectRoot 'src\desktop\enemyPortraits.webp'
         $enemyAtlasJson = Join-Path $projectRoot 'src\desktop\enemyPortraits.json'
         if ((Test-Path -LiteralPath $enemyAtlasWebp) -and !$archive.GetEntry('assets/enemy_portraits.webp')) {

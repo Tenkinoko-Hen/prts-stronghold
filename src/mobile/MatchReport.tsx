@@ -241,6 +241,19 @@ async function renderGraphicalMatchPng(
   );
 }
 
+export function syncManualReportOverlayStrip(
+  live: boolean,
+  round: number,
+  match: Match | undefined,
+): boolean {
+  const recordedCount = match ? sorted(match).length : 0;
+  if (!live || !round || recordedCount === 0 || window.PRTSCapture?.isRunning?.()) {
+    return false;
+  }
+  window.PRTSOverlay?.updateStrip?.(round, REPORT_BRAND.name, `R${round} · 已录 ${recordedCount} 回合`);
+  return true;
+}
+
 export default function MatchReport({onGuide}:{onGuide?:()=>void}){
   const journal=window.PRTSJournal;
   const [snap,setSnap]=useState<Snapshot>({});
@@ -262,9 +275,7 @@ export default function MatchReport({onGuide}:{onGuide?:()=>void}){
   const current=active?.current;
   useEffect(()=>{if(!editing&&live&&current)setRound(current);},[current,live]);
   useEffect(()=>{
-    if (live && round) {
-      window.PRTSOverlay?.updateStrip(round, REPORT_BRAND.name, `R${round} · 已录 ${match ? sorted(match).length : 0} 回合`);
-    }
+    syncManualReportOverlayStrip(live, round, match);
   },[live,round,match]);
 
   const handleImportLanReport = useCallback((pcReport: BattleReport) => {

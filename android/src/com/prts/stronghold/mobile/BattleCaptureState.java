@@ -50,7 +50,7 @@ final class BattleCaptureState {
             this.name = name;
             this.count = count;
             this.threshold = threshold;
-            this.active = count >= threshold;
+            this.active = "独行".equals(name) ? (count == 1) : (count >= threshold);
         }
     }
 
@@ -600,21 +600,37 @@ final class BattleCaptureState {
             if (deployed == null && equips == null) continue;
             Map<String, List<String>> squadMap = squadBondsBySeat.get(s);
             Map<String, Integer> counts = new LinkedHashMap<>();
-            if (deployed != null && !squadBondsBySeat.isEmpty()) {
+            if (deployed != null) {
                 Set<String> seenUnits = new HashSet<>();
                 for (Integer ident : deployed) {
                     if (ident == null) continue;
                     String charId = StrongholdEnemyCatalog.charIdForIdent(ident);
                     String chessId = StrongholdEnemyCatalog.chessIdForIdent(ident);
-                    String dedupKey = !charId.isEmpty() ? charId : (!chessId.isEmpty() ? chessId : ("#" + ident));
+                    String opNorm = StrongholdEnemyCatalog.normalizeOperatorName(StrongholdEnemyCatalog.nameForIdent(ident));
+                    String dedupKey = !charId.isEmpty()
+                        ? charId
+                        : (!chessId.isEmpty() ? chessId : (!opNorm.isEmpty() ? opNorm : ("#" + ident)));
                     if (!seenUnits.add(dedupKey)) continue;
-                    List<String> unitBonds = lookupUnitBonds(squadMap, chessId, charId);
-                    if (unitBonds != null) {
+                    boolean addedFromSquad = false;
+                    List<String> unitBonds = !squadBondsBySeat.isEmpty() ? lookupUnitBonds(squadMap, chessId, charId) : null;
+                    if (unitBonds != null && !unitBonds.isEmpty()) {
                         for (String bId : unitBonds) {
                             String cn = StrongholdEnemyCatalog.covenantName(bId);
                             if (cn != null) {
                                 Integer prev = counts.get(cn);
                                 counts.put(cn, prev == null ? 1 : prev + 1);
+                                addedFromSquad = true;
+                            }
+                        }
+                    }
+                    if (!addedFromSquad) {
+                        List<String> refCovs = StrongholdEnemyCatalog.covenantsForIdent(ident);
+                        if (refCovs != null && !refCovs.isEmpty()) {
+                            for (String cn : refCovs) {
+                                if (cn != null && !cn.isEmpty()) {
+                                    Integer prev = counts.get(cn);
+                                    counts.put(cn, prev == null ? 1 : prev + 1);
+                                }
                             }
                         }
                     }

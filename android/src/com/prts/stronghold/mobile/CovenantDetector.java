@@ -1,8 +1,16 @@
 package com.prts.stronghold.mobile;
 // 青逝痕 Tenkinoko 制作
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 文字定位后，判断其上方圆形盟约徽章；支持形近字容错与自适应圆心采样，不依赖游戏动态排列顺序。 */
 final class CovenantDetector {
@@ -10,6 +18,14 @@ final class CovenantDetector {
         "炎", "萨尔贡", "阿戈尔", "叙拉古", "卡西米尔", "维多利亚", "谢拉格", "乌萨斯", "伊比利亚", "莱塔尼亚",
         "精准", "远见", "投资人", "突袭", "不屈", "调和", "协防干员", "独行", "绝技", "聚合", "奥术", "迅捷", "灵巧", "坚守", "助力", "奇迹"
     };
+
+    static final Set<String> CORE_NAMES = Collections.unmodifiableSet(
+        new LinkedHashSet<>(Arrays.asList(Arrays.copyOfRange(NAMES, 0, 10)))
+    );
+
+    static final Set<String> SUB_NAMES = Collections.unmodifiableSet(
+        new LinkedHashSet<>(Arrays.asList(Arrays.copyOfRange(NAMES, 10, NAMES.length)))
+    );
 
     private static final Map<String, String> NEAR_TWO = new HashMap<>();
     static {
@@ -60,7 +76,21 @@ final class CovenantDetector {
         return hits == 1 ? best : null;
     }
 
-    private static int classifyAt(int[] pixels, int width, int height, double cx, double cy, double radius) {
+    static final class SubLabelBox {
+        final String name;
+        final double cx;
+        final double top;
+        final double th;
+        SubLabelBox(String name, double cx, double top, double th) {
+            this.name = name;
+            this.cx = cx;
+            this.top = top;
+            this.th = th;
+        }
+    }
+
+    static int classifyCircle(int[] pixels, int width, int height, double cx, double cy, double radius) {
+        if (pixels == null || width <= 0 || height <= 0 || pixels.length < width * height) return 0;
         if (radius < 6 || cx - radius < 0 || cy - radius < 0 || cx + radius >= width || cy + radius >= height) return 0;
         int count = 0, green = 0, neutral = 0, bright = 0;
         int yStart = (int) (cy - radius), yEnd = (int) (cy + radius);
@@ -90,13 +120,115 @@ final class CovenantDetector {
     // 1 = 发光可用；-1 = 灰暗受限；0 = 无法确定，不自动当作可用。
     static int classify(int[] pixels, int width, int height, int left, int top, int right, int bottom) {
         double textHeight = bottom - top;
-        if (textHeight < 7 || textHeight > height * .085) return 0;
+        if (textHeight < 6 || textHeight > height * .085) return 0;
         double cx = (left + right) / 2.0;
-        // 先用标准几何位置，若因 MLKit 行框留白偏高/偏低导致未命中，再做轻度自适应偏移补偿
-        int primary = classifyAt(pixels, width, height, cx, top - textHeight * 2.8, textHeight * 1.65);
+        // 先用标准 16:9 几何位置，若未命中再做轻度偏移及宽屏/20:9（小米 14 等）高偏移采样
+        int primary = classifyCircle(pixels, width, height, cx, top - textHeight * 2.8, textHeight * 1.65);
         if (primary != 0) return primary;
-        int lower = classifyAt(pixels, width, height, cx, top - textHeight * 2.25, textHeight * 1.45);
+        int lower = classifyCircle(pixels, width, height, cx, top - textHeight * 2.25, textHeight * 1.45);
         if (lower != 0) return lower;
-        return classifyAt(pixels, width, height, cx, top - textHeight * 3.15, textHeight * 1.55);
+        int higher = classifyCircle(pixels, width, height, cx, top - textHeight * 3.15, textHeight * 1.55);
+        if (higher != 0) return higher;
+        int wide = classifyCircle(pixels, width, height, cx, top - textHeight * 3.85, textHeight * 1.95);
+        if (wide != 0) return wide;
+        return classifyCircle(pixels, width, height, cx, top - textHeight * 4.35, textHeight * 1.95);
+    }
+
+    /**
+     * 单人模拟底排无字徽章智能补判：
+     * 根据第 1 行已命中附加盟约的 (cx, top, th) 计算水平列距 dx 与行距（向下 ~6.8 * th），
+     * 探测底部第 2 行 6 个圆形徽章；仅当全部 6 个位置均有效分类且全灰(-1)或全绿(+1)时才返回补判结果。
+     */
+    static Map<String, Integer> probeBottomSixSubBadges(
+        int[] pixels, int width, int height,
+        List<SubLabelBox> subHits, Collection<String> missingSub, double coreLeftCx
+    ) {
+        if (pixels == null || subHits == null || missingSub == null || missingSub.size() != 6 || subHits.size() < 6) {
+            return Collections.emptyMap();
+        }
+        double minTop = Double.MAX_VALUE;
+        for (SubLabelBox b : subHits) {
+            if (b.top < minTop) minTop = b.top;
+        }
+        List<SubLabelBox> row1 = new ArrayList<>();
+        for (SubLabelBox b : subHits) {
+            if (Math.abs(b.top - minTop) <= Math.max(12.0, b.th * 1.4)) {
+                row1.add(b);
+            }
+        }
+        if (row1.size() < 6) return Collections.emptyMap();
+        Collections.sort(row1, Comparator.comparingDouble(a -> a.cx));
+
+        double sumTh = 0, sumTop = 0;
+        for (SubLabelBox b : row1) {
+            sumTh += b.th;
+            sumTop += b.top;
+        }
+        double avgTh = sumTh / row1.size();
+        double row1Top = sumTop / row1.size();
+        if (avgTh < 6) return Collections.emptyMap();
+
+        List<Double> gaps = new ArrayList<>();
+        double minGap = Double.MAX_VALUE;
+        for (int i = 0; i + 1 < row1.size(); i++) {
+            double g = row1.get(i + 1).cx - row1.get(i).cx;
+            if (g >= avgTh * 3.0 && g <= avgTh * 10.5) {
+                gaps.add(g);
+                if (g < minGap) minGap = g;
+            }
+        }
+        if (gaps.isEmpty()) return Collections.emptyMap();
+
+        double gapSum = 0;
+        int gapCnt = 0;
+        for (double g : gaps) {
+            if (g <= minGap * 1.45) {
+                gapSum += g;
+                gapCnt++;
+            }
+        }
+        if (gapCnt == 0) return Collections.emptyMap();
+        double dx = gapSum / gapCnt;
+        if (dx < avgTh * 3.0 || dx > width * 0.25) return Collections.emptyMap();
+
+        double firstCx = row1.get(0).cx;
+        double lastCx = row1.get(row1.size() - 1).cx;
+        int spanCols = (int) Math.round((lastCx - firstCx) / dx);
+        double baseX0 = firstCx;
+        if (row1.size() < 10 && spanCols < 9 && !Double.isNaN(coreLeftCx)) {
+            int shiftCols = (int) Math.round((firstCx - coreLeftCx) / dx);
+            if (shiftCols >= 0 && shiftCols <= 4) {
+                baseX0 = firstCx - shiftCols * dx;
+            }
+        }
+        double x0Sum = 0;
+        int x0Cnt = 0;
+        for (SubLabelBox b : row1) {
+            int col = (int) Math.round((b.cx - baseX0) / dx);
+            if (col >= 0 && col <= 9) {
+                x0Sum += (b.cx - col * dx);
+                x0Cnt++;
+            }
+        }
+        double x0 = x0Cnt > 0 ? (x0Sum / x0Cnt) : baseX0;
+
+        double py1 = row1Top + avgTh * 6.8;
+        double py2 = row1Top + avgTh * 6.1;
+        double r1 = avgTh * 1.95;
+        double r2 = avgTh * 1.65;
+        int unified = 0;
+        for (int k = 0; k < 6; k++) {
+            double px = x0 + dx * k;
+            int s = classifyCircle(pixels, width, height, px, py1, r1);
+            if (s == 0) s = classifyCircle(pixels, width, height, px, py2, r2);
+            if (s == 0) return Collections.emptyMap();
+            if (unified == 0) unified = s;
+            else if (s != unified) return Collections.emptyMap();
+        }
+        Map<String, Integer> out = new HashMap<>();
+        for (String name : missingSub) {
+            out.put(name, unified);
+        }
+        return out;
     }
 }

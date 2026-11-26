@@ -9,6 +9,7 @@ const {
   diagnosticsDialogTitle,
   installBattleReports,
   latestSelfFinish,
+  parseBondDetails,
   parseSourceMessage,
   parseUnknownDetails,
 } = require('../electron/battle-reports.cjs');
@@ -49,6 +50,85 @@ test('diagnostic parses message IDs and counts without packet contents', () => {
     { direction: 'up', id: 399, count: 2 },
   ]);
   assert.equal(parseUnknownDetails('PRTS_REPORT_UNKNOWN names are not diagnostic data'), undefined);
+});
+
+test('diagnostic parses PRTS_REPORT_BONDS 7B hex samples and renders them in diagnostics dialog', async () => {
+  assert.deepEqual(
+    parseBondDetails('PRTS_REPORT_BONDS 1:00000000001100,01020304050607 3:AABBCCDDEEFF00'),
+    [
+      { seat: 1, bonds: ['00000000001100', '01020304050607'] },
+      { seat: 3, bonds: ['aabbccddeeff00'] },
+    ],
+  );
+  assert.equal(parseBondDetails('PRTS_REPORT_BONDS 1:PlayerName'), undefined);
+  assert.equal(parseBondDetails('PRTS_REPORT_BONDS 5:00000000001100'), undefined);
+
+  const Module = require('node:module');
+  const origLoad = Module._load;
+  const dialogCalls = [];
+  const handlers = new Map();
+  let fakeChild;
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: 'prts://app/' },
+    send: () => {},
+  });
+
+  Module._load = function (request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        clipboard: { writeText: () => {} },
+        dialog: {
+          showMessageBox: async (_win, opts) => {
+            dialogCalls.push(opts);
+            return { response: 1 };
+          },
+        },
+      };
+    }
+    return origLoad.call(this, request, parent, isMain);
+  };
+
+  const br = installBattleReports({
+    app: { isPackaged: false, getAppPath: () => path.resolve(__dirname, '..') },
+    mainWindow: fakeMain,
+    ipcMain: {
+      handle: (name, fn) => handlers.set(name, fn),
+      removeHandler: (name) => handlers.delete(name),
+    },
+    product: loadProduct('stronghold'),
+    screenApi: null,
+    spawnFn: () => {
+      fakeChild = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: () => {},
+      });
+      return fakeChild;
+    },
+  });
+
+  try {
+    br.start();
+    const senderEvent = { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame };
+    // Before PRTS_REPORT_BONDS arrives -> no 盟约协议样本 line
+    handlers.get('battle-reports-diagnostics')(senderEvent);
+    assert.ok(dialogCalls.length === 1);
+    assert.ok(!dialogCalls[0].detail.includes('盟约协议样本（7B hex）'));
+
+    fakeChild.stderr.write('PRTS_REPORT_DIAG 5 4 10 8 3 0 0 0\n');
+    fakeChild.stderr.write('PRTS_REPORT_BONDS 1:00000000001100,02000000000c01 2:00000000000000\n');
+    await new Promise(r => setTimeout(r, 25));
+
+    handlers.get('battle-reports-diagnostics')(senderEvent);
+    assert.ok(dialogCalls.length === 2);
+    assert.ok(dialogCalls[1].detail.includes('盟约协议样本（7B hex）：1号:00000000001100,02000000000c01 | 2号:00000000000000'));
+  } finally {
+    Module._load = origLoad;
+    br.dispose();
+  }
 });
 
 test('product manifests isolate stronghold and pure telemetry branding, IDs and workers', () => {

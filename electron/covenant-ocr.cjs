@@ -2,10 +2,17 @@
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 
-const COVENANT_NAMES = [
+const CORE_COVENANTS = [
   '炎', '萨尔贡', '阿戈尔', '叙拉古', '卡西米尔', '维多利亚', '谢拉格', '乌萨斯', '伊比利亚', '莱塔尼亚',
-  '精准', '远见', '投资人', '突袭', '不屈', '调和', '协防干员', '独行', '绝技', '聚合', '奥术', '迅捷', '灵巧', '坚守', '助力', '奇迹',
 ];
+const SUB_COVENANTS = [
+  '精准', '远见', '投资人', '突袭', '不屈', '调和', '协防干员', '独行', '绝技', '聚合',
+  '奥术', '迅捷', '灵巧', '坚守', '助力', '奇迹',
+];
+const COVENANT_NAMES = [...CORE_COVENANTS, ...SUB_COVENANTS];
+const CORE_SET = new Set(CORE_COVENANTS);
+const SUB_SET = new Set(SUB_COVENANTS);
+const BADGE_OFFSET_RATIOS = [2.8, 2.25, 3.15, 3.85, 4.35];
 const SORTED_NAMES = [...COVENANT_NAMES].sort((a, b) => b.length - a.length);
 const SHORTCUT = 'CommandOrControl+Shift+F8';
 const AUTO_POLL_MS = 2400;
@@ -129,13 +136,9 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
 }
 `;
 
-function classifyBadgeBgra(bgra, width, height, box) {
-  const textHeight = box.bottom - box.top;
-  if (textHeight < 8 || textHeight > height * 0.075) return 0;
-  const cx = (box.left + box.right) / 2;
-  const cy = box.top - 2.8 * textHeight;
-  const radius = 1.65 * textHeight;
-  if (cx - radius < 0 || cy - radius < 0 || cx + radius >= width || cy + radius >= height) return 0;
+function classifyCircleBgra(bgra, width, height, cx, cy, radius) {
+  if (!bgra || width <= 0 || height <= 0 || bgra.length < width * height * 4) return 0;
+  if (radius < 6 || cx - radius < 0 || cy - radius < 0 || cx + radius >= width || cy + radius >= height) return 0;
   const r2 = radius * radius;
   let count = 0;
   let green = 0;
@@ -163,6 +166,18 @@ function classifyBadgeBgra(bgra, width, height, box) {
   if (!count) return 0;
   if (green > count * 0.20) return 1;
   if (green < count * 0.015 && neutral > count * 0.30 && bright > count * 0.035) return -1;
+  return 0;
+}
+
+function classifyBadgeBgra(bgra, width, height, box) {
+  const textHeight = box.bottom - box.top;
+  if (textHeight < 6 || textHeight > height * 0.085) return 0;
+  const cx = (box.left + box.right) / 2;
+  const radius = 1.65 * textHeight;
+  for (const ratio of BADGE_OFFSET_RATIOS) {
+    const state = classifyCircleBgra(bgra, width, height, cx, box.top - ratio * textHeight, radius);
+    if (state !== 0) return state;
+  }
   return 0;
 }
 
@@ -213,8 +228,10 @@ function uniqueFuzzyCovenant(token) {
   });
   if (matches.length === 1) return matches[0];
   const nearTwo = {
-    '迅漣': '迅捷', '迅连': '迅捷', '谌和': '调和', '周和': '调和',
-    '精淮': '精准', '奇迹': '奇迹', '聚台': '聚合', '独仃': '独行',
+    '迅漣': '迅捷', '迅连': '迅捷', '迅建': '迅捷', '谌和': '调和', '周和': '调和',
+    '精淮': '精准', '精难': '精准', '奇迹': '奇迹', '聚台': '聚合', '独仃': '独行',
+    '不居': '不屈', '助カ': '助力', '奥木': '奥术', '坚宁': '坚守',
+    '灵污': '灵巧', '灵功': '灵巧', '远觅': '远见', '炎国': '炎',
   };
   return nearTwo[token] ?? null;
 }
@@ -243,7 +260,7 @@ function extractCovenantBoxesFromLine(words) {
   const clusters = [];
   for (const item of chars) {
     const prev = clusters[clusters.length - 1];
-    const h = Math.max(8, item.bottom - item.top);
+    const h = Math.max(6, item.bottom - item.top);
     if (prev && Math.abs(item.top - prev[0].top) <= h * 0.65 && item.left - prev[prev.length - 1].right <= h * 1.45) {
       prev.push(item);
     } else {
@@ -304,11 +321,103 @@ function extractCovenantBoxesFromLine(words) {
   return found;
 }
 
+function probeBottomSixSubBadges(bgra, width, height, subHits, missingSub, coreLeftCx) {
+  if (!bgra || !Array.isArray(subHits) || !Array.isArray(missingSub) || missingSub.length !== 6 || subHits.length < 6) {
+    return {};
+  }
+  let minTop = Infinity;
+  for (const b of subHits) {
+    if (b.top < minTop) minTop = b.top;
+  }
+  const row1 = subHits
+    .filter(b => Math.abs(b.top - minTop) <= Math.max(12, b.th * 1.4))
+    .sort((a, b) => a.cx - b.cx);
+  if (row1.length < 6) return {};
+
+  let sumTh = 0;
+  let sumTop = 0;
+  for (const b of row1) {
+    sumTh += b.th;
+    sumTop += b.top;
+  }
+  const avgTh = sumTh / row1.length;
+  const row1Top = sumTop / row1.length;
+  if (avgTh < 6) return {};
+
+  const gaps = [];
+  let minGap = Infinity;
+  for (let i = 0; i + 1 < row1.length; i++) {
+    const g = row1[i + 1].cx - row1[i].cx;
+    if (g >= avgTh * 3.0 && g <= avgTh * 10.5) {
+      gaps.push(g);
+      if (g < minGap) minGap = g;
+    }
+  }
+  if (!gaps.length) return {};
+
+  let gapSum = 0;
+  let gapCnt = 0;
+  for (const g of gaps) {
+    if (g <= minGap * 1.45) {
+      gapSum += g;
+      gapCnt++;
+    }
+  }
+  if (!gapCnt) return {};
+  const dx = gapSum / gapCnt;
+  if (dx < avgTh * 3.0 || dx > width * 0.25) return {};
+
+  const firstCx = row1[0].cx;
+  const lastCx = row1[row1.length - 1].cx;
+  const spanCols = Math.round((lastCx - firstCx) / dx);
+  let baseX0 = firstCx;
+  if (row1.length < 10 && spanCols < 9 && Number.isFinite(coreLeftCx)) {
+    const shiftCols = Math.round((firstCx - coreLeftCx) / dx);
+    if (shiftCols >= 0 && shiftCols <= 4) {
+      baseX0 = firstCx - shiftCols * dx;
+    }
+  }
+  let x0Sum = 0;
+  let x0Cnt = 0;
+  for (const b of row1) {
+    const col = Math.round((b.cx - baseX0) / dx);
+    if (col >= 0 && col <= 9) {
+      x0Sum += b.cx - col * dx;
+      x0Cnt++;
+    }
+  }
+  const x0 = x0Cnt > 0 ? x0Sum / x0Cnt : baseX0;
+
+  const py1 = row1Top + avgTh * 6.8;
+  const py2 = row1Top + avgTh * 6.1;
+  const r1 = avgTh * 1.95;
+  const r2 = avgTh * 1.65;
+  let unified = 0;
+  for (let k = 0; k < 6; k++) {
+    const px = x0 + dx * k;
+    let s = classifyCircleBgra(bgra, width, height, px, py1, r1);
+    if (s === 0) s = classifyCircleBgra(bgra, width, height, px, py2, r2);
+    if (s === 0) return {};
+    if (unified === 0) unified = s;
+    else if (s !== unified) return {};
+  }
+  const out = {};
+  for (const name of missingSub) {
+    out[name] = unified;
+  }
+  return out;
+}
+
 function evaluateOcrLines(lines, bgra, width, height) {
   const states = new Map();
-  let headerConfirmed = false;
   const flatText = (lines || []).map(words => (words || []).map(w => w.t).join('')).join(' ');
-  if (/确认.?局信息|核心盟约|附加盟约/.test(flatText)) headerConfirmed = true;
+  const compactText = flatText.replace(/\s+/g, '');
+  const isQuickMode = /极速模拟/.test(compactText);
+  const isSoloMode = !isQuickMode && /单人模拟|规程等级/.test(compactText);
+  const headerConfirmed = /确认.?局信息|核心盟约|附加盟约|极速模拟|单人模拟|规程等级|激活的盟约/.test(compactText);
+
+  const subHitByName = new Map();
+  let coreLeftCx = NaN;
 
   for (const words of lines || []) {
     for (const { name, box } of extractCovenantBoxesFromLine(words)) {
@@ -316,18 +425,99 @@ function evaluateOcrLines(lines, bgra, width, height) {
       if (state !== 0) {
         if (!states.has(name)) states.set(name, new Set());
         states.get(name).add(state);
+        const cx = (box.left + box.right) / 2;
+        if (CORE_SET.has(name)) {
+          coreLeftCx = Number.isNaN(coreLeftCx) ? cx : Math.min(coreLeftCx, cx);
+        } else if (SUB_SET.has(name) && !subHitByName.has(name)) {
+          subHitByName.set(name, { name, cx, top: box.top, th: box.bottom - box.top });
+        }
       }
     }
   }
-  const seenCovenants = COVENANT_NAMES.filter(name => states.get(name)?.size === 1);
+
+  const cleanSet = new Set(COVENANT_NAMES.filter(name => states.get(name)?.size === 1));
+  const cleanCoreCount = CORE_COVENANTS.filter(name => cleanSet.has(name)).length;
+  if (!isQuickMode && (isSoloMode || cleanCoreCount >= 9) && cleanCoreCount >= 8) {
+    const missingSub = SUB_COVENANTS.filter(name => !cleanSet.has(name));
+    if (missingSub.length === 6) {
+      const cleanSubHits = [...subHitByName.values()].filter(hit => cleanSet.has(hit.name));
+      const inferred = probeBottomSixSubBadges(bgra, width, height, cleanSubHits, missingSub, coreLeftCx);
+      for (const [name, inferredState] of Object.entries(inferred)) {
+        states.set(name, new Set([inferredState]));
+      }
+    }
+  }
+
+  let seenCovenants = COVENANT_NAMES.filter(name => states.get(name)?.size === 1);
+  const seenCoreCount = CORE_COVENANTS.filter(name => seenCovenants.includes(name)).length;
+  const seenSubCount = SUB_COVENANTS.filter(name => seenCovenants.includes(name)).length;
+  const quickAutoComplete = isQuickMode && (
+    (seenCovenants.length >= 16 && seenCovenants.length <= 18)
+    || (seenCoreCount >= 8 && seenSubCount >= 10 && seenCovenants.length >= 18)
+  );
+  if (quickAutoComplete) {
+    for (const name of COVENANT_NAMES) {
+      if (states.get(name)?.size !== 1) {
+        states.set(name, new Set([-1]));
+      }
+    }
+    seenCovenants = [...COVENANT_NAMES];
+  }
+
   const bannedCovenants = seenCovenants.filter(name => states.get(name).has(-1));
   const missingCovenants = COVENANT_NAMES.filter(name => !seenCovenants.includes(name));
+  const stateByName = {};
+  for (const name of seenCovenants) {
+    stateByName[name] = states.get(name).has(-1) ? -1 : 1;
+  }
+
   return {
     headerConfirmed,
+    isQuickMode,
+    isSoloMode,
     seenCovenants,
     bannedCovenants,
     missingCovenants,
     complete: seenCovenants.length === COVENANT_NAMES.length,
+    stateByName,
+  };
+}
+
+function mergeCovenantScanResult(accumulatedStates, nextResult, { forceReset = false } = {}) {
+  const nextEntries = Object.entries(nextResult?.stateByName || {});
+  if (forceReset) {
+    accumulatedStates.clear();
+  }
+  let conflicts = 0;
+  let added = 0;
+  for (const [name, val] of nextEntries) {
+    const prev = accumulatedStates.get(name);
+    if (prev === undefined) added++;
+    else if (prev !== val) conflicts++;
+  }
+  if (!forceReset && accumulatedStates.size > 0 && (conflicts >= 2 || (nextResult?.complete && conflicts >= 1))) {
+    accumulatedStates.clear();
+    conflicts = 0;
+    added = nextEntries.length;
+  }
+  for (const [name, val] of nextEntries) {
+    accumulatedStates.set(name, val);
+  }
+  const seenCovenants = COVENANT_NAMES.filter(name => accumulatedStates.has(name));
+  const bannedCovenants = seenCovenants.filter(name => accumulatedStates.get(name) === -1);
+  const missingCovenants = COVENANT_NAMES.filter(name => !accumulatedStates.has(name));
+  const coreCount = CORE_COVENANTS.filter(name => accumulatedStates.has(name)).length;
+  return {
+    headerConfirmed: Boolean(nextResult?.headerConfirmed),
+    isQuickMode: Boolean(nextResult?.isQuickMode),
+    isSoloMode: Boolean(nextResult?.isSoloMode),
+    seenCovenants,
+    bannedCovenants,
+    missingCovenants,
+    complete: seenCovenants.length === COVENANT_NAMES.length,
+    coreCount,
+    added,
+    conflicts,
   };
 }
 
@@ -421,13 +611,22 @@ function pickGameCaptureWindow(windows, ownHandle) {
     || null;
 }
 
-function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut }) {
-  const runner = createWinRtOcrRunner();
+function installCovenantOcr({
+  mainWindow,
+  ipcMain,
+  desktopCapturer,
+  clipboard,
+  globalShortcut,
+  ocrRunner,
+  autoPollMs = AUTO_POLL_MS,
+}) {
+  const runner = ocrRunner || createWinRtOcrRunner();
   let disposed = false;
   let busy = false;
   let autoPollEnabled = true;
   let lastAutoFingerprint = '';
   let lastAutoAppliedSignature = '';
+  const accumulatedStates = new Map();
   let pollTimer;
 
   let state = {
@@ -493,24 +692,39 @@ function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, g
 
       const ocr = await runner.recognizePng(captured.image.toPNG());
       const result = evaluateOcrLines(ocr.lines, bgra, size.width, size.height);
-      const validOpening = result.complete || (result.headerConfirmed && result.seenCovenants.length >= 16);
+      const canMergePartial = accumulatedStates.size > 0 && !state.complete && result.seenCovenants.length >= 4;
+      const validOpening = result.complete || (result.headerConfirmed && result.seenCovenants.length >= 16) || canMergePartial;
       if (!validOpening) return;
 
-      const signature = `${result.seenCovenants.length}:${result.bannedCovenants.join(',')}`;
+      let conflictsBefore = 0;
+      for (const [name, val] of Object.entries(result.stateByName || {})) {
+        const prev = accumulatedStates.get(name);
+        if (prev !== undefined && prev !== val) conflictsBefore++;
+      }
+      if (state.complete && !result.complete && conflictsBefore === 0) return;
+
+      const merged = mergeCovenantScanResult(accumulatedStates, result, {
+        forceReset: state.complete && (result.complete || conflictsBefore > 0),
+      });
+      if (!result.complete && canMergePartial && merged.added === 0 && conflictsBefore === 0) return;
+
+      const signature = `${merged.complete ? 1 : 0}:${merged.seenCovenants.length}:${merged.bannedCovenants.join(',')}`;
       if (signature === lastAutoAppliedSignature) return;
       lastAutoAppliedSignature = signature;
 
       publish({
         id: `ocr-auto-${Date.now()}`,
-        status: result.complete ? 'ready' : 'incomplete',
+        status: merged.complete ? 'ready' : 'incomplete',
         source: 'auto',
-        complete: result.complete,
-        bannedCovenants: result.bannedCovenants,
-        seenCovenants: result.seenCovenants,
-        missingCovenants: result.missingCovenants,
-        message: result.complete
-          ? `已从开局画面自动识别 ${result.bannedCovenants.length} 项受限盟约（${result.bannedCovenants.join('、') || '本局无受限'}）。`
-          : `已从开局画面自动识别 ${result.bannedCovenants.length} 项受限盟约（读到 ${result.seenCovenants.length}/26 项，建议核对未遮挡项）。`,
+        complete: merged.complete,
+        bannedCovenants: merged.bannedCovenants,
+        seenCovenants: merged.seenCovenants,
+        missingCovenants: merged.missingCovenants,
+        message: merged.complete
+          ? (merged.isQuickMode
+            ? `极速模拟已读全 18 项（其余 8 项自动标记受限），识别到 ${merged.bannedCovenants.length} 项受限盟约（${merged.bannedCovenants.join('、') || '本局无受限'}）。`
+            : `已从开局画面自动识别 ${merged.bannedCovenants.length} 项受限盟约（${merged.bannedCovenants.join('、') || '本局无受限'}）。`)
+          : `已识别 ${merged.seenCovenants.length}/26（受限 ${merged.bannedCovenants.length} 项），请向下滚动查看其余附加盟约后再次扫描（待补：${merged.missingCovenants.slice(0, 6).join('、')}${merged.missingCovenants.length > 6 ? '…' : ''}）。`,
       });
     } catch {
       // 后台静默探测忽略瞬时失败，不影响前台体验
@@ -546,18 +760,21 @@ function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, g
       if (result.seenCovenants.length === 0) {
         throw new Error('未在画面中识别到盟约总览，请确认游戏处于「1/3 确认本局信息」界面且未被遮挡。');
       }
-      lastAutoAppliedSignature = `${result.seenCovenants.length}:${result.bannedCovenants.join(',')}`;
+      const merged = mergeCovenantScanResult(accumulatedStates, result, { forceReset: state.complete });
+      lastAutoAppliedSignature = `${merged.complete ? 1 : 0}:${merged.seenCovenants.length}:${merged.bannedCovenants.join(',')}`;
       return publish({
         id,
-        status: result.complete ? 'ready' : 'incomplete',
+        status: merged.complete ? 'ready' : 'incomplete',
         source: mode === 'clipboard' ? 'clipboard' : 'manual',
-        complete: result.complete,
-        bannedCovenants: result.bannedCovenants,
-        seenCovenants: result.seenCovenants,
-        missingCovenants: result.missingCovenants,
-        message: result.complete
-          ? `OCR 已读全 26 项，识别到 ${result.bannedCovenants.length} 项受限盟约（${result.bannedCovenants.join('、') || '无受限'}）。`
-          : `OCR 已识别 ${result.bannedCovenants.length} 项受限盟约（已读 ${result.seenCovenants.length}/26 项；待核对：${result.missingCovenants.slice(0, 6).join('、')}${result.missingCovenants.length > 6 ? '…' : ''}）。`,
+        complete: merged.complete,
+        bannedCovenants: merged.bannedCovenants,
+        seenCovenants: merged.seenCovenants,
+        missingCovenants: merged.missingCovenants,
+        message: merged.complete
+          ? (merged.isQuickMode
+            ? `极速模拟已读全 18 项（其余 8 项自动标记受限），识别到 ${merged.bannedCovenants.length} 项受限盟约（${merged.bannedCovenants.join('、') || '无受限'}）。`
+            : `OCR 已读全 26 项，识别到 ${merged.bannedCovenants.length} 项受限盟约（${merged.bannedCovenants.join('、') || '无受限'}）。`)
+          : `已识别 ${merged.seenCovenants.length}/26，请向下滚动查看其余附加盟约后再次扫描（受限 ${merged.bannedCovenants.length} 项；待补：${merged.missingCovenants.slice(0, 6).join('、')}${merged.missingCovenants.length > 6 ? '…' : ''}）。`,
       });
     } catch (err) {
       return publish({
@@ -582,6 +799,7 @@ function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, g
   function reset() {
     lastAutoFingerprint = '';
     lastAutoAppliedSignature = '';
+    accumulatedStates.clear();
     return publish({
       id: '',
       status: 'idle',
@@ -619,7 +837,7 @@ function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, g
     }
   }
 
-  pollTimer = setInterval(() => { void pollOnce(); }, AUTO_POLL_MS);
+  pollTimer = setInterval(() => { void pollOnce(); }, autoPollMs);
   pollTimer.unref?.();
 
   return {
@@ -634,11 +852,16 @@ function installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, g
 }
 
 module.exports = {
+  CORE_COVENANTS,
+  SUB_COVENANTS,
   COVENANT_NAMES,
+  classifyCircleBgra,
   classifyBadgeBgra,
   looksLikeCovenantScreen,
   extractCovenantBoxesFromLine,
+  probeBottomSixSubBadges,
   evaluateOcrLines,
+  mergeCovenantScanResult,
   createWinRtOcrRunner,
   isArknightsWindowName,
   isMumuEmulatorWindowName,

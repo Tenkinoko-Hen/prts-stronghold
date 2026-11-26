@@ -197,6 +197,21 @@ def collect_reports(results, stopped: Event, status, *, inspector: PcBattleInspe
             direction, message_id = key.split(" ", 1)
             unknown.extend((0 if direction == "down" else 1, int(message_id), count))
         print("PRTS_REPORT_UNKNOWN", *unknown, file=sys.stderr, flush=True)
+        conn = analyzer.current[1] if analyzer.current else None
+        if conn is not None and conn.model.seat_loadouts:
+            bond_tokens = []
+            for seat in sorted(conn.model.seat_loadouts):
+                if seat not in range(1, 5):
+                    continue
+                raw_bonds = [
+                    str(b).lower()
+                    for b in (conn.model.seat_loadouts[seat].get("raw_bonds") or ())
+                    if isinstance(b, str) and len(b) == 14 and all(ch in "0123456789abcdefABCDEF" for ch in b)
+                ][:26]
+                if raw_bonds:
+                    bond_tokens.append(f"{seat}:{','.join(raw_bonds)}")
+            if bond_tokens:
+                print("PRTS_REPORT_BONDS", *bond_tokens, file=sys.stderr, flush=True)
 
     try:
         for result in results:

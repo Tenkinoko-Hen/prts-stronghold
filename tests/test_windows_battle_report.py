@@ -1258,6 +1258,83 @@ class MumuCaptureDetectionTests(unittest.TestCase):
         self.assertEqual(lineup['deployed_count'], 1)
         self.assertEqual([u['inst_id'] for u in lineup['deployed']], [1])
         self.assertEqual(sorted(u['inst_id'] for u in lineup['bench']), [2, 3])
+        self.assertEqual(lineup['deployed'][0]['equip_ids'], [])
+        self.assertEqual(lineup['bench'][0]['equip_ids'], [])
+
+    def test_preparation_wire_extracts_piece_equips_and_emits_sanitized_bond_hex_diagnostics(self):
+        from electron.prts_battle_core.wire import Message, decode_message
+
+        def prep_frame_body(*, attached_on_gravel=(), bonds=()):
+            body = bytearray()
+            body += struct.pack('!BhB', 1, 25, 4)  # seat=1, hp=25, round=4
+            body += struct.pack('!7B', 3, 0, 0, 0, 0, 0, 0)  # level=3 + 6 bytes
+            body += struct.pack('!HB', 0, 1)  # goods=0, seq=1
+            # 5 pieces: 4 deployed (砾=88, 承曦格雷伊=180, 云迹=154, 摆渡人=168) + 1 bench (180)
+            pieces_data = [
+                (1001, attached_on_gravel, 88),
+                (1002, (), 180),
+                (1003, (), 154),
+                (1004, (), 168),
+                (1005, (), 180),
+            ]
+            body += struct.pack('!H', len(pieces_data))
+            for inst, eqs, cid in pieces_data:
+                body += struct.pack('!i', inst) + wire_ints(eqs) + struct.pack('!HBBB', cid, 0, 0, 0)
+            # equips: 1x 精准狙击镜 (inst=8001, ident=327)
+            body += struct.pack('!HiH', 1, 8001, 327)
+            body += struct.pack('!H', 0)  # traps
+            # positions: 1001..1004 deployed (pos>=0), 1005 bench (pos=-1)
+            body += struct.pack('!H', 5)
+            for idx, inst in enumerate((1001, 1002, 1003, 1004)):
+                body += struct.pack('!iiBB', inst, idx, 0, 0)
+            body += struct.pack('!iiBB', 1005, -1, 0, 0)
+            # bonds (7B each)
+            body += struct.pack('!H', len(bonds))
+            for b in bonds:
+                body += b
+            body += struct.pack('!HBH', 0, 0, 0)  # sp_prepare_after + enemies
+            body += struct.pack('!HBH', 0, 0, 0)  # after_enemies
+            body += struct.pack('!H', 0) + wire_text('') + bytes(13)
+            return bytes(body)
+
+        sample_bonds = (
+            bytes.fromhex('00000000001100'),
+            bytes.fromhex('01000000000c02'),
+        )
+        # 1) Unattached equip (attached_on_gravel=()) -> deployed/bench equip_ids are all []
+        ev_loose = decode_message(Message(306, prep_frame_body(attached_on_gravel=(), bonds=sample_bonds), 'down'))
+        shop_loose = ev_loose['shops'][0]
+        self.assertEqual(shop_loose['piece_equips'], {})
+        self.assertEqual(shop_loose['raw_bonds'], ['00000000001100', '01000000000c02'])
+
+        # 2) Attached equip (8001 on 砾 1001) -> piece_equips[1001] == [8001]
+        ev_equipped = decode_message(Message(306, prep_frame_body(attached_on_gravel=(8001,), bonds=sample_bonds), 'down'))
+        shop_eq = ev_equipped['shops'][0]
+        self.assertEqual(shop_eq['piece_equips'], {1001: [8001]})
+
+        stats = MatchStats()
+        stats.set_shops([shop_eq])
+        snap = stats.snapshot()
+        lineup = snap['lineups'][1]
+        self.assertNotIn('raw_bonds', lineup)
+        gravel = next(u for u in lineup['deployed'] if u['inst_id'] == 1001)
+        greyy = next(u for u in lineup['deployed'] if u['inst_id'] == 1002)
+        bench_u = lineup['bench'][0]
+        self.assertEqual(gravel['equip_ids'], [8001])
+        self.assertEqual(greyy['equip_ids'], [])
+        self.assertEqual(bench_u['equip_ids'], [])
+
+        # 3) collect_reports diagnostics emits PRTS_REPORT_BONDS without player names/IPs
+        raw_f306 = frame(306, prep_frame_body(attached_on_gravel=(8001,), bonds=sample_bonds))
+        raw_f300 = roster_frame(1, {1: 'SecretDoctorName'}, scene_round=4)
+        stderr_buf = io.StringIO()
+        stdout_buf = io.StringIO()
+        with redirect_stderr(stderr_buf), redirect_stdout(stdout_buf):
+            collect_reports([(Segment(0.0, *OLD[::-1], raw_f300 + raw_f306, 1, True, True, False, False), 'down')], Event(), lambda _: None)
+        diag_text = stderr_buf.getvalue()
+        self.assertIn('PRTS_REPORT_BONDS 1:00000000001100,01000000000c02', diag_text)
+        self.assertNotIn('SecretDoctorName', diag_text)
+        self.assertNotIn('192.0.2', diag_text)
 
 
 if __name__ == '__main__':

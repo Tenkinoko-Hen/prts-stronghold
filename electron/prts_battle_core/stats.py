@@ -199,6 +199,14 @@ class MatchStats:
             if seat not in range(1, 5):
                 continue
             pieces = dict(shop.get("pieces") or {})
+            raw_piece_equips = shop.get("piece_equips") or {}
+            piece_equips: dict[int, list[int]] = {}
+            for raw_inst, raw_eq_ids in raw_piece_equips.items():
+                if isinstance(raw_inst, int) and not isinstance(raw_inst, bool) and raw_eq_ids:
+                    cleaned = [int(x) for x in raw_eq_ids if isinstance(x, int) and not isinstance(x, bool)]
+                    if cleaned:
+                        piece_equips[int(raw_inst)] = cleaned
+            raw_bonds = [str(b) for b in (shop.get("raw_bonds") or ()) if isinstance(b, str) and b]
             positions = dict(shop.get("positions") or {})
             equips = dict(shop.get("equips") or {})
             traps = dict(shop.get("traps") or {})
@@ -219,10 +227,12 @@ class MatchStats:
                 "piece_count": len(pieces),
                 "deployed_count": deployed_piece_count,
                 "pieces": pieces,
+                "piece_equips": piece_equips,
                 "positions": positions,
                 "equips": equips,
                 "traps": traps,
                 "shop": goods,
+                "raw_bonds": raw_bonds,
                 "chess_ids": sorted({int(cid) for cid in pieces.values() if isinstance(cid, int) and cid > 0}),
             }
             prev = self.seat_loadouts.get(seat)
@@ -836,6 +846,7 @@ class MatchStats:
             loadout = self.seat_loadouts.get(seat) or {}
             slots = self.squads.get(seat) or ()
             pieces = loadout.get("pieces") or {}
+            piece_equips = loadout.get("piece_equips") or {}
             positions = loadout.get("positions") or {}
             raw_equips = loadout.get("equips") or {}
             raw_traps = loadout.get("traps") or {}
@@ -865,6 +876,7 @@ class MatchStats:
                     "name": resolved["name"],
                     "tier": resolved["tier"],
                     "is_golden": resolved["is_golden"],
+                    "equip_ids": [int(x) for x in piece_equips.get(inst_id, ())],
                 }
                 pos_val = positions.get(inst_id)
                 if isinstance(pos_val, (int, float)) and not isinstance(pos_val, bool) and pos_val >= 0:
@@ -885,6 +897,7 @@ class MatchStats:
                         "tier": tinfo["tier"],
                         "is_golden": tinfo["is_golden"],
                         "item_type": tinfo["item_type"],
+                        **({"give_bond_id": tinfo["give_bond_id"]} if tinfo.get("give_bond_id") else {}),
                     })
 
             shop_goods = []

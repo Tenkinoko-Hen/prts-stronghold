@@ -248,14 +248,17 @@ test('clampBondCount, visibleMobileBonds and resolveMobileLeakEnemies handle 999
     { name: '奥术', count: 1500, threshold: 2, active: true },
     { name: '精准', count: 245, threshold: 2, active: true },
     { name: '乌萨斯', count: 100, threshold: 3, active: true },
-    { name: '炎', count: 6, threshold: 2, active: true },
+    { name: '炎', count: 6, threshold: 3, active: true },
     { name: '迅捷', count: 4, threshold: 2, active: true },
     { name: '灵巧', count: 2, threshold: 2, active: true },
+    { name: '卡西米尔', count: 2, threshold: 3, active: false },
+    { name: '独行', count: 2, threshold: 1, active: false },
     { name: '不屈', count: -1, threshold: 2, active: false },
   ], 4);
   assert.equal(bonds.shown.length, 4);
   assert.equal(bonds.shown[0].count, 999);
   assert.equal(bonds.hiddenCount, 2);
+  assert.equal(bonds.all.some(b => !b.active), false);
   assert.match(bonds.title, /奥术 999.*迅捷 4.*灵巧 2/);
 
   const cap = buildTestCaptureState();

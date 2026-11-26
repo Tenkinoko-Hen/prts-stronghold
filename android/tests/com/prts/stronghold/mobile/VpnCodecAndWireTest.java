@@ -366,7 +366,7 @@ public final class VpnCodecAndWireTest {
         check(next2.size() == 2 && next2.get(0).round == 5 && next2.get(1).round == 6,
             "nextTwoWaves returns R5 and R6 when at R4");
 
-        // Frame 306 for seat 2 with 2 deployed pieces (101, 102) + 1 yanShip equip (310) -> 炎2(active) & 精准2(active)
+        // Frame 306 for seat 2 with 2 deployed pieces (101, 102) + 1 UNATTACHED yanShip equip (310) -> only 精准2 active; 炎1 inactive!
         ByteArrayOutputStream b306Bonds = new ByteArrayOutputStream();
         DataOutputStream d306Bonds = new DataOutputStream(b306Bonds);
         d306Bonds.writeByte(2); // seat 2
@@ -379,7 +379,7 @@ public final class VpnCodecAndWireTest {
         d306Bonds.writeShort(2); // 2 pieces
         d306Bonds.writeInt(9001); d306Bonds.writeShort(0); d306Bonds.writeShort(101); d306Bonds.write(new byte[3]);
         d306Bonds.writeInt(9002); d306Bonds.writeShort(0); d306Bonds.writeShort(102); d306Bonds.write(new byte[3]);
-        d306Bonds.writeShort(1); // 1 equip (310 -> yanShip)
+        d306Bonds.writeShort(1); // 1 unattached equip (310 -> yanShip)
         d306Bonds.writeInt(8001); d306Bonds.writeShort(310);
         d306Bonds.writeShort(0); // traps
         d306Bonds.writeShort(2); // 2 deployed positions
@@ -397,13 +397,12 @@ public final class VpnCodecAndWireTest {
             BattleCaptureState.accept(e);
         }
         List<BattleCaptureState.BondStatus> seat2Bonds = BattleCaptureState.getSeatBonds(2);
-        check(seat2Bonds.size() == 2, "seat 2 decoded 2 active covenants (炎2 + 精准2), got " + seat2Bonds.size());
-        boolean foundYan2 = false, foundPreci2 = false;
+        boolean foundYan1Inactive = false, foundPreci2 = false;
         for (BattleCaptureState.BondStatus bs : seat2Bonds) {
-            if ("炎".equals(bs.name) && bs.count == 2 && bs.active) foundYan2 = true;
+            if ("炎".equals(bs.name) && bs.count == 1 && !bs.active && bs.threshold == 3) foundYan1Inactive = true;
             if ("精准".equals(bs.name) && bs.count == 2 && bs.active) foundPreci2 = true;
         }
-        check(foundYan2 && foundPreci2, "seat 2 active covenants exact including transfer equip (+1 炎)");
+        check(foundYan1Inactive && foundPreci2, "unattached equip ignored; 炎=1(inactive,th=3) & 精准=2(active)");
 
         // Cross-seat squadBondsBySeat fallback: seat 3 has no seat-3 frame-300 squad, yet deployed 101+102 fall back to seat 1/other captured squad map
         ByteArrayOutputStream b306Seat3 = new ByteArrayOutputStream();
@@ -578,6 +577,215 @@ public final class VpnCodecAndWireTest {
         }
         check(s3SoloInactive, "独行 deactivates when count == 2");
 
+        // 9. 小米 14 R4 实机回归：4 名干员(砾/承曦格雷伊/云迹/摆渡人) + 1 未穿戴精准狙击镜 -> 仅不屈2、灵巧2激活，绝无精准2！
+        StrongholdEnemyCatalog.registerCatalogForTest(88, "chess_char_2_06_a", "char_237_gravel");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(88, "砾", Arrays.asList("卡西米尔", "不屈"));
+        StrongholdEnemyCatalog.registerCatalogForTest(180, "chess_char_2_14_a", "char_1027_greyy2");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(180, "承曦格雷伊", Arrays.asList("精准", "灵巧"));
+        StrongholdEnemyCatalog.registerCatalogForTest(154, "chess_char_2_11_a", "char_4165_ctrail");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(154, "云迹", Arrays.asList("灵巧", "奇迹"));
+        StrongholdEnemyCatalog.registerCatalogForTest(168, "chess_char_1_10_a", "char_4166_varkis");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(168, "摆渡人", Arrays.asList("坚守", "不屈"));
+        StrongholdEnemyCatalog.registerEquipBondForTest(327, "preciShip"); // 精准狙击镜
+
+        BattleCaptureState.resetMatch();
+        byte[] f306R4Loose = buildPrep306(
+            1, 4,
+            new int[] { 801, 802, 803, 804 },
+            new int[] { 88, 180, 154, 168 },
+            new int[][] { {}, {}, {}, {} },
+            new int[] { 0, 1, 2, 3 },
+            new int[] { 9001 },
+            new int[] { 327 }
+        );
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306R4Loose, 0, f306R4Loose.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> r4Loose = BattleCaptureState.getSeatBonds(1);
+        check(countActive(r4Loose) == 2 && isActiveBond(r4Loose, "不屈", 2) && isActiveBond(r4Loose, "灵巧", 2)
+            && !isActiveBond(r4Loose, "精准", 2) && bondCount(r4Loose, "精准") == 1,
+            "R4 loose 精准狙击镜 only activates 不屈2 + 灵巧2, never 精准2");
+
+        // 精准狙击镜穿戴在砾身上 -> 精准2激活
+        byte[] f306R4OnGravel = buildPrep306(
+            1, 4,
+            new int[] { 801, 802, 803, 804 },
+            new int[] { 88, 180, 154, 168 },
+            new int[][] { { 9001 }, {}, {}, {} },
+            new int[] { 0, 1, 2, 3 },
+            new int[] { 9001 },
+            new int[] { 327 }
+        );
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306R4OnGravel, 0, f306R4OnGravel.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> r4OnGravel = BattleCaptureState.getSeatBonds(1);
+        check(countActive(r4OnGravel) == 3 && isActiveBond(r4OnGravel, "精准", 2),
+            "R4 精准狙击镜 attached to 砾 activates 精准2");
+
+        // 精准狙击镜穿戴在承曦格雷伊身上 -> 仍为精准1（不重复计数）
+        byte[] f306R4OnGreyy = buildPrep306(
+            1, 4,
+            new int[] { 801, 802, 803, 804 },
+            new int[] { 88, 180, 154, 168 },
+            new int[][] { {}, { 9001 }, {}, {} },
+            new int[] { 0, 1, 2, 3 },
+            new int[] { 9001 },
+            new int[] { 327 }
+        );
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306R4OnGreyy, 0, f306R4OnGreyy.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> r4OnGreyy = BattleCaptureState.getSeatBonds(1);
+        check(!isActiveBond(r4OnGreyy, "精准", 2) && bondCount(r4OnGreyy, "精准") == 1,
+            "R4 精准狙击镜 attached to 承曦格雷伊 stays 精准1 (dedup per unit)");
+
+        // 10. 官方阈值（炎=3, 投资人=3, 调和=1/+1核心）与整备区【远见/奇迹/投资人】规则
+        StrongholdEnemyCatalog.registerCatalogForTest(601, "chess_y1", "char_y1");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(601, "炎甲", Arrays.asList("炎"));
+        StrongholdEnemyCatalog.registerCatalogForTest(602, "chess_y2", "char_y2");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(602, "炎乙", Arrays.asList("炎"));
+        StrongholdEnemyCatalog.registerCatalogForTest(603, "chess_y3", "char_y3");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(603, "炎丙", Arrays.asList("炎"));
+        StrongholdEnemyCatalog.registerCatalogForTest(604, "chess_k1", "char_k1");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(604, "卡西甲", Arrays.asList("卡西米尔"));
+        StrongholdEnemyCatalog.registerCatalogForTest(605, "chess_m1", "char_m1");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(605, "调和甲", Arrays.asList("调和"));
+        StrongholdEnemyCatalog.registerCatalogForTest(606, "chess_i1", "char_i1");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(606, "投资甲", Arrays.asList("投资人", "不屈"));
+        StrongholdEnemyCatalog.registerCatalogForTest(607, "chess_i2", "char_i2");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(607, "投资乙", Arrays.asList("投资人", "精准"));
+        StrongholdEnemyCatalog.registerCatalogForTest(608, "chess_i3", "char_i3");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(608, "投资丙", Arrays.asList("投资人", "坚守"));
+        StrongholdEnemyCatalog.registerCatalogForTest(609, "chess_v1", "char_v1");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(609, "远见甲", Arrays.asList("远见"));
+        StrongholdEnemyCatalog.registerCatalogForTest(610, "chess_v2", "char_v2");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(610, "远见乙", Arrays.asList("远见", "不屈"));
+        StrongholdEnemyCatalog.registerCatalogForTest(611, "chess_q2", "char_q2");
+        StrongholdEnemyCatalog.registerOperatorCovenantsForTest(611, "奇迹乙", Arrays.asList("奇迹", "精准"));
+
+        // Seat 1: 2 炎 + 2 投资人 -> 均未激活！
+        byte[] f306Two = buildPrep306(
+            1, 5,
+            new int[] { 701, 702, 703, 704 },
+            new int[] { 601, 602, 606, 607 },
+            new int[][] { {}, {}, {}, {} },
+            new int[] { 0, 1, 2, 3 },
+            new int[0], new int[0]
+        );
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Two, 0, f306Two.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> s1Two = BattleCaptureState.getSeatBonds(1);
+        check(bondCount(s1Two, "炎") == 2 && !isActiveBond(s1Two, "炎", 2)
+            && bondCount(s1Two, "投资人") == 2 && !isActiveBond(s1Two, "投资人", 2)
+            && countActive(s1Two) == 0,
+            "炎=2 and 投资人=2 are both inactive (threshold=3)");
+
+        // Seat 2: 2 卡西米尔(88, 604) + 1 调和(605) + 1 远见(609) + 1 奇迹(154) + 1 投资人(606)
+        //   + bench: 154(同云迹应去重!), 610(远见+不屈), 611(奇迹+精准), 607(投资人), 608(投资人) + 601/602/603 on bench? No, 3 炎 on field in seat 3
+        byte[] f306Rules = buildPrep306(
+            2, 8,
+            new int[] { 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721 },
+            new int[] { 88, 604, 605, 609, 154, 606, 154, 610, 611, 607, 608 },
+            new int[11][0],
+            new int[] { 0, 1, 2, 3, 4, 5, -1, -1, -1, -1, -1 },
+            new int[0], new int[0]
+        );
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Rules, 0, f306Rules.length)) {
+            BattleCaptureState.accept(e);
+        }
+        List<BattleCaptureState.BondStatus> s2Rules = BattleCaptureState.getSeatBonds(2);
+        check(isActiveBond(s2Rules, "调和", 1), "调和=1 activates");
+        check(isActiveBond(s2Rules, "卡西米尔", 3), "调和 boosts 2 卡西米尔 -> 3 and activates");
+        check(bondCount(s2Rules, "炎") == 0, "调和 does NOT fabricate 0-count core covenant");
+        check(isActiveBond(s2Rules, "远见", 2), "bench 远见 activates 远见2");
+        check(isActiveBond(s2Rules, "奇迹", 2), "bench 奇迹 activates 奇迹2 (with deployed 云迹 deduped)");
+        check(isActiveBond(s2Rules, "投资人", 3), "bench 投资人 activates 投资人3");
+        check(bondCount(s2Rules, "不屈") == 2 && isActiveBond(s2Rules, "不屈", 2),
+            "bench 610 不屈 excluded (only deployed 88 + 606 count = 2)");
+        check(bondCount(s2Rules, "精准") == 0 && !isActiveBond(s2Rules, "精准", 2),
+            "bench 611/607 精准 excluded (not in 远见/奇迹/投资人)");
+
+        // Seat 3: 3 炎 deployed -> 炎3 activates
+        byte[] f306Yan3 = buildPrep306(
+            3, 6,
+            new int[] { 731, 732, 733 },
+            new int[] { 601, 602, 603 },
+            new int[3][0],
+            new int[] { 0, 1, 2 },
+            new int[0], new int[0]
+        );
+        for (StrongholdWireDecoder.Event e : decoder.feed(StrongholdWireDecoder.DIR_DOWN, f306Yan3, 0, f306Yan3.length)) {
+            BattleCaptureState.accept(e);
+        }
+        check(isActiveBond(BattleCaptureState.getSeatBonds(3), "炎", 3), "炎=3 activates");
+
         System.out.println("VpnCodecAndWire: " + checks + " checks passed");
+    }
+
+    private static int bondCount(List<BattleCaptureState.BondStatus> list, String name) {
+        for (BattleCaptureState.BondStatus bs : list) {
+            if (name.equals(bs.name)) return bs.count;
+        }
+        return 0;
+    }
+
+    private static boolean isActiveBond(List<BattleCaptureState.BondStatus> list, String name, int expectedCount) {
+        for (BattleCaptureState.BondStatus bs : list) {
+            if (name.equals(bs.name)) return bs.active && bs.count == expectedCount;
+        }
+        return false;
+    }
+
+    private static int countActive(List<BattleCaptureState.BondStatus> list) {
+        int c = 0;
+        for (BattleCaptureState.BondStatus bs : list) {
+            if (bs.active) c++;
+        }
+        return c;
+    }
+
+    private static byte[] buildPrep306(
+        int seat, int round,
+        int[] instIds, int[] chessIdents, int[][] attachedEquips, int[] positions,
+        int[] equipInsts, int[] equipIdents
+    ) throws Exception {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(baos);
+        out.writeByte(seat);
+        out.writeShort(28);
+        out.writeByte(round);
+        out.writeByte(4);
+        out.write(new byte[6]);
+        out.writeShort(0);
+        out.writeByte(1);
+        out.writeShort(instIds.length);
+        for (int i = 0; i < instIds.length; i++) {
+            out.writeInt(instIds[i]);
+            int[] eqs = attachedEquips[i];
+            out.writeShort(eqs.length);
+            for (int eq : eqs) out.writeInt(eq);
+            out.writeShort(chessIdents[i]);
+            out.write(new byte[3]);
+        }
+        out.writeShort(equipInsts.length);
+        for (int i = 0; i < equipInsts.length; i++) {
+            out.writeInt(equipInsts[i]);
+            out.writeShort(equipIdents[i]);
+        }
+        out.writeShort(0); // traps
+        out.writeShort(positions.length);
+        for (int i = 0; i < positions.length; i++) {
+            out.writeInt(instIds[i]);
+            out.writeInt(positions[i]);
+            out.writeShort(0);
+        }
+        out.writeShort(0); // bonds
+        out.writeShort(0); out.writeByte(0);
+        out.writeShort(0);
+        out.writeShort(0); out.writeByte(0); out.writeShort(0);
+        out.writeShort(0); writeStr(out, ""); out.write(new byte[13]);
+        return wrapFrame(306, baos.toByteArray());
     }
 }

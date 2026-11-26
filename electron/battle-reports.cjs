@@ -12,6 +12,7 @@ const DIAGNOSTICS = /^PRTS_REPORT_DIAG(?: [0-9]{1,12}){8}$/;
 const DETAILS = /^PRTS_REPORT_DETAIL(?: [0-9]{1,12}){10}$/;
 const BOSS_DETAILS = /^PRTS_REPORT_BOSS(?: [0-9]{1,12}){6,7}$/;
 const UNKNOWN_DETAILS = /^PRTS_REPORT_UNKNOWN(?: [01] [0-9]{1,5} [0-9]{1,12}){0,12}$/;
+const BOND_DETAILS = /^PRTS_REPORT_BONDS(?: [1-4]:[0-9a-fA-F]{14}(?:,[0-9a-fA-F]{14}){0,25}){1,4}$/;
 
 function parseSourceMessage(message, screenApi) {
   if (!message || message.kind !== 'source' || !CLIENT_SOURCES.has(message.client)) {
@@ -110,6 +111,17 @@ function parseUnknownDetails(line) {
   });
 }
 
+function parseBondDetails(line) {
+  if (!BOND_DETAILS.test(line)) return undefined;
+  return line.split(' ').slice(1).map(token => {
+    const [seatStr, hexList] = token.split(':');
+    return {
+      seat: Number(seatStr),
+      bonds: hexList.split(',').map(h => h.toLowerCase()),
+    };
+  });
+}
+
 function diagnosticsDialogTitle(product) {
   return product?.reportBrand?.diagnosticsTitle || 'PRTS · 战报诊断';
 }
@@ -149,7 +161,7 @@ function installBattleReports({
   let lastStderrErrors = [];
   let diagnostics;
   let details;
-  let bossDetails, unknownDetails, lastBossSummary;
+  let bossDetails, unknownDetails, bondDetails, lastBossSummary;
   let backend, traffic;
   let installingNpcap = false;
   let disposed = false;
@@ -244,6 +256,7 @@ function installBattleReports({
     details = undefined;
     bossDetails = lastBossSummary = undefined;
     unknownDetails = undefined;
+    bondDetails = undefined;
     backend = traffic = undefined;
     lastStderrErrors = [];
     const childRun = ++run;
@@ -306,6 +319,7 @@ function installBattleReports({
       } else if (DETAILS.test(line)) details = line.split(' ').slice(1).map(Number);
       else if (BOSS_DETAILS.test(line)) bossDetails = line.split(' ').slice(1).map(Number);
       else if (UNKNOWN_DETAILS.test(line)) unknownDetails = parseUnknownDetails(line);
+      else if (BOND_DETAILS.test(line)) bondDetails = parseBondDetails(line);
       else if (/^PRTS_REPORT_BYTES(?: [0-9]{1,16}){2}$/.test(line)) traffic = line.split(' ').slice(1).map(Number);
       else if (/^PRTS_CAPTURE_SOURCE (winsock|npcap|mixed)$/.test(line)) backend = line.split(' ')[1];
       else if (line && line.trim() && !line.startsWith('PRTS_')) {
@@ -450,6 +464,12 @@ function installBattleReports({
       detail += `\n未识别消息 ID（按次数最多 12 项）：${entries.length ? entries.join('、') : '无'}`;
     }
     if (lastBossSummary) detail += `\n${snapshot ? '当前战报' : '最近一份本地战报'}：${lastBossSummary}`;
+    if (bondDetails && bondDetails.length > 0) {
+      const bondSummary = bondDetails
+        .map(({ seat, bonds }) => `${seat}号:${bonds.join(',')}`)
+        .join(' | ');
+      detail += `\n盟约协议样本（7B hex）：${bondSummary}`;
+    }
     void dialog.showMessageBox(mainWindow, {
       title: diagnosticsDialogTitle(product), message: '战报采集诊断', detail,
       buttons: ['复制诊断', '关闭'], defaultId: 1, cancelId: 1, noLink: true,
@@ -546,4 +566,11 @@ function installBattleReports({
   };
 }
 
-module.exports = { installBattleReports, diagnosticsDialogTitle, latestSelfFinish, parseUnknownDetails, parseSourceMessage };
+module.exports = {
+  installBattleReports,
+  diagnosticsDialogTitle,
+  latestSelfFinish,
+  parseUnknownDetails,
+  parseBondDetails,
+  parseSourceMessage,
+};

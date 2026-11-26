@@ -8,14 +8,25 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 卫戍协议离线敌人词表与 26 项盟约 ID 映射（从打包的 assets/enemy_power.json 等加载）。 */
 final class StrongholdEnemyCatalog {
+    static final List<String> CORE_COVENANTS = Collections.unmodifiableList(Arrays.asList(
+        "炎", "萨尔贡", "阿戈尔", "叙拉古", "卡西米尔",
+        "维多利亚", "谢拉格", "乌萨斯", "伊比利亚", "莱塔尼亚"
+    ));
+    private static final Set<String> BENCH_ACTIVATABLE_COVENANTS = Collections.unmodifiableSet(
+        new LinkedHashSet<>(Arrays.asList("远见", "奇迹", "投资人"))
+    );
+
     private static final Map<String, String> ENEMY_NAMES = new HashMap<>();
     private static final Map<Integer, String> TOKEN_ENEMY_IDS = new HashMap<>();
     private static final Map<String, String> BOND_TO_COVENANT = new HashMap<>();
@@ -59,9 +70,11 @@ final class StrongholdEnemyCatalog {
         BOND_TO_COVENANT.put("deputShip", "助力");
         BOND_TO_COVENANT.put("miraShip", "奇迹");
 
-        // 最低激活阈值（核心盟约多为 3 触发，炎与主流附加盟约为 2，独行为 1）
+        // 最低激活阈值（10 项核心盟约与投资人为 3，调和与独行为 1，其余附加盟约为 2）
         COVENANT_THRESHOLDS.put("独行", 1);
-        COVENANT_THRESHOLDS.put("炎", 2);
+        COVENANT_THRESHOLDS.put("调和", 1);
+        COVENANT_THRESHOLDS.put("投资人", 3);
+        COVENANT_THRESHOLDS.put("炎", 3);
         COVENANT_THRESHOLDS.put("萨尔贡", 3);
         COVENANT_THRESHOLDS.put("阿戈尔", 3);
         COVENANT_THRESHOLDS.put("叙拉古", 3);
@@ -275,6 +288,10 @@ final class StrongholdEnemyCatalog {
         return t != null ? t : 2;
     }
 
+    static boolean isBenchActivatableCovenant(String covenantName) {
+        return covenantName != null && BENCH_ACTIVATABLE_COVENANTS.contains(covenantName);
+    }
+
     static synchronized void loadFromJson(String rawJson) {
         if (rawJson == null || rawJson.isEmpty()) return;
         try {
@@ -326,6 +343,11 @@ final class StrongholdEnemyCatalog {
 
     static String covenantName(String bondId) {
         if (bondId == null) return null;
-        return BOND_TO_COVENANT.get(bondId.trim());
+        String clean = bondId.trim();
+        String direct = BOND_TO_COVENANT.get(clean);
+        if (direct != null) return direct;
+        if ("aegirShip".equals(clean)) return "阿戈尔";
+        if ("leithanienShip".equals(clean)) return "莱塔尼亚";
+        return null;
     }
 }

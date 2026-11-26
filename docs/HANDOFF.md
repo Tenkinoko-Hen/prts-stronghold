@@ -101,11 +101,11 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 12:41（修复 **小米 14 真机实测 4 项 Android Bug：HUD 陈旧 `R1 · 已录 0 回合` / `1本`、实战四席盟约 143 干员静态兜底与整备区过滤、极速模拟 18 项与单人规程等级 15 20:9 宽屏/双行 Ban 选扫描**，198/198 全栈测试 + Android 920 项 Java 测试 + 双产品构建全绿）
+- **最后更新**：2026-11-26 13:56（修复 **PC + Android 实时激活盟约 4 大根因（解析 `_CHAR_CHESS` 已穿戴转职装、校准 `炎:3 / 投资人:3 / 调和:1` 与调和核心 `+1`、整备区 `远见/奇迹/投资人` 激活、HUD 严格仅显已激活态）+ 同步 PC 端 Ban 选 OCR（多偏移采样 / 极速模拟 18 项 / 单人规程等级 15 分屏合并与底部 6 项探针）+ 脱敏 7B `_BOND` 诊断样本**，206/206 全栈测试 + Android 932 项 Java 测试 + 双产品构建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **198/198 全绿**（`tsc --noEmit` 通过 + TS 123/123 + Node 15/15 + Python 60/60）
-  - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 65 个源码 + 7 个测试）及 Java 单元与高压稳定性测试 **920 项直跑全绿**
+  - `npm test` **206/206 全绿**（`tsc --noEmit` 通过 + TS 125/125 + Node 20/20 + Python 61/61）
+  - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **932 项直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
   - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）

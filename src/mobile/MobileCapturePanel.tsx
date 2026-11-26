@@ -448,7 +448,7 @@ export function visibleMobileBonds(
 ): VisibleMobileBondsResult {
   const all = (bonds ?? [])
     .map(b => ({ ...b, count: clampBondCount(b.count) }))
-    .filter(b => b.active || b.count >= 2);
+    .filter(b => b.active);
   const limit = Math.max(0, Math.trunc(maxShown));
   const shown = all.slice(0, limit);
   const hiddenCount = Math.max(0, all.length - limit);

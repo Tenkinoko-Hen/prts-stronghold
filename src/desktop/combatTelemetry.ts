@@ -86,6 +86,7 @@ export interface PieceUnit {
   name: string;
   tier: number;
   isGolden: boolean;
+  equipIds?: number[];
 }
 
 export interface EquipUnit {
@@ -97,6 +98,7 @@ export interface EquipUnit {
   tier: number;
   isGolden: boolean;
   itemType: string;
+  giveBondId?: string;
 }
 
 export interface ShopGood {
@@ -367,6 +369,11 @@ function readPieces(raw: unknown): PieceUnit[] {
     const row = asObj(item);
     const charId = asStr(row?.char_id);
     if (!row || !charId) return [];
+    const equipIds = Array.isArray(row.equip_ids)
+      ? row.equip_ids
+          .map(v => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null))
+          .filter((v): v is number => v !== null)
+      : undefined;
     return [{
       instId: Math.trunc(asNum(row.inst_id) ?? 0),
       chessId: asStr(row.chess_id),
@@ -374,6 +381,7 @@ function readPieces(raw: unknown): PieceUnit[] {
       name: asStr(row.name) || charId,
       tier: Math.trunc(asNum(row.tier) ?? 0),
       isGolden: row.is_golden === true,
+      ...(equipIds !== undefined ? { equipIds } : {}),
     }];
   });
 }
@@ -383,6 +391,7 @@ function readEquips(raw: unknown): EquipUnit[] {
     const row = asObj(item);
     const name = asStr(row?.name);
     if (!row || !name) return [];
+    const giveBondId = asStr(row.give_bond_id);
     return [{
       instId: Math.trunc(asNum(row.inst_id) ?? 0),
       identifier: Math.trunc(asNum(row.identifier) ?? 0),
@@ -392,6 +401,7 @@ function readEquips(raw: unknown): EquipUnit[] {
       tier: Math.trunc(asNum(row.tier) ?? 0),
       isGolden: row.is_golden === true,
       itemType: asStr(row.item_type) || 'EQUIP',
+      ...(giveBondId ? { giveBondId } : {}),
     }];
   });
 }

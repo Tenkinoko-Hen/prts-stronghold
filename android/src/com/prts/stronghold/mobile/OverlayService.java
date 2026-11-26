@@ -1301,7 +1301,7 @@ public class OverlayService extends Service {
             if (row.bonds != null && !row.bonds.isEmpty()) {
                 List<BattleCaptureState.BondStatus> visibleBonds = new java.util.ArrayList<>();
                 for (BattleCaptureState.BondStatus bs : row.bonds) {
-                    if (bs.active || bs.count >= 2) {
+                    if (bs.active) {
                         visibleBonds.add(bs);
                     }
                 }

@@ -592,52 +592,129 @@ final class BattleCaptureState {
         return null;
     }
 
+    private static List<String> resolveUnitNativeCovenants(int ident, Map<String, List<String>> squadMap, String chessId, String charId) {
+        List<String> out = new ArrayList<>();
+        List<String> unitBonds = !squadBondsBySeat.isEmpty() ? lookupUnitBonds(squadMap, chessId, charId) : null;
+        if (unitBonds != null && !unitBonds.isEmpty()) {
+            for (String bId : unitBonds) {
+                String cn = StrongholdEnemyCatalog.covenantName(bId);
+                if (cn != null && !out.contains(cn)) out.add(cn);
+            }
+        }
+        if (!out.isEmpty()) return out;
+        List<String> refCovs = StrongholdEnemyCatalog.covenantsForIdent(ident);
+        if (refCovs != null && !refCovs.isEmpty()) {
+            for (String cn : refCovs) {
+                if (cn != null && !cn.isEmpty() && !out.contains(cn)) out.add(cn);
+            }
+        }
+        return out;
+    }
+
+    private static String resolveUnitDedupKey(int ident, String charId, String chessId) {
+        if (charId != null && !charId.isEmpty()) return charId;
+        if (chessId != null && !chessId.isEmpty()) return chessId;
+        String opNorm = StrongholdEnemyCatalog.normalizeOperatorName(StrongholdEnemyCatalog.nameForIdent(ident));
+        return !opNorm.isEmpty() ? opNorm : ("#" + ident);
+    }
+
     private static void updateSeatBonds(StrongholdWireDecoder.Event ev) {
-        if (ev.deployedChessBySeat.isEmpty() && ev.equipIdentsBySeat.isEmpty()) return;
+        if (ev.deployedPiecesBySeat.isEmpty()
+            && ev.benchPiecesBySeat.isEmpty()
+            && ev.deployedChessBySeat.isEmpty()
+            && ev.equipIdentsBySeat.isEmpty()) {
+            return;
+        }
         for (int s = 1; s <= 4; s++) {
-            List<Integer> deployed = ev.deployedChessBySeat.get(s);
-            List<Integer> equips = ev.equipIdentsBySeat.get(s);
-            if (deployed == null && equips == null) continue;
+            boolean hasStructured = ev.deployedPiecesBySeat.containsKey(s) || ev.benchPiecesBySeat.containsKey(s);
+            List<StrongholdWireDecoder.SeatPiece> deployedPieces = ev.deployedPiecesBySeat.get(s);
+            List<StrongholdWireDecoder.SeatPiece> benchPieces = ev.benchPiecesBySeat.get(s);
+            List<Integer> legacyDeployed = ev.deployedChessBySeat.get(s);
+            List<Integer> legacyEquips = ev.equipIdentsBySeat.get(s);
+            if (!hasStructured && legacyDeployed == null && legacyEquips == null) continue;
+
             Map<String, List<String>> squadMap = squadBondsBySeat.get(s);
-            Map<String, Integer> counts = new LinkedHashMap<>();
-            if (deployed != null) {
-                Set<String> seenUnits = new HashSet<>();
-                for (Integer ident : deployed) {
-                    if (ident == null) continue;
-                    String charId = StrongholdEnemyCatalog.charIdForIdent(ident);
-                    String chessId = StrongholdEnemyCatalog.chessIdForIdent(ident);
-                    String opNorm = StrongholdEnemyCatalog.normalizeOperatorName(StrongholdEnemyCatalog.nameForIdent(ident));
-                    String dedupKey = !charId.isEmpty()
-                        ? charId
-                        : (!chessId.isEmpty() ? chessId : (!opNorm.isEmpty() ? opNorm : ("#" + ident)));
-                    if (!seenUnits.add(dedupKey)) continue;
-                    boolean addedFromSquad = false;
-                    List<String> unitBonds = !squadBondsBySeat.isEmpty() ? lookupUnitBonds(squadMap, chessId, charId) : null;
-                    if (unitBonds != null && !unitBonds.isEmpty()) {
-                        for (String bId : unitBonds) {
-                            String cn = StrongholdEnemyCatalog.covenantName(bId);
-                            if (cn != null) {
-                                Integer prev = counts.get(cn);
-                                counts.put(cn, prev == null ? 1 : prev + 1);
-                                addedFromSquad = true;
-                            }
+            Map<String, Set<String>> unitCovenantsByKey = new LinkedHashMap<>();
+
+            if (hasStructured) {
+                if (deployedPieces != null) {
+                    for (StrongholdWireDecoder.SeatPiece piece : deployedPieces) {
+                        if (piece == null) continue;
+                        String charId = StrongholdEnemyCatalog.charIdForIdent(piece.chessIdent);
+                        String chessId = StrongholdEnemyCatalog.chessIdForIdent(piece.chessIdent);
+                        String dedupKey = resolveUnitDedupKey(piece.chessIdent, charId, chessId);
+                        Set<String> set = unitCovenantsByKey.get(dedupKey);
+                        if (set == null) {
+                            set = new HashSet<>();
+                            unitCovenantsByKey.put(dedupKey, set);
                         }
-                    }
-                    if (!addedFromSquad) {
-                        List<String> refCovs = StrongholdEnemyCatalog.covenantsForIdent(ident);
-                        if (refCovs != null && !refCovs.isEmpty()) {
-                            for (String cn : refCovs) {
-                                if (cn != null && !cn.isEmpty()) {
-                                    Integer prev = counts.get(cn);
-                                    counts.put(cn, prev == null ? 1 : prev + 1);
+                        set.addAll(resolveUnitNativeCovenants(piece.chessIdent, squadMap, chessId, charId));
+                        if (piece.attachedEquipIdents != null) {
+                            for (Integer eqIdent : piece.attachedEquipIdents) {
+                                if (eqIdent == null) continue;
+                                String giveBond = StrongholdEnemyCatalog.equipGiveBond(eqIdent);
+                                if (!giveBond.isEmpty()) {
+                                    String cn = StrongholdEnemyCatalog.covenantName(giveBond);
+                                    if (cn != null) set.add(cn);
                                 }
                             }
                         }
                     }
                 }
+                if (benchPieces != null) {
+                    for (StrongholdWireDecoder.SeatPiece piece : benchPieces) {
+                        if (piece == null) continue;
+                        String charId = StrongholdEnemyCatalog.charIdForIdent(piece.chessIdent);
+                        String chessId = StrongholdEnemyCatalog.chessIdForIdent(piece.chessIdent);
+                        List<String> benchCovs = new ArrayList<>();
+                        for (String cn : resolveUnitNativeCovenants(piece.chessIdent, squadMap, chessId, charId)) {
+                            if (StrongholdEnemyCatalog.isBenchActivatableCovenant(cn)) benchCovs.add(cn);
+                        }
+                        if (piece.attachedEquipIdents != null) {
+                            for (Integer eqIdent : piece.attachedEquipIdents) {
+                                if (eqIdent == null) continue;
+                                String giveBond = StrongholdEnemyCatalog.equipGiveBond(eqIdent);
+                                if (!giveBond.isEmpty()) {
+                                    String cn = StrongholdEnemyCatalog.covenantName(giveBond);
+                                    if (StrongholdEnemyCatalog.isBenchActivatableCovenant(cn)) benchCovs.add(cn);
+                                }
+                            }
+                        }
+                        if (!benchCovs.isEmpty()) {
+                            String dedupKey = resolveUnitDedupKey(piece.chessIdent, charId, chessId);
+                            Set<String> set = unitCovenantsByKey.get(dedupKey);
+                            if (set == null) {
+                                set = new HashSet<>();
+                                unitCovenantsByKey.put(dedupKey, set);
+                            }
+                            set.addAll(benchCovs);
+                        }
+                    }
+                }
+            } else if (legacyDeployed != null) {
+                for (Integer ident : legacyDeployed) {
+                    if (ident == null) continue;
+                    String charId = StrongholdEnemyCatalog.charIdForIdent(ident);
+                    String chessId = StrongholdEnemyCatalog.chessIdForIdent(ident);
+                    String dedupKey = resolveUnitDedupKey(ident, charId, chessId);
+                    Set<String> set = unitCovenantsByKey.get(dedupKey);
+                    if (set == null) {
+                        set = new HashSet<>();
+                        unitCovenantsByKey.put(dedupKey, set);
+                    }
+                    set.addAll(resolveUnitNativeCovenants(ident, squadMap, chessId, charId));
+                }
             }
-            if (equips != null) {
-                for (Integer eqIdent : equips) {
+
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (Set<String> covSet : unitCovenantsByKey.values()) {
+                for (String cn : covSet) {
+                    Integer prev = counts.get(cn);
+                    counts.put(cn, prev == null ? 1 : prev + 1);
+                }
+            }
+            if (!hasStructured && legacyEquips != null) {
+                for (Integer eqIdent : legacyEquips) {
                     if (eqIdent == null) continue;
                     String giveBond = StrongholdEnemyCatalog.equipGiveBond(eqIdent);
                     if (!giveBond.isEmpty()) {
@@ -649,6 +726,18 @@ final class BattleCaptureState {
                     }
                 }
             }
+
+            // 【调和】激活时使在场已有 >=1 人的 10 项核心盟约人数 +1
+            Integer maniCount = counts.get("调和");
+            if (maniCount != null && maniCount >= 1) {
+                for (String core : StrongholdEnemyCatalog.CORE_COVENANTS) {
+                    Integer cur = counts.get(core);
+                    if (cur != null && cur >= 1) {
+                        counts.put(core, cur + 1);
+                    }
+                }
+            }
+
             List<BondStatus> list = new ArrayList<>();
             for (Map.Entry<String, Integer> entry : counts.entrySet()) {
                 int c = entry.getValue();

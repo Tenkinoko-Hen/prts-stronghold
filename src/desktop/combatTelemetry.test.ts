@@ -581,3 +581,193 @@ test('SeatLineupsStrip shows 持有 X 枚 when bench is empty and 在场 X / 整
   }));
   assert.match(withBenchHtml, /在场 7 \/ 整备 2/);
 });
+
+test('R4 regression: unattached transfer equips never inflate active covenants and attached equip deduplicates by unit', () => {
+  const pool = readDeckPool({
+    mode_id: 'mode_multi_hard',
+    is_single: false,
+    operators: [
+      { char_id: 'char_237_gravel', name: '砾', tier: 2, bonds: ['kazimierzShip', 'indomShip'], total_copies: 14, taken_total: 1, remaining: 13 },
+      { char_id: 'char_1027_greyy2', name: '承曦格雷伊', tier: 2, bonds: ['preciShip', 'skillfulShip'], total_copies: 14, taken_total: 1, remaining: 13 },
+      { char_id: 'char_4165_ctrail', name: '云迹', tier: 2, bonds: ['skillfulShip', 'miraShip'], total_copies: 14, taken_total: 1, remaining: 13 },
+      { char_id: 'char_4166_varkis', name: '摆渡人', tier: 1, bonds: ['steadShip', 'indomShip'], total_copies: 12, taken_total: 1, remaining: 11 },
+    ],
+    equips: [
+      { trap_id: 'trap_1063_acarm063', chess_id: 'chess_item_3_02_e_a', name: '精准狙击镜', tier: 3, item_type: 'EQUIP', give_bond_id: 'preciShip', taken_total: 1 },
+    ],
+  });
+  assert.ok(pool);
+
+  const basePieces = [
+    { inst_id: 11, chess_id: 'chess_char_2_06_a', char_id: 'char_237_gravel', name: '砾', tier: 2, is_golden: false, equip_ids: [] as number[] },
+    { inst_id: 12, chess_id: 'chess_char_2_14_a', char_id: 'char_1027_greyy2', name: '承曦格雷伊', tier: 2, is_golden: false, equip_ids: [] as number[] },
+    { inst_id: 13, chess_id: 'chess_char_2_11_a', char_id: 'char_4165_ctrail', name: '云迹', tier: 2, is_golden: false, equip_ids: [] as number[] },
+    { inst_id: 14, chess_id: 'chess_char_1_10_a', char_id: 'char_4166_varkis', name: '摆渡人', tier: 1, is_golden: false, equip_ids: [] as number[] },
+  ];
+  const looseEquip = [
+    { inst_id: 901, identifier: 327, chess_id: 'chess_item_3_02_e_a', trap_id: 'trap_1063_acarm063', name: '精准狙击镜', tier: 3, is_golden: false, item_type: 'EQUIP' },
+  ];
+
+  // 1) Loose unattached 精准狙击镜 on ground -> ONLY 不屈2 & 灵巧2 active; 精准 stays 1 (inactive) and excluded from HUD
+  const unequippedLineup = readSeatLineups({
+    1: { round: 4, shop_level: 3, piece_count: 4, deployed_count: 4, deployed: basePieces, bench: [], equips: looseEquip, shop_goods: [], squad: [] },
+  })[1];
+  assert.deepEqual(unequippedLineup.deployed[0].equipIds, []);
+  const unequippedCovs = computeSeatCovenants(unequippedLineup, pool);
+  assert.equal(unequippedCovs.find(b => b.name === '不屈')?.active, true);
+  assert.equal(unequippedCovs.find(b => b.name === '灵巧')?.active, true);
+  assert.equal(unequippedCovs.find(b => b.name === '精准')?.count, 1);
+  assert.equal(unequippedCovs.find(b => b.name === '精准')?.active, false);
+  const unequippedVisible = visibleSeatCovenants(unequippedLineup, pool, 8);
+  assert.deepEqual(unequippedVisible.all.map(b => b.name), ['不屈', '灵巧']);
+
+  // 2) Attach 精准狙击镜 to 砾 -> 精准 reaches 2 (active)
+  const onGravelLineup = readSeatLineups({
+    1: {
+      round: 4,
+      shop_level: 3,
+      piece_count: 4,
+      deployed_count: 4,
+      deployed: basePieces.map(p => (p.inst_id === 11 ? { ...p, equip_ids: [901] } : p)),
+      bench: [],
+      equips: looseEquip,
+      shop_goods: [],
+      squad: [],
+    },
+  })[1];
+  const onGravelCovs = computeSeatCovenants(onGravelLineup, pool);
+  assert.equal(onGravelCovs.find(b => b.name === '精准')?.count, 2);
+  assert.equal(onGravelCovs.find(b => b.name === '精准')?.active, true);
+  assert.ok(visibleSeatCovenants(onGravelLineup, pool, 8).all.some(b => b.name === '精准' && b.active));
+
+  // 3) Attach 精准狙击镜 to 承曦格雷伊 (already 精准) -> set union keeps 精准 at 1 (inactive)
+  const onGreyyLineup = readSeatLineups({
+    1: {
+      round: 4,
+      shop_level: 3,
+      piece_count: 4,
+      deployed_count: 4,
+      deployed: basePieces.map(p => (p.inst_id === 12 ? { ...p, equip_ids: [901] } : p)),
+      bench: [],
+      equips: looseEquip,
+      shop_goods: [],
+      squad: [],
+    },
+  })[1];
+  const onGreyyCovs = computeSeatCovenants(onGreyyLineup, pool);
+  assert.equal(onGreyyCovs.find(b => b.name === '精准')?.count, 1);
+  assert.equal(onGreyyCovs.find(b => b.name === '精准')?.active, false);
+  assert.deepEqual(visibleSeatCovenants(onGreyyLineup, pool, 8).all.map(b => b.name), ['不屈', '灵巧']);
+});
+
+test('official thresholds (炎=3, 投资人=3, 调和=1/+1 core, 独行=1), bench activatable covenants, and HUD active-only filter', () => {
+  const pool = readDeckPool({
+    mode_id: 'mode_multi_hard',
+    is_single: false,
+    operators: [
+      { char_id: 'char_yan_1', name: '炎一', tier: 2, bonds: ['yanShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_yan_2', name: '炎二', tier: 3, bonds: ['yanShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_yan_3', name: '炎三', tier: 4, bonds: ['yanShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_inv_1', name: '投一', tier: 2, bonds: ['investShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_inv_2', name: '投二', tier: 3, bonds: ['investShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_inv_3', name: '投三', tier: 4, bonds: ['investShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_kaz_1', name: '卡西一', tier: 2, bonds: ['kazimierzShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_kaz_2', name: '卡西二', tier: 4, bonds: ['kazimierzShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_mani', name: '盟约·辅助干员', tier: 4, bonds: ['maniShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_vis_1', name: '远一', tier: 2, bonds: ['visiShip', 'indomShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_vis_2', name: '远二', tier: 3, bonds: ['visiShip', 'indomShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_mira_1', name: '奇一', tier: 2, bonds: ['miraShip', 'skillfulShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_mira_2', name: '奇二', tier: 3, bonds: ['miraShip', 'skillfulShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_solo_1', name: '独一', tier: 3, bonds: ['soloShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+      { char_id: 'char_solo_2', name: '独二', tier: 4, bonds: ['soloShip'], total_copies: 10, taken_total: 1, remaining: 9 },
+    ],
+    equips: [],
+  });
+  assert.ok(pool);
+
+  // 1) 炎=2 (inactive, hidden from HUD), 投资人=2 (inactive, hidden from HUD)
+  const twoEach = readSeatLineups({
+    1: {
+      round: 5,
+      shop_level: 3,
+      piece_count: 4,
+      deployed_count: 4,
+      deployed: [
+        { inst_id: 1, chess_id: '', char_id: 'char_yan_1', name: '炎一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 2, chess_id: '', char_id: 'char_yan_2', name: '炎二', tier: 3, is_golden: false, equip_ids: [] },
+        { inst_id: 3, chess_id: '', char_id: 'char_inv_1', name: '投一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 4, chess_id: '', char_id: 'char_inv_2', name: '投二', tier: 3, is_golden: false, equip_ids: [] },
+      ],
+      bench: [],
+      equips: [],
+      shop_goods: [],
+      squad: [],
+    },
+  })[1];
+  const twoCovs = computeSeatCovenants(twoEach, pool);
+  assert.equal(twoCovs.find(b => b.name === '炎')?.threshold, 3);
+  assert.equal(twoCovs.find(b => b.name === '炎')?.active, false);
+  assert.equal(twoCovs.find(b => b.name === '投资人')?.threshold, 3);
+  assert.equal(twoCovs.find(b => b.name === '投资人')?.active, false);
+  assert.deepEqual(visibleSeatCovenants(twoEach, pool, 8).all, []);
+
+  // 2) 炎=3 & 投资人=3 (via bench 投三!) & 调和=1 boosting 2-unit 卡西米尔 -> 3 (active!) & 独行=2 (inactive!)
+  const mixed = readSeatLineups({
+    1: {
+      round: 8,
+      shop_level: 5,
+      piece_count: 11,
+      deployed_count: 7,
+      deployed: [
+        { inst_id: 1, chess_id: '', char_id: 'char_yan_1', name: '炎一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 2, chess_id: '', char_id: 'char_yan_2', name: '炎二', tier: 3, is_golden: false, equip_ids: [] },
+        { inst_id: 3, chess_id: '', char_id: 'char_yan_3', name: '炎三', tier: 4, is_golden: false, equip_ids: [] },
+        { inst_id: 4, chess_id: '', char_id: 'char_kaz_1', name: '卡西一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 5, chess_id: '', char_id: 'char_kaz_2', name: '卡西二', tier: 4, is_golden: false, equip_ids: [] },
+        { inst_id: 6, chess_id: '', char_id: 'char_mani', name: '盟约·辅助干员', tier: 4, is_golden: false, equip_ids: [] },
+        { inst_id: 7, chess_id: '', char_id: 'char_vis_1', name: '远一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 8, chess_id: '', char_id: 'char_mira_1', name: '奇一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 9, chess_id: '', char_id: 'char_inv_1', name: '投一', tier: 2, is_golden: false, equip_ids: [] },
+        { inst_id: 10, chess_id: '', char_id: 'char_solo_1', name: '独一', tier: 3, is_golden: false, equip_ids: [] },
+        { inst_id: 11, chess_id: '', char_id: 'char_solo_2', name: '独二', tier: 4, is_golden: false, equip_ids: [] },
+      ],
+      bench: [
+        { inst_id: 21, chess_id: '', char_id: 'char_vis_1', name: '远一', tier: 2, is_golden: false, equip_ids: [] }, // dup of deployed -> deduped!
+        { inst_id: 22, chess_id: '', char_id: 'char_vis_2', name: '远二', tier: 3, is_golden: false, equip_ids: [] }, // bench 远见 +1 -> 远见2, 不屈 stays 1
+        { inst_id: 23, chess_id: '', char_id: 'char_mira_2', name: '奇二', tier: 3, is_golden: false, equip_ids: [] }, // bench 奇迹 +1 -> 奇迹2, 灵巧 stays 1
+        { inst_id: 24, chess_id: '', char_id: 'char_inv_2', name: '投二', tier: 3, is_golden: false, equip_ids: [] },
+        { inst_id: 25, chess_id: '', char_id: 'char_inv_3', name: '投三', tier: 4, is_golden: false, equip_ids: [] }, // bench 投资人 +2 -> 投资人3
+      ],
+      equips: [],
+      shop_goods: [],
+      squad: [],
+    },
+  })[1];
+  const mixedCovs = computeSeatCovenants(mixed, pool);
+  assert.equal(mixedCovs.find(b => b.name === '调和')?.count, 1);
+  assert.equal(mixedCovs.find(b => b.name === '调和')?.active, true);
+  assert.equal(mixedCovs.find(b => b.name === '卡西米尔')?.count, 3);
+  assert.equal(mixedCovs.find(b => b.name === '卡西米尔')?.active, true);
+  assert.equal(mixedCovs.find(b => b.name === '炎')?.count, 4); // 3 deployed + 1 from 调和
+  assert.equal(mixedCovs.find(b => b.name === '炎')?.active, true);
+  assert.equal(mixedCovs.find(b => b.name === '萨尔贡'), undefined); // 0 on field stays 0
+  assert.equal(mixedCovs.find(b => b.name === '投资人')?.count, 3);
+  assert.equal(mixedCovs.find(b => b.name === '投资人')?.active, true);
+  assert.equal(mixedCovs.find(b => b.name === '远见')?.count, 2);
+  assert.equal(mixedCovs.find(b => b.name === '远见')?.active, true);
+  assert.equal(mixedCovs.find(b => b.name === '奇迹')?.count, 2);
+  assert.equal(mixedCovs.find(b => b.name === '奇迹')?.active, true);
+  assert.equal(mixedCovs.find(b => b.name === '不屈')?.count, 1); // bench 远二's 不屈 NOT counted!
+  assert.equal(mixedCovs.find(b => b.name === '灵巧')?.count, 1); // bench 奇二's 灵巧 NOT counted!
+  assert.equal(mixedCovs.find(b => b.name === '独行')?.count, 2);
+  assert.equal(mixedCovs.find(b => b.name === '独行')?.active, false);
+
+  const visibleNames = new Set(visibleSeatCovenants(mixed, pool, 10).all.map(b => b.name));
+  assert.equal(visibleNames.has('调和'), true);
+  assert.equal(visibleNames.has('卡西米尔'), true);
+  assert.equal(visibleNames.has('投资人'), true);
+  assert.equal(visibleNames.has('远见'), true);
+  assert.equal(visibleNames.has('奇迹'), true);
+  assert.equal(visibleNames.has('独行'), false);
+  assert.equal(visibleNames.has('不屈'), false);
+});

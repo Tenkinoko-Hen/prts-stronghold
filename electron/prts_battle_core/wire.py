@@ -235,9 +235,12 @@ def _preparation(reader: _Reader, shops=None) -> tuple:
     goods = [dict(zip(('slot', 'price', 'chess_id', 'frozen'), reader.read('BBHB'))) for _ in range(reader.count())]
     sequence, = reader.read('B')
     pieces = {}
+    piece_equips = {}
     for _ in range(reader.count()):
         inst, = reader.read('i')
-        reader.ints()
+        attached = [int(x) for x in reader.ints()]
+        if attached:
+            piece_equips[inst] = attached
         pieces[inst] = reader.read('HBBB')[0]
     equips = {}
     for _ in range(reader.count()):
@@ -264,7 +267,24 @@ def _preparation(reader: _Reader, shops=None) -> tuple:
     skill_id = reader.string()
     reader.take(13)
     if shops is not None:
-        shops.append(dict(seat=player, round=number, shop_level=level, refresh_seq=sequence, shop=goods, pieces=pieces, equips=equips, traps=traps, positions=positions, effects=effects, goods_type=goods_type, special_refresh=special, skill_id=skill_id, miracle_inactive=[bond.hex() for bond in bonds if bond[5] == 17] == ['00000000001100']))
+        shops.append(dict(
+            seat=player,
+            round=number,
+            shop_level=level,
+            refresh_seq=sequence,
+            shop=goods,
+            pieces=pieces,
+            piece_equips=piece_equips,
+            equips=equips,
+            traps=traps,
+            positions=positions,
+            effects=effects,
+            goods_type=goods_type,
+            special_refresh=special,
+            skill_id=skill_id,
+            raw_bonds=[bond.hex() for bond in bonds],
+            miracle_inactive=[bond.hex() for bond in bonds if bond[5] == 17] == ['00000000001100'],
+        ))
     return (player, hp, number, tuple(enemies), effects)
 def _boss_round(reader: _Reader) -> dict:
     hidden = reader.boolean()

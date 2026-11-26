@@ -4,6 +4,7 @@ package com.prts.stronghold.mobile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,6 +106,17 @@ final class StrongholdWireDecoder {
         }
     }
 
+    static final class SeatPiece {
+        final int chessIdent;
+        final List<Integer> attachedEquipIdents;
+        SeatPiece(int chessIdent, List<Integer> attachedEquipIdents) {
+            this.chessIdent = chessIdent;
+            this.attachedEquipIdents = attachedEquipIdents != null && !attachedEquipIdents.isEmpty()
+                ? Collections.unmodifiableList(new ArrayList<>(attachedEquipIdents))
+                : Collections.<Integer>emptyList();
+        }
+    }
+
     static final class Event {
         final String kind; // phase | preparation | runtime | spawn_plan | self_finish | help_finish | help_kill
         int messageId;
@@ -126,6 +138,8 @@ final class StrongholdWireDecoder {
         final Map<Integer, Map<String, List<String>>> squadBondsBySeat = new HashMap<>();
         final Map<Integer, List<Integer>> deployedChessBySeat = new HashMap<>();
         final Map<Integer, List<Integer>> equipIdentsBySeat = new HashMap<>();
+        final Map<Integer, List<SeatPiece>> deployedPiecesBySeat = new HashMap<>();
+        final Map<Integer, List<SeatPiece>> benchPiecesBySeat = new HashMap<>();
         final List<SpawnPreview> spawnPreviews = new ArrayList<>();
         final List<EscapedEnemy> escapedEnemies = new ArrayList<>();
         boolean hasEscapedSection = false;
@@ -561,43 +575,85 @@ final class StrongholdWireDecoder {
         r.skip(6); // remaining 6 of 7 bytes after shop level
         r.skipFixedList(5); // goods
         r.skip(1); // sequence
-        // pieces: inst(i32) + ints + chessIdent(u16) + 3 bytes
+        // pieces: inst(i32) + ints(attached equip inst_ids) + chessIdent(u16) + 3 bytes
         int pCnt = r.count();
+        List<Integer> pieceOrder = pCnt > 0 ? new ArrayList<Integer>(pCnt) : Collections.<Integer>emptyList();
         Map<Integer, Integer> pieceByInst = pCnt > 0 ? new HashMap<Integer, Integer>(pCnt * 2) : null;
+        Map<Integer, List<Integer>> pieceEquipsByInst = pCnt > 0 ? new HashMap<Integer, List<Integer>>(pCnt * 2) : null;
         for (int i = 0; i < pCnt; i++) {
             int inst = r.i32();
-            r.skipIntsAndCount();
+            List<Integer> attached = r.readInts();
             int chessIdent = r.u16();
             r.skip(3);
-            if (pieceByInst != null) pieceByInst.put(inst, chessIdent);
+            if (pieceByInst != null) {
+                pieceOrder.add(inst);
+                pieceByInst.put(inst, chessIdent);
+                if (!attached.isEmpty()) {
+                    pieceEquipsByInst.put(inst, attached);
+                }
+            }
         }
         // equips & traps: inst(i32) + ident(u16)
         List<Integer> equips = new ArrayList<>();
+        Map<Integer, Integer> equipIdentByInst = new HashMap<>();
         int eqCnt = r.count();
         for (int i = 0; i < eqCnt; i++) {
-            r.skip(4);
-            equips.add(r.u16());
+            int inst = r.i32();
+            int ident = r.u16();
+            equips.add(ident);
+            equipIdentByInst.put(inst, ident);
         }
         int trCnt = r.count();
         for (int i = 0; i < trCnt; i++) {
-            r.skip(4);
-            equips.add(r.u16());
+            int inst = r.i32();
+            int ident = r.u16();
+            equips.add(ident);
+            equipIdentByInst.put(inst, ident);
         }
-        // positions: inst(i32) + position(i32) + 2 bytes -> deployed pieces (pos >= 0，排除 pos < 0 整备区)
+        // positions: inst(i32) + position(i32) + 2 bytes -> deployed pieces (pos >= 0，排除 pos < 0 与未入 positions 的整备区)
         int posCnt = r.count();
         List<Integer> deployed = new ArrayList<>();
+        Map<Integer, Integer> posByInst = posCnt > 0 ? new HashMap<Integer, Integer>(posCnt * 2) : Collections.<Integer, Integer>emptyMap();
         for (int i = 0; i < posCnt; i++) {
             int inst = r.i32();
             int pos = r.i32();
             r.skip(2);
+            if (posCnt > 0) posByInst.put(inst, pos);
             if (pos >= 0 && pieceByInst != null) {
                 Integer cid = pieceByInst.get(inst);
                 if (cid != null) deployed.add(cid);
             }
         }
         if (seat >= 1 && seat <= 4 && (!deployed.isEmpty() || !equips.isEmpty() || pCnt > 0)) {
+            List<SeatPiece> deployedPieces = new ArrayList<>();
+            List<SeatPiece> benchPieces = new ArrayList<>();
+            for (int i = 0; i < pieceOrder.size(); i++) {
+                int inst = pieceOrder.get(i);
+                Integer cid = pieceByInst != null ? pieceByInst.get(inst) : null;
+                if (cid == null) continue;
+                List<Integer> attachedInsts = pieceEquipsByInst != null ? pieceEquipsByInst.get(inst) : null;
+                List<Integer> attachedIdents = Collections.emptyList();
+                if (attachedInsts != null && !attachedInsts.isEmpty()) {
+                    attachedIdents = new ArrayList<>(attachedInsts.size());
+                    for (int j = 0; j < attachedInsts.size(); j++) {
+                        Integer eqInst = attachedInsts.get(j);
+                        if (eqInst == null) continue;
+                        Integer eqIdent = equipIdentByInst.get(eqInst);
+                        if (eqIdent != null) attachedIdents.add(eqIdent);
+                    }
+                }
+                SeatPiece sp = new SeatPiece(cid, attachedIdents);
+                Integer posVal = posByInst.get(inst);
+                if (posVal != null && posVal >= 0) {
+                    deployedPieces.add(sp);
+                } else {
+                    benchPieces.add(sp);
+                }
+            }
             ev.deployedChessBySeat.put(seat, deployed);
             ev.equipIdentsBySeat.put(seat, equips);
+            ev.deployedPiecesBySeat.put(seat, deployedPieces);
+            ev.benchPiecesBySeat.put(seat, benchPieces);
         }
         r.skipFixedList(7); // bonds
         // _PREPARATION_BEFORE_ENEMIES[-2:] = (('list', (('list', _SP_PREPARE_SLOT), 'str')), 1)
@@ -774,6 +830,15 @@ final class StrongholdWireDecoder {
             return s;
         }
         void skipStr() throws WireException { int n = count(); skip(n); }
+        List<Integer> readInts() throws WireException {
+            int c = count();
+            if (c == 0) return Collections.emptyList();
+            List<Integer> list = new ArrayList<>(c);
+            for (int i = 0; i < c; i++) {
+                list.add(i32());
+            }
+            return list;
+        }
         int skipIntsAndCount() throws WireException {
             int c = count();
             skip(c * 4);

@@ -1,7 +1,7 @@
 // 青逝痕 Tenkinoko 制作
 import operatorReference from '../data/operatorReference.json';
 import { ALL_CORE_COVENANT_NAMES, ALL_SUB_COVENANT_NAMES } from '../data/strongholdData';
-import type { DeckPoolSnapshot, SeatLineup } from './combatTelemetry';
+import type { DeckPoolSnapshot, EquipUnit, PieceUnit, SeatLineup } from './combatTelemetry';
 
 const OPERATOR_QUOTE_RE = /["'“”‘’]/g;
 
@@ -59,7 +59,9 @@ export const BOND_ID_TO_COVENANT: Readonly<Record<string, string>> = {
 // 各盟约最低触发阈值（与安卓端 StrongholdEnemyCatalog.COVENANT_THRESHOLDS 严格对齐）
 export const COVENANT_THRESHOLDS: Readonly<Record<string, number>> = {
   独行: 1,
-  炎: 2,
+  调和: 1,
+  投资人: 3,
+  炎: 3,
   萨尔贡: 3,
   阿戈尔: 3,
   叙拉古: 3,
@@ -70,6 +72,9 @@ export const COVENANT_THRESHOLDS: Readonly<Record<string, number>> = {
   伊比利亚: 3,
   莱塔尼亚: 3,
 };
+
+const CORE_COVENANTS: ReadonlySet<string> = new Set<string>(ALL_CORE_COVENANT_NAMES);
+const BENCH_ACTIVATABLE_COVENANTS: ReadonlySet<string> = new Set<string>(['远见', '奇迹', '投资人']);
 
 const SHORT_COVENANT_LABELS: Readonly<Record<string, string>> = {
   萨尔贡: '萨尔',
@@ -153,8 +158,8 @@ function clampBondStacks(raw: number): number {
 }
 
 /**
- * 计算指定席位当前场上已部署干员 + 转职装备提供的实时盟约人数与激活态。
- * 若服务端已提供 activeBonds（层数最高 999），优先使用；否则回退至在场不重复干员 + 转职装备估算。
+ * 计算指定席位当前场上已部署干员（含整备区远见/奇迹/投资人）+ 已穿戴转职装备提供的实时盟约人数与激活态。
+ * 若服务端已提供 activeBonds（层数最高 999），优先使用；否则按唯一干员合并自身与已穿戴转职装盟约集合后统计，并应用调和+1规则。
  */
 export function computeSeatCovenants(
   lineup: SeatLineup | undefined,
@@ -193,9 +198,7 @@ export function computeSeatCovenants(
     return sortSeatCovenants(directList);
   }
 
-  const counts = new Map<string, number>();
-
-  // 1. 预建干员盟约索引（优先开局 squad，回退 deckPool.operators）
+  // 1. 预建干员盟约索引（优先开局 squad，回退 deckPool.operators 与静态对照表）
   const byChess = new Map<string, string[]>();
   const byChar = new Map<string, string[]>();
   const byName = new Map<string, string[]>();
@@ -217,29 +220,20 @@ export function computeSeatCovenants(
     }
   }
 
-  // 2. 场上不重复干员计数
-  const seenUnits = new Set<string>();
-  for (const unit of lineup.deployed) {
+  const resolveUnitNativeCovenants = (unit: PieceUnit): string[] => {
     const normName = normalizeOperatorName(unit.name);
-    const dedupKey = unit.charId || unit.chessId || normName || unit.name;
-    if (!dedupKey || seenUnits.has(dedupKey)) continue;
-    seenUnits.add(dedupKey);
-    const covs = (unit.chessId ? byChess.get(unit.chessId) : undefined)
+    return (unit.chessId ? byChess.get(unit.chessId) : undefined)
       ?? (unit.charId ? byChar.get(unit.charId) : undefined)
       ?? (normName ? byName.get(normName) : undefined)
-      ?? (normName ? REF_COVENANTS_BY_NAME.get(normName) : undefined);
-    if (!covs) continue;
-    for (const cov of covs) {
-      if (!VALID_COVENANTS.has(cov)) continue;
-      counts.set(cov, (counts.get(cov) ?? 0) + 1);
-    }
-  }
+      ?? (normName ? REF_COVENANTS_BY_NAME.get(normName) : undefined)
+      ?? [];
+  };
 
-  // 3. 转职装备 giveBondId 加成（+1）
-  if (lineup.equips.length > 0 && deckPool && deckPool.equips.length > 0) {
-    const equipBondByTrap = new Map<string, string>();
-    const equipBondByChess = new Map<string, string>();
-    const equipBondByName = new Map<string, string>();
+  // 2. 预建转职装备 giveBondId 索引（支持 held.giveBondId 与 deckPool.equips）
+  const equipBondByTrap = new Map<string, string>();
+  const equipBondByChess = new Map<string, string>();
+  const equipBondByName = new Map<string, string>();
+  if (deckPool && deckPool.equips.length > 0) {
     for (const eq of deckPool.equips) {
       const cov = mapBondIdToCovenant(eq.giveBondId);
       if (!cov) continue;
@@ -247,11 +241,99 @@ export function computeSeatCovenants(
       if (eq.chessId) equipBondByChess.set(eq.chessId, cov);
       if (eq.name) equipBondByName.set(eq.name, cov);
     }
+  }
+  const resolveEquipCovenant = (held: EquipUnit): string => {
+    if (held.giveBondId) {
+      const direct = mapBondIdToCovenant(held.giveBondId);
+      if (direct) return direct;
+    }
+    return (held.trapId ? equipBondByTrap.get(held.trapId) : undefined)
+      ?? (held.chessId ? equipBondByChess.get(held.chessId) : undefined)
+      ?? (held.name ? equipBondByName.get(held.name) : undefined)
+      ?? '';
+  };
+  const equipBondByInstId = new Map<number, string>();
+  for (const held of lineup.equips) {
+    if (held.instId <= 0) continue;
+    const cov = resolveEquipCovenant(held);
+    if (cov && VALID_COVENANTS.has(cov)) equipBondByInstId.set(held.instId, cov);
+  }
+
+  const hasExplicitEquipIds = lineup.deployed.some(u => u.equipIds !== undefined)
+    || lineup.bench.some(u => u.equipIds !== undefined);
+
+  // 3. 按唯一干员 dedupKey 合并自身原生盟约与穿戴转职装盟约集合
+  const unitCovenantsByKey = new Map<string, Set<string>>();
+  const ensureUnitSet = (unit: PieceUnit): Set<string> | null => {
+    const normName = normalizeOperatorName(unit.name);
+    const dedupKey = unit.charId || unit.chessId || normName || unit.name;
+    if (!dedupKey) return null;
+    let set = unitCovenantsByKey.get(dedupKey);
+    if (!set) {
+      set = new Set<string>();
+      unitCovenantsByKey.set(dedupKey, set);
+    }
+    return set;
+  };
+
+  for (const unit of lineup.deployed) {
+    const set = ensureUnitSet(unit);
+    if (!set) continue;
+    for (const cov of resolveUnitNativeCovenants(unit)) {
+      if (VALID_COVENANTS.has(cov)) set.add(cov);
+    }
+    if (hasExplicitEquipIds && unit.equipIds) {
+      for (const eqInstId of unit.equipIds) {
+        const cov = equipBondByInstId.get(eqInstId);
+        if (cov && VALID_COVENANTS.has(cov)) set.add(cov);
+      }
+    }
+  }
+
+  // 整备区仅允许【远见 / 奇迹 / 投资人】参与激活，且与在场同名干员按 dedupKey 去重
+  for (const unit of lineup.bench) {
+    const benchCovs: string[] = [];
+    for (const cov of resolveUnitNativeCovenants(unit)) {
+      if (BENCH_ACTIVATABLE_COVENANTS.has(cov) && VALID_COVENANTS.has(cov)) {
+        benchCovs.push(cov);
+      }
+    }
+    if (hasExplicitEquipIds && unit.equipIds) {
+      for (const eqInstId of unit.equipIds) {
+        const cov = equipBondByInstId.get(eqInstId);
+        if (cov && BENCH_ACTIVATABLE_COVENANTS.has(cov) && VALID_COVENANTS.has(cov)) {
+          benchCovs.push(cov);
+        }
+      }
+    }
+    if (benchCovs.length === 0) continue;
+    const set = ensureUnitSet(unit);
+    if (!set) continue;
+    for (const cov of benchCovs) set.add(cov);
+  }
+
+  const counts = new Map<string, number>();
+  for (const covSet of unitCovenantsByKey.values()) {
+    for (const cov of covSet) {
+      counts.set(cov, (counts.get(cov) ?? 0) + 1);
+    }
+  }
+
+  // 仅当历史旧战报缺失 equipIds 时，回退使用 lineup.equips 粗估
+  if (!hasExplicitEquipIds && lineup.equips.length > 0) {
     for (const held of lineup.equips) {
-      const cov = (held.trapId ? equipBondByTrap.get(held.trapId) : undefined)
-        ?? (held.chessId ? equipBondByChess.get(held.chessId) : undefined)
-        ?? (held.name ? equipBondByName.get(held.name) : undefined);
-      if (cov) counts.set(cov, (counts.get(cov) ?? 0) + 1);
+      const cov = resolveEquipCovenant(held);
+      if (cov && VALID_COVENANTS.has(cov)) {
+        counts.set(cov, (counts.get(cov) ?? 0) + 1);
+      }
+    }
+  }
+
+  // 【调和】激活时使在场已有 >=1 人的 10 项核心盟约人数 +1
+  if ((counts.get('调和') ?? 0) >= 1) {
+    for (const core of CORE_COVENANTS) {
+      const cur = counts.get(core) ?? 0;
+      if (cur >= 1) counts.set(core, cur + 1);
     }
   }
 
@@ -279,7 +361,7 @@ export function visibleSeatCovenants(
   deckPool?: DeckPoolSnapshot | null,
   maxItems = 4,
 ): { shown: SeatCovenantStatus[]; hiddenCount: number; all: SeatCovenantStatus[] } {
-  const all = computeSeatCovenants(lineup, deckPool).filter(b => b.active || b.count >= 2);
+  const all = computeSeatCovenants(lineup, deckPool).filter(b => b.active);
   const limit = Math.max(0, Math.trunc(maxItems));
   return {
     shown: all.slice(0, limit),

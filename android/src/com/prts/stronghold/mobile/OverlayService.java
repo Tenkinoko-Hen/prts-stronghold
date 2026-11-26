@@ -20,6 +20,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -58,7 +59,89 @@ import java.util.Locale;
  */
 public class OverlayService extends Service {
     private static volatile OverlayService active;
-    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    static final long TELEMETRY_THROTTLE_MS = 100L;
+
+    interface ThrottleScheduler {
+        long nowMs();
+        void postImmediate(Runnable task);
+        void postDelayed(Runnable task, long delayMs);
+    }
+
+    static final class TelemetryThrottle<T> {
+        private final long windowMs;
+        private final ThrottleScheduler scheduler;
+        private final java.util.function.Consumer<T> consumer;
+        private final Object lock = new Object();
+        private final Runnable tailTask;
+        private long lastDispatchAtMs = -1L;
+        private T pendingItem;
+        private boolean flushScheduled;
+
+        TelemetryThrottle(long windowMs, ThrottleScheduler scheduler, java.util.function.Consumer<T> consumer) {
+            this.windowMs = Math.max(1L, windowMs);
+            this.scheduler = scheduler;
+            this.consumer = consumer;
+            this.tailTask = this::runTailFlush;
+        }
+
+        private void runTailFlush() {
+            final T item;
+            synchronized (lock) {
+                flushScheduled = false;
+                item = pendingItem;
+                pendingItem = null;
+                if (item == null) return;
+                lastDispatchAtMs = scheduler.nowMs();
+            }
+            consumer.accept(item);
+        }
+
+        void submit(T item) {
+            if (item == null) return;
+            final T immediate;
+            synchronized (lock) {
+                long now = scheduler.nowMs();
+                if (lastDispatchAtMs < 0L || now - lastDispatchAtMs >= windowMs) {
+                    lastDispatchAtMs = now;
+                    pendingItem = null;
+                    immediate = item;
+                } else {
+                    pendingItem = item;
+                    if (!flushScheduled) {
+                        flushScheduled = true;
+                        long delay = Math.max(1L, windowMs - (now - lastDispatchAtMs));
+                        scheduler.postDelayed(tailTask, delay);
+                    }
+                    return;
+                }
+            }
+            scheduler.postImmediate(() -> consumer.accept(immediate));
+        }
+
+        void reset() {
+            synchronized (lock) {
+                pendingItem = null;
+                flushScheduled = false;
+                lastDispatchAtMs = -1L;
+            }
+        }
+    }
+
+    private static final class MainHolder {
+        static final Handler HANDLER = new Handler(Looper.getMainLooper());
+        static final TelemetryThrottle<BattleCaptureState.TelemetrySnapshot> TELEMETRY_THROTTLE =
+            new TelemetryThrottle<>(
+                TELEMETRY_THROTTLE_MS,
+                new ThrottleScheduler() {
+                    @Override public long nowMs() { return SystemClock.elapsedRealtime(); }
+                    @Override public void postImmediate(Runnable task) { HANDLER.post(task); }
+                    @Override public void postDelayed(Runnable task, long delayMs) { HANDLER.postDelayed(task, delayMs); }
+                },
+                OverlayService::applyTelemetrySnapshotOnMain
+            );
+    }
+
+    private static Handler mainHandler() { return MainHolder.HANDLER; }
     private static final String CHANNEL = "prts_floating_guide";
     private static final String PREFS = "prts_overlay_prefs";
     private static final float[] ALPHA_LEVELS = { 1.0f, 0.86f, 0.72f };
@@ -166,6 +249,11 @@ public class OverlayService extends Service {
     private int usableHeight;
     private int webViewRecoverCount = 0;
     private long lastWebViewCrashMs = 0;
+    private int lastStripWidth = Integer.MIN_VALUE;
+    private int lastStripX = Integer.MIN_VALUE;
+    private int lastStripY = Integer.MIN_VALUE;
+    private int lastStripFlags = Integer.MIN_VALUE;
+    private float lastStripAlpha = Float.NaN;
     private static volatile boolean crashGuardInstalled = false;
 
     static void installProcessCrashGuard() {
@@ -180,13 +268,13 @@ public class OverlayService extends Service {
     }
 
     static void stopActive() { if (active != null) { active.dispose(); active.stopSelf(); active = null; } }
-    static void hideForScan() { MAIN.post(() -> { if (active != null) { active.collapseToBall(); if (active.ball != null) active.setBallScanning(true); } }); }
-    static void showAfterScan() { MAIN.post(() -> { if (active != null && active.ball != null) active.expand(); }); }
+    static void hideForScan() { mainHandler().post(() -> { if (active != null) { active.collapseToBall(); if (active.ball != null) active.setBallScanning(true); } }); }
+    static void showAfterScan() { mainHandler().post(() -> { if (active != null && active.ball != null) active.expand(); }); }
     static boolean isExpanded() { return active != null && active.expanded; }
-    static void hideForRound() { MAIN.post(() -> { if (active != null) { active.collapseToBall(); if (active.ball != null) active.setBallScanning(false); } }); }
+    static void hideForRound() { mainHandler().post(() -> { if (active != null) { active.collapseToBall(); if (active.ball != null) active.setBallScanning(false); } }); }
 
     static void notifyObservedRound(final int round) {
-        MAIN.post(() -> {
+        mainHandler().post(() -> {
             if (round >= 1 && round <= 15) {
                 pendingRound = round;
                 if (active != null) active.refreshStripAndBallContent();
@@ -220,7 +308,7 @@ public class OverlayService extends Service {
         final String grabHint, final String progressText, final String banWarning,
         final String loadoutHint, final String fallbackAdvice, final String detail
     ) {
-        MAIN.post(() -> {
+        mainHandler().post(() -> {
             if (round >= 1 && round <= 15) pendingRound = round;
             if (tier >= 1 && tier <= 6) pendingTier = tier;
             if (prevTier >= 0 && prevTier <= 6) pendingPrevTier = prevTier;
@@ -235,13 +323,19 @@ public class OverlayService extends Service {
     }
 
     static void updateTelemetrySnapshot(final BattleCaptureState.TelemetrySnapshot snap) {
-        MAIN.post(() -> {
-            liveTelemetry = snap;
-            if (snap != null && snap.currentRound >= 1 && snap.currentRound <= 15) {
-                pendingRound = snap.currentRound;
-            }
-            if (active != null) active.refreshStripAndBallContent();
-        });
+        if (snap == null) {
+            mainHandler().post(() -> applyTelemetrySnapshotOnMain(null));
+            return;
+        }
+        MainHolder.TELEMETRY_THROTTLE.submit(snap);
+    }
+
+    private static void applyTelemetrySnapshotOnMain(final BattleCaptureState.TelemetrySnapshot snap) {
+        liveTelemetry = snap;
+        if (snap != null && snap.currentRound >= 1 && snap.currentRound <= 15) {
+            pendingRound = snap.currentRound;
+        }
+        if (active != null) active.refreshStripAndBallContent();
     }
 
     private static String cleanDerivedPrefix(String raw) {
@@ -254,11 +348,11 @@ public class OverlayService extends Service {
     }
 
     static void enterStripFromBridge(final boolean locked) {
-        MAIN.post(() -> { if (active != null) active.enterStrip(locked); });
+        mainHandler().post(() -> { if (active != null) active.enterStrip(locked); });
     }
 
     static void setPanelFocusableFromBridge(final boolean focusable) {
-        MAIN.post(() -> { if (active != null) active.setPanelFocusable(focusable); });
+        mainHandler().post(() -> { if (active != null) active.setPanelFocusable(focusable); });
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -304,6 +398,7 @@ public class OverlayService extends Service {
         super.onCreate();
         installProcessCrashGuard();
         active = this;
+        EnemyPortraitAtlas.preloadAsync(this);
         manager = (WindowManager) getSystemService(WINDOW_SERVICE);
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         alphaIndex = Math.max(0, Math.min(ALPHA_LEVELS.length - 1, sp.getInt("alphaIndex", 0)));
@@ -319,7 +414,7 @@ public class OverlayService extends Service {
         updateForegroundNotification();
         if (ball == null) {
             createBall();
-            MAIN.postDelayed(() -> {
+            mainHandler().postDelayed(() -> {
                 if (active == this && panel == null && ball != null) {
                     try { createPanel(); } catch (RuntimeException ignored) {}
                 }
@@ -425,7 +520,7 @@ public class OverlayService extends Service {
             final Runnable longPressTask = () -> {
                 if (!dragging) {
                     longPressed = true;
-                    MAIN.removeCallbacks(pendingSingleTap);
+                    mainHandler().removeCallbacks(pendingSingleTap);
                     ball.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                     enterStrip(false);
                 }
@@ -440,7 +535,7 @@ public class OverlayService extends Service {
                     startY = ballParams.y;
                     dragging = false;
                     longPressed = false;
-                    MAIN.postDelayed(longPressTask, longPressMs);
+                    mainHandler().postDelayed(longPressTask, longPressMs);
                     return true;
                 }
                 if (action == MotionEvent.ACTION_MOVE) {
@@ -448,7 +543,7 @@ public class OverlayService extends Service {
                     float dy = event.getRawY() - downY;
                     if (!dragging && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
                         dragging = true;
-                        MAIN.removeCallbacks(longPressTask);
+                        mainHandler().removeCallbacks(longPressTask);
                     }
                     if (dragging) {
                         ballParams.x = startX + Math.round(dx);
@@ -459,7 +554,7 @@ public class OverlayService extends Service {
                     return true;
                 }
                 if (action == MotionEvent.ACTION_UP) {
-                    MAIN.removeCallbacks(longPressTask);
+                    mainHandler().removeCallbacks(longPressTask);
                     if (longPressed) return true;
                     if (dragging) {
                         ballParams.x = ballParams.x + ballParams.width / 2 < usableWidth / 2 ? 0 : usableWidth - ballParams.width;
@@ -470,17 +565,17 @@ public class OverlayService extends Service {
                     long now = System.currentTimeMillis();
                     if (now - lastTapAt <= doubleTapWindowMs) {
                         lastTapAt = 0;
-                        MAIN.removeCallbacks(pendingSingleTap);
+                        mainHandler().removeCallbacks(pendingSingleTap);
                         ball.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                         triggerQuickCovenantScan();
                     } else {
                         lastTapAt = now;
-                        MAIN.postDelayed(pendingSingleTap, doubleTapWindowMs);
+                        mainHandler().postDelayed(pendingSingleTap, doubleTapWindowMs);
                     }
                     return true;
                 }
                 if (action == MotionEvent.ACTION_CANCEL) {
-                    MAIN.removeCallbacks(longPressTask);
+                    mainHandler().removeCallbacks(longPressTask);
                     return true;
                 }
                 return false;
@@ -919,7 +1014,7 @@ public class OverlayService extends Service {
 
         stripParams = params(preferredStripWidth(), WindowManager.LayoutParams.WRAP_CONTENT, false, true);
         positionStripDefault();
-        makeDraggable(strip, strip, stripParams, false, this::syncUnlockChipPosition);
+        makeDraggable(strip, strip, stripParams, false, this::onStripMoved);
 
         int unlockCol = isLiteTelemetryMode() ? 0xff22d3ee : 0xffffe600;
         unlockChip = new TextView(this);
@@ -1031,7 +1126,7 @@ public class OverlayService extends Service {
         if (web == null) return;
         String detailExpr = (detailJsonOrPrimitive == null || detailJsonOrPrimitive.isEmpty()) ? "null" : detailJsonOrPrimitive;
         String js = "window.dispatchEvent(new CustomEvent('" + eventName + "',{detail:" + detailExpr + "}));";
-        MAIN.post(() -> {
+        mainHandler().post(() -> {
             if (web != null) {
                 try { web.evaluateJavascript(js, null); } catch (RuntimeException ignored) {}
             }
@@ -1051,6 +1146,37 @@ public class OverlayService extends Service {
         lp.leftMargin = dp(3);
         host.addView(btn, lp);
         return btn;
+    }
+
+    private void recordStripLayoutCache() {
+        if (stripParams == null) return;
+        lastStripWidth = stripParams.width;
+        lastStripX = stripParams.x;
+        lastStripY = stripParams.y;
+        lastStripFlags = stripParams.flags;
+        lastStripAlpha = stripParams.alpha;
+    }
+
+    private void resetStripLayoutCache() {
+        lastStripWidth = Integer.MIN_VALUE;
+        lastStripX = Integer.MIN_VALUE;
+        lastStripY = Integer.MIN_VALUE;
+        lastStripFlags = Integer.MIN_VALUE;
+        lastStripAlpha = Float.NaN;
+    }
+
+    private boolean stripLayoutChanged() {
+        if (stripParams == null) return false;
+        return stripParams.width != lastStripWidth
+            || stripParams.x != lastStripX
+            || stripParams.y != lastStripY
+            || stripParams.flags != lastStripFlags
+            || Float.compare(stripParams.alpha, lastStripAlpha) != 0;
+    }
+
+    private void onStripMoved() {
+        recordStripLayoutCache();
+        syncUnlockChipPosition();
     }
 
     private void syncUnlockChipPosition() {
@@ -2110,10 +2236,13 @@ public class OverlayService extends Service {
         if (stripMode && strip.isAttachedToWindow()) {
             stripParams.width = preferredStripWidth();
             clamp(stripParams);
-            try {
-                manager.updateViewLayout(strip, stripParams);
-                syncUnlockChipPosition();
-            } catch (RuntimeException ignored) {}
+            if (stripLayoutChanged()) {
+                try {
+                    manager.updateViewLayout(strip, stripParams);
+                    recordStripLayoutCache();
+                    syncUnlockChipPosition();
+                } catch (RuntimeException ignored) {}
+            }
         }
     }
 
@@ -2135,6 +2264,7 @@ public class OverlayService extends Service {
             clamp(stripParams);
             if (!strip.isAttachedToWindow()) {
                 manager.addView(strip, stripParams);
+                recordStripLayoutCache();
             }
             setStripLocked(locked);
         } catch (RuntimeException error) { fail(); }
@@ -2150,10 +2280,14 @@ public class OverlayService extends Service {
         stripActions.setVisibility(locked ? View.GONE : View.VISIBLE);
         refreshStripAndBallContent();
         try {
-            if (strip.isAttachedToWindow()) manager.updateViewLayout(strip, stripParams);
-            syncUnlockChipPosition();
+            if (strip.isAttachedToWindow() && stripLayoutChanged()) {
+                manager.updateViewLayout(strip, stripParams);
+                recordStripLayoutCache();
+                syncUnlockChipPosition();
+            }
             if (locked) {
                 if (!unlockChip.isAttachedToWindow()) manager.addView(unlockChip, unlockParams);
+                syncUnlockChipPosition();
             } else if (unlockChip != null && unlockChip.isAttachedToWindow()) {
                 manager.removeView(unlockChip);
             }
@@ -2303,6 +2437,7 @@ public class OverlayService extends Service {
     private void removeStripViews() {
         if (unlockChip != null && unlockChip.isAttachedToWindow()) manager.removeView(unlockChip);
         if (strip != null && strip.isAttachedToWindow()) manager.removeView(strip);
+        resetStripLayoutCache();
         stripMode = false;
         stripLocked = false;
     }
@@ -2402,7 +2537,10 @@ public class OverlayService extends Service {
         }
         try {
             if (expanded && panel != null && panel.isAttachedToWindow()) manager.updateViewLayout(panel, panelParams);
-            if (stripMode && strip != null && strip.isAttachedToWindow()) manager.updateViewLayout(strip, stripParams);
+            if (stripMode && strip != null && strip.isAttachedToWindow()) {
+                manager.updateViewLayout(strip, stripParams);
+                recordStripLayoutCache();
+            }
             if (ball != null && ball.isAttachedToWindow()) manager.updateViewLayout(ball, ballParams);
         } catch (RuntimeException error) { fail(); }
     }
@@ -2410,6 +2548,8 @@ public class OverlayService extends Service {
     private void fail() { Toast.makeText(this, "悬浮窗已关闭，请检查悬浮窗与后台权限后重新开启", Toast.LENGTH_LONG).show(); dispose(); stopSelf(); }
 
     private void dispose() {
+        MainHolder.TELEMETRY_THROTTLE.reset();
+        resetStripLayoutCache();
         if (CovenantScanState.permissionPending()) CovenantScanState.set("cancelled", "助手已关闭，本次识别已取消");
         RoundScanState.stop("悬浮助手已关闭，回合同步已停止");
         stopService(new Intent(this, CovenantScanService.class));

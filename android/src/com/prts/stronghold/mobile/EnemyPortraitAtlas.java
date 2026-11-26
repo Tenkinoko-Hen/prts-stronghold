@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 敌怪实机头像图集解码器：
@@ -36,9 +37,24 @@ final class EnemyPortraitAtlas {
     private static Bitmap atlasBitmap;
     private static int columns = 16;
     private static int rows = 29;
-    private static boolean initialized = false;
+    private static volatile boolean initialized = false;
+    private static final AtomicBoolean preloadScheduled = new AtomicBoolean(false);
 
     private EnemyPortraitAtlas() {}
+
+    /** 在后台守护线程非阻塞预热敌怪图集，消除悬浮条首帧解码卡顿。 */
+    static void preloadAsync(Context context) {
+        if (context == null || initialized) return;
+        final Context app = context.getApplicationContext();
+        if (app == null || !preloadScheduled.compareAndSet(false, true)) return;
+        Thread worker = new Thread(() -> {
+            try {
+                ensureLoaded(app);
+            } catch (Throwable ignored) {}
+        }, "prts-portrait-preload");
+        worker.setDaemon(true);
+        worker.start();
+    }
 
     static String resolveBossEnemyId(String rawBossId) {
         if (rawBossId == null || rawBossId.isEmpty()) return "";
@@ -92,7 +108,7 @@ final class EnemyPortraitAtlas {
         }
     }
 
-    private static void ensureLoaded(Context context) {
+    private static synchronized void ensureLoaded(Context context) {
         if (initialized) return;
         initialized = true;
         try (InputStream in = context.getAssets().open("enemy_portraits.json")) {

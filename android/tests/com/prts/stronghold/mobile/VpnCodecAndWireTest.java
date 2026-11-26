@@ -721,6 +721,66 @@ public final class VpnCodecAndWireTest {
         }
         check(isActiveBond(BattleCaptureState.getSeatBonds(3), "炎", 3), "炎=3 activates");
 
+        // 11. 校验 StrongholdVpnService 有界入站队列保护与 OverlayService 100ms 合并节流
+        java.util.concurrent.ConcurrentLinkedQueue<byte[]> vpnQ = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        java.util.concurrent.atomic.AtomicInteger vpnQSize = new java.util.concurrent.atomic.AtomicInteger(0);
+        for (int i = 0; i < StrongholdVpnService.MAX_INBOUND_QUEUE; i++) {
+            boolean ok = StrongholdVpnService.offerBoundedPacket(vpnQ, vpnQSize, new byte[] { (byte) (i & 0xff) }, StrongholdVpnService.MAX_INBOUND_QUEUE);
+            check(ok, "bounded queue accepts up to MAX_INBOUND_QUEUE at " + i);
+        }
+        check(vpnQSize.get() == StrongholdVpnService.MAX_INBOUND_QUEUE, "queue size reaches MAX_INBOUND_QUEUE");
+        check(!StrongholdVpnService.offerBoundedPacket(vpnQ, vpnQSize, new byte[] { 99 }, StrongholdVpnService.MAX_INBOUND_QUEUE),
+            "bounded queue rejects packet beyond MAX_INBOUND_QUEUE");
+        check(vpnQSize.get() == StrongholdVpnService.MAX_INBOUND_QUEUE, "queue size stays capped after overflow drop");
+        byte[] head = StrongholdVpnService.pollBoundedPacket(vpnQ, vpnQSize);
+        check(head != null && head[0] == 0 && vpnQSize.get() == StrongholdVpnService.MAX_INBOUND_QUEUE - 1,
+            "pollBoundedPacket decrements size cleanly");
+        check(StrongholdVpnService.offerBoundedPacket(vpnQ, vpnQSize, new byte[] { 77 }, StrongholdVpnService.MAX_INBOUND_QUEUE),
+            "offer succeeds again once drained below cap");
+        StrongholdVpnService.clearBoundedQueue(vpnQ, vpnQSize);
+        check(vpnQ.isEmpty() && vpnQSize.get() == 0, "clearBoundedQueue resets queue and counter to 0");
+
+        // 100ms Coalescing Throttle 纯 JVM 状态机回归（首帧立即渲染 + 窗口内只保留最新 + 窗口尾补刷）
+        final long[] clock = { 0L };
+        final java.util.List<String> rendered = new java.util.ArrayList<>();
+        final java.util.List<Runnable> delayedTasks = new java.util.ArrayList<>();
+        final java.util.List<Long> delayedAt = new java.util.ArrayList<>();
+        OverlayService.TelemetryThrottle<String> throttle = new OverlayService.TelemetryThrottle<>(
+            OverlayService.TELEMETRY_THROTTLE_MS,
+            new OverlayService.ThrottleScheduler() {
+                @Override public long nowMs() { return clock[0]; }
+                @Override public void postImmediate(Runnable task) { task.run(); }
+                @Override public void postDelayed(Runnable task, long delayMs) {
+                    delayedTasks.add(task);
+                    delayedAt.add(clock[0] + delayMs);
+                }
+            },
+            rendered::add
+        );
+        throttle.submit("F1");
+        check(rendered.size() == 1 && "F1".equals(rendered.get(0)), "first frame renders immediately at t=0");
+        clock[0] = 15L;
+        throttle.submit("F2");
+        clock[0] = 45L;
+        throttle.submit("F3");
+        clock[0] = 90L;
+        throttle.submit("F4");
+        check(rendered.size() == 1 && delayedTasks.size() == 1 && delayedAt.get(0) == 100L,
+            "burst inside 100ms schedules single trailing flush at t=100");
+        clock[0] = 100L;
+        delayedTasks.get(0).run();
+        check(rendered.equals(Arrays.asList("F1", "F4")), "trailing flush delivers only latest snapshot F4: " + rendered);
+
+        // New window burst followed by leading-edge takeover before delayed task runs
+        clock[0] = 110L;
+        throttle.submit("F5");
+        check(rendered.size() == 2 && delayedTasks.size() == 2 && delayedAt.get(1) == 200L,
+            "F5 inside new window scheduled for t=200");
+        clock[0] = 215L;
+        throttle.submit("F6");
+        delayedTasks.get(1).run(); // stale delayed flush must be no-op
+        check(rendered.equals(Arrays.asList("F1", "F4", "F6")), "leading-edge F6 supersedes stale F5 without duplicate flush: " + rendered);
+
         System.out.println("VpnCodecAndWire: " + checks + " checks passed");
     }
 

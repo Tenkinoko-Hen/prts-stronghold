@@ -28,6 +28,7 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 单次 MediaProjection 授权复用引擎：
@@ -48,9 +49,11 @@ public class CovenantScanService extends Service {
     private TextRecognizer recognizer;
 
     private volatile boolean busy;
+    private volatile boolean pendingRescue;
     private volatile boolean finished;
     private volatile long lastFrame;
     private int captureWidth, captureHeight;
+    private final AtomicInteger inFlightOcrTasks = new AtomicInteger(0);
 
     private volatile String activeMode = "standby"; // covenant | round | standby
     private volatile String scanId = "";
@@ -202,6 +205,13 @@ public class CovenantScanService extends Service {
         else startForeground(2, notice);
     }
 
+    private void resetOcrPipelineOnModeSwitch() {
+        if (inFlightOcrTasks.get() <= 0) {
+            pendingRescue = false;
+            busy = false;
+        }
+    }
+
     private void activateCovenantMode(String nextScanId) {
         if (finished || projection == null) return;
         mainHandler.removeCallbacks(covenantTimeout);
@@ -209,6 +219,7 @@ public class CovenantScanService extends Service {
         scanId = nextScanId != null ? nextScanId : "";
         activeMode = "covenant";
         lastFrame = 0;
+        resetOcrPipelineOnModeSwitch();
         CovenantScanState.set("scanning", "请停留本局盟约总览（核心 + 附加盟约），马上完成…");
         OverlayService.hideForScan();
         updateNotification("covenant");
@@ -222,6 +233,7 @@ public class CovenantScanService extends Service {
         scanId = nextScanId != null ? nextScanId : "";
         activeMode = "round";
         lastFrame = 0;
+        resetOcrPipelineOnModeSwitch();
         roundDetector.reset();
         RoundScanState.set("capturing", "正在截取游戏画面用于框选回合数字…");
         OverlayService.hideForRound();
@@ -244,6 +256,7 @@ public class CovenantScanService extends Service {
         mainHandler.removeCallbacks(covenantTimeout);
         mainHandler.removeCallbacks(roundCalibrateTimeout);
         activeMode = "standby";
+        resetOcrPipelineOnModeSwitch();
         if (!finished && projection != null) {
             updateNotification("standby");
         }
@@ -342,117 +355,175 @@ public class CovenantScanService extends Service {
             bitmap = imageToBitmap(frame);
             if ("round".equals(mode)) {
                 processRoundFrame(bitmap);
+                bitmap = null;
                 return;
             }
             processCovenantFrame(bitmap);
-        } catch (RuntimeException error) {
-            if (bitmap != null && !busy) bitmap.recycle();
+            bitmap = null;
+        } catch (Throwable error) {
+            if (bitmap != null && inFlightOcrTasks.get() <= 0 && !busy) {
+                safeRecycle(bitmap);
+            }
         }
+    }
+
+    private static void safeRecycle(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled()) {
+            bitmap.recycle();
+        }
+    }
+
+    static boolean shouldRunLeftStripRescue(Map<String, Integer> found, String modeHint) {
+        return CovenantDetector.shouldRunLeftStripRescue(found, modeHint);
     }
 
     private void processCovenantFrame(Bitmap full) {
         final String currentScanId = scanId;
-        int fullW = full.getWidth();
-        int fullH = full.getHeight();
-        // 保留顶部左上角模式标题（极速模拟 / 规程等级15）与屏幕底缘小字，仅裁掉右侧地图预览区域
-        int cropX = 0;
-        int cropY = 0;
-        int cropW = Math.max(1, Math.min(fullW, Math.round(fullW * 0.78f)));
-        int cropH = Math.max(1, fullH);
-        Bitmap cropped = Bitmap.createBitmap(full, cropX, cropY, cropW, cropH);
-        final int[] fullPixels = new int[fullW * fullH];
-        full.getPixels(fullPixels, 0, fullW, 0, 0, fullW, fullH);
-        full.recycle();
+        Bitmap cropped = null;
+        Bitmap scaledBitmap = null;
+        boolean dispatched = false;
+        boolean incremented = false;
+        try {
+            if (finished || recognizer == null || !"covenant".equals(activeMode) || !CovenantScanState.matches(currentScanId)) {
+                return;
+            }
+            int fullW = full.getWidth();
+            int fullH = full.getHeight();
+            // 保留顶部左上角模式标题（极速模拟 / 规程等级15）与屏幕底缘小字，仅裁掉右侧地图预览区域
+            int cropX = 0;
+            int cropY = 0;
+            int cropW = Math.max(1, Math.min(fullW, Math.round(fullW * 0.78f)));
+            int cropH = Math.max(1, fullH);
+            cropped = Bitmap.createBitmap(full, cropX, cropY, cropW, cropH);
+            final int[] fullPixels = new int[fullW * fullH];
+            full.getPixels(fullPixels, 0, fullW, 0, 0, fullW, fullH);
+            safeRecycle(full);
+            full = null;
 
-        // 若裁剪图宽度偏小，轻度放大以保证中文小字（如单字「炎」）清晰
-        final float scale = cropW < 1400 ? Math.min(1.6f, 1400f / cropW) : 1.0f;
-        final Bitmap ocrBitmap;
-        if (scale > 1.05f) {
-            ocrBitmap = Bitmap.createScaledBitmap(cropped, Math.round(cropW * scale), Math.round(cropH * scale), true);
-            cropped.recycle();
-        } else {
-            ocrBitmap = cropped;
-        }
+            // 若裁剪图宽度偏小，轻度放大以保证中文小字（如单字「炎」）清晰
+            final float scale = cropW < 1400 ? Math.min(1.6f, 1400f / cropW) : 1.0f;
+            if (scale > 1.05f) {
+                scaledBitmap = Bitmap.createScaledBitmap(cropped, Math.round(cropW * scale), Math.round(cropH * scale), true);
+                safeRecycle(cropped);
+                cropped = null;
+            } else {
+                scaledBitmap = cropped;
+                cropped = null;
+            }
 
-        busy = true;
-        recognizer.process(InputImage.fromBitmap(ocrBitmap, 0))
-            .addOnSuccessListener(workerHandler::post, text -> {
-                try {
-                    if (finished || !"covenant".equals(activeMode) || !CovenantScanState.matches(currentScanId)) return;
-                    ExtractionResult primary = extractCovenantsFromText(text, fullPixels, fullW, fullH, cropX, cropY, scale);
-                    Map<String, Integer> found = primary.found;
-                    boolean quickReady = "quick".equals(primary.modeHint) && countCore(found) >= 8 && countSub(found) >= 10;
-                    // 如果核心盟约区域已识别出大部但缺了最左列单字「炎」/「灵巧」/「绝技」，对最左 24% 窄条做一次 2x 放大补扫
-                    if (!quickReady && found.size() >= 10 && (!found.containsKey("炎") || !found.containsKey("灵巧") || !found.containsKey("绝技"))) {
-                        runLeftStripRescue(fullPixels, fullW, fullH, found, primary.modeHint, currentScanId);
-                        return;
-                    }
-                    applyCovenantObservation(found, currentScanId, primary.modeHint);
-                } finally {
-                    ocrBitmap.recycle();
-                    if (!finished && !pendingRescue) busy = false;
-                }
-            })
-            .addOnFailureListener(workerHandler::post, error -> {
-                ocrBitmap.recycle();
-                busy = false;
-            });
-    }
-
-    private volatile boolean pendingRescue = false;
-
-    private static int countCore(Map<String, Integer> found) {
-        int c = 0;
-        for (String k : found.keySet()) {
-            if (CovenantDetector.CORE_NAMES.contains(k)) c++;
-        }
-        return c;
-    }
-
-    private static int countSub(Map<String, Integer> found) {
-        int c = 0;
-        for (String k : found.keySet()) {
-            if (CovenantDetector.SUB_NAMES.contains(k)) c++;
-        }
-        return c;
-    }
-
-    private void runLeftStripRescue(int[] fullPixels, int fullW, int fullH, Map<String, Integer> baseFound, String baseModeHint, String currentScanId) {
-        int leftW = Math.max(40, Math.round(fullW * 0.24f));
-        int leftY = 0;
-        int leftH = Math.max(40, fullH);
-        Bitmap stripRaw = Bitmap.createBitmap(fullPixels, leftY * fullW, fullW, leftW, leftH, Bitmap.Config.ARGB_8888);
-        int pad = 36;
-        float up = 2.0f;
-        Bitmap padded = Bitmap.createBitmap(Math.round(leftW * up) + pad * 2, Math.round(leftH * up), Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(padded);
-        canvas.drawColor(Color.rgb(18, 22, 24));
-        canvas.drawBitmap(stripRaw, null, new Rect(pad, 0, pad + Math.round(leftW * up), Math.round(leftH * up)), null);
-        stripRaw.recycle();
-
-        pendingRescue = true;
-        recognizer.process(InputImage.fromBitmap(padded, 0))
-            .addOnSuccessListener(workerHandler::post, rescueText -> {
-                try {
-                    if (!finished && "covenant".equals(activeMode) && CovenantScanState.matches(currentScanId)) {
-                        ExtractionResult extra = extractCovenantsFromText(rescueText, fullPixels, fullW, fullH, -Math.round(pad / up), leftY, up);
-                        for (Map.Entry<String, Integer> e : extra.found.entrySet()) {
-                            if (!baseFound.containsKey(e.getKey())) baseFound.put(e.getKey(), e.getValue());
+            final Bitmap ocrBitmap = scaledBitmap;
+            inFlightOcrTasks.incrementAndGet();
+            incremented = true;
+            busy = true;
+            recognizer.process(InputImage.fromBitmap(ocrBitmap, 0))
+                .addOnCompleteListener(workerHandler::post, task -> {
+                    boolean rescueDispatched = false;
+                    try {
+                        if (task.isSuccessful() && task.getResult() != null
+                            && !finished && "covenant".equals(activeMode) && CovenantScanState.matches(currentScanId)) {
+                            ExtractionResult primary = extractCovenantsFromText(
+                                task.getResult(), fullPixels, fullW, fullH, cropX, cropY, scale
+                            );
+                            Map<String, Integer> found = primary.found;
+                            if (shouldRunLeftStripRescue(found, primary.modeHint)) {
+                                rescueDispatched = runLeftStripRescue(fullPixels, fullW, fullH, found, primary.modeHint, currentScanId);
+                                if (rescueDispatched) return;
+                            }
+                            applyCovenantObservation(found, currentScanId, primary.modeHint);
                         }
-                        String modeHint = (baseModeHint != null && !baseModeHint.isEmpty()) ? baseModeHint : extra.modeHint;
-                        applyCovenantObservation(baseFound, currentScanId, modeHint);
+                    } catch (Throwable ignored) {
+                    } finally {
+                        safeRecycle(ocrBitmap);
+                        if (!rescueDispatched) {
+                            pendingRescue = false;
+                        }
+                        if (inFlightOcrTasks.decrementAndGet() <= 0 && !rescueDispatched) {
+                            busy = false;
+                        }
                     }
-                } finally {
-                    padded.recycle();
-                    pendingRescue = false;
-                    busy = false;
-                }
-            })
-            .addOnFailureListener(workerHandler::post, error -> {
-                padded.recycle();
+                });
+            scaledBitmap = null;
+            dispatched = true;
+        } catch (Throwable error) {
+            if (!dispatched) {
+                if (incremented) inFlightOcrTasks.decrementAndGet();
                 pendingRescue = false;
-                busy = false;
-            });
+                if (inFlightOcrTasks.get() <= 0) busy = false;
+            }
+        } finally {
+            safeRecycle(full);
+            safeRecycle(cropped);
+            if (!dispatched) safeRecycle(scaledBitmap);
+        }
+    }
+
+    private boolean runLeftStripRescue(
+        int[] fullPixels, int fullW, int fullH,
+        Map<String, Integer> baseFound, String baseModeHint, String currentScanId
+    ) {
+        Bitmap stripRaw = null;
+        Bitmap padded = null;
+        boolean dispatched = false;
+        boolean incremented = false;
+        try {
+            if (finished || recognizer == null || !"covenant".equals(activeMode) || !CovenantScanState.matches(currentScanId)) {
+                return false;
+            }
+            int leftW = Math.min(fullW, Math.max(40, Math.round(fullW * 0.24f)));
+            int leftY = 0;
+            int leftH = Math.max(1, fullH);
+            stripRaw = Bitmap.createBitmap(fullPixels, leftY * fullW, fullW, leftW, leftH, Bitmap.Config.ARGB_8888);
+            int pad = 36;
+            float up = 2.0f;
+            padded = Bitmap.createBitmap(Math.round(leftW * up) + pad * 2, Math.round(leftH * up), Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(padded);
+            canvas.drawColor(Color.rgb(18, 22, 24));
+            canvas.drawBitmap(stripRaw, null, new Rect(pad, 0, pad + Math.round(leftW * up), Math.round(leftH * up)), null);
+            safeRecycle(stripRaw);
+            stripRaw = null;
+
+            final Bitmap rescueBitmap = padded;
+            pendingRescue = true;
+            inFlightOcrTasks.incrementAndGet();
+            incremented = true;
+            busy = true;
+            recognizer.process(InputImage.fromBitmap(rescueBitmap, 0))
+                .addOnCompleteListener(workerHandler::post, task -> {
+                    try {
+                        if (task.isSuccessful() && task.getResult() != null
+                            && !finished && "covenant".equals(activeMode) && CovenantScanState.matches(currentScanId)) {
+                            ExtractionResult extra = extractCovenantsFromText(
+                                task.getResult(), fullPixels, fullW, fullH, -Math.round(pad / up), leftY, up
+                            );
+                            for (Map.Entry<String, Integer> e : extra.found.entrySet()) {
+                                if (!baseFound.containsKey(e.getKey())) baseFound.put(e.getKey(), e.getValue());
+                            }
+                            String modeHint = (baseModeHint != null && !baseModeHint.isEmpty()) ? baseModeHint : extra.modeHint;
+                            applyCovenantObservation(baseFound, currentScanId, modeHint);
+                        }
+                    } catch (Throwable ignored) {
+                    } finally {
+                        safeRecycle(rescueBitmap);
+                        pendingRescue = false;
+                        if (inFlightOcrTasks.decrementAndGet() <= 0) {
+                            busy = false;
+                        }
+                    }
+                });
+            padded = null;
+            dispatched = true;
+            return true;
+        } catch (Throwable error) {
+            if (!dispatched) {
+                if (incremented) inFlightOcrTasks.decrementAndGet();
+                pendingRescue = false;
+                if (inFlightOcrTasks.get() <= 0) busy = false;
+            }
+            return false;
+        } finally {
+            safeRecycle(stripRaw);
+            if (!dispatched) safeRecycle(padded);
+        }
     }
 
     private void applyCovenantObservation(Map<String, Integer> found, String currentScanId, String modeHint) {
@@ -634,43 +705,82 @@ public class CovenantScanService extends Service {
         if (RoundScanState.is("capturing")) {
             mainHandler.removeCallbacks(roundCalibrateTimeout);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 78, bytes);
-            bitmap.recycle();
+            try {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 78, bytes);
+            } finally {
+                safeRecycle(bitmap);
+            }
             RoundScanState.calibrate(Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP));
             mainHandler.post(OverlayService::showAfterScan);
             return;
         }
         double[] region = RoundScanState.region();
-        if (region == null) { bitmap.recycle(); return; }
+        if (region == null || recognizer == null || finished) { safeRecycle(bitmap); return; }
         final String currentScanId = scanId;
         final long generation = RoundScanState.generation();
         if (roundGeneration != generation) { roundDetector.reset(); roundGeneration = generation; }
-        int x = Math.max(0, Math.min(bitmap.getWidth() - 1, (int) (region[0] * bitmap.getWidth())));
-        int y = Math.max(0, Math.min(bitmap.getHeight() - 1, (int) (region[1] * bitmap.getHeight())));
-        int width = Math.max(1, Math.min(bitmap.getWidth() - x, (int) ((region[2] - region[0]) * bitmap.getWidth())));
-        int height = Math.max(1, Math.min(bitmap.getHeight() - y, (int) ((region[3] - region[1]) * bitmap.getHeight())));
-        Bitmap cropped = Bitmap.createBitmap(bitmap, x, y, width, height);
-        if (cropped != bitmap) bitmap.recycle();
-        float scale = Math.min(4f, 120f / height);
-        Bitmap input = Bitmap.createScaledBitmap(cropped, Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), true);
-        if (input != cropped) cropped.recycle();
+        Bitmap cropped = null;
+        Bitmap input = null;
+        boolean dispatched = false;
+        boolean incremented = false;
+        try {
+            int x = Math.max(0, Math.min(bitmap.getWidth() - 1, (int) (region[0] * bitmap.getWidth())));
+            int y = Math.max(0, Math.min(bitmap.getHeight() - 1, (int) (region[1] * bitmap.getHeight())));
+            int width = Math.max(1, Math.min(bitmap.getWidth() - x, (int) ((region[2] - region[0]) * bitmap.getWidth())));
+            int height = Math.max(1, Math.min(bitmap.getHeight() - y, (int) ((region[3] - region[1]) * bitmap.getHeight())));
+            cropped = Bitmap.createBitmap(bitmap, x, y, width, height);
+            if (cropped != bitmap) {
+                safeRecycle(bitmap);
+                bitmap = null;
+            }
+            float scale = Math.min(4f, 120f / height);
+            input = Bitmap.createScaledBitmap(cropped, Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), true);
+            if (input != cropped) {
+                safeRecycle(cropped);
+                cropped = null;
+            }
 
-        busy = true;
-        recognizer.process(InputImage.fromBitmap(input, 0))
-            .addOnSuccessListener(workerHandler::post, text -> {
-                if (!finished && "round".equals(activeMode) && RoundScanState.matches(currentScanId)
-                    && !MainActivity.isVisible() && RoundScanState.generation() == generation) {
-                    int observed = roundDetector.observe(text.getText(), SystemClock.elapsedRealtime());
-                    if (RoundScanState.observe(observed, generation)) {
-                        SessionBridge.observe(this, observed);
-                        OverlayService.notifyObservedRound(observed);
+            final Bitmap roundBitmap = input;
+            inFlightOcrTasks.incrementAndGet();
+            incremented = true;
+            busy = true;
+            recognizer.process(InputImage.fromBitmap(roundBitmap, 0))
+                .addOnCompleteListener(workerHandler::post, task -> {
+                    try {
+                        if (task.isSuccessful() && task.getResult() != null
+                            && !finished && "round".equals(activeMode) && RoundScanState.matches(currentScanId)
+                            && !MainActivity.isVisible() && RoundScanState.generation() == generation) {
+                            int observed = roundDetector.observe(task.getResult().getText(), SystemClock.elapsedRealtime());
+                            if (RoundScanState.observe(observed, generation)) {
+                                SessionBridge.observe(this, observed);
+                                OverlayService.notifyObservedRound(observed);
+                            }
+                        } else {
+                            roundDetector.reset();
+                        }
+                    } catch (Throwable ignored) {
+                        roundDetector.reset();
+                    } finally {
+                        safeRecycle(roundBitmap);
+                        if (inFlightOcrTasks.decrementAndGet() <= 0) {
+                            busy = false;
+                        }
                     }
-                } else {
-                    roundDetector.reset();
-                }
-            })
-            .addOnFailureListener(workerHandler::post, error -> roundDetector.reset())
-            .addOnCompleteListener(workerHandler::post, task -> { input.recycle(); busy = false; });
+                });
+            input = null;
+            cropped = null;
+            bitmap = null;
+            dispatched = true;
+        } catch (Throwable error) {
+            if (!dispatched) {
+                if (incremented) inFlightOcrTasks.decrementAndGet();
+                if (inFlightOcrTasks.get() <= 0) busy = false;
+            }
+        } finally {
+            safeRecycle(bitmap);
+            safeRecycle(cropped);
+            if (!dispatched) safeRecycle(input);
+        }
     }
 
     private void shutdown(String message, boolean error) {
@@ -702,6 +812,8 @@ public class CovenantScanService extends Service {
     private void release() {
         mainHandler.removeCallbacks(covenantTimeout);
         mainHandler.removeCallbacks(roundCalibrateTimeout);
+        pendingRescue = false;
+        busy = false;
         if (display != null) { display.release(); display = null; }
         if (reader != null) { reader.close(); reader = null; }
         if (projection != null) { MediaProjection old = projection; projection = null; old.stop(); }

@@ -1,7 +1,151 @@
 // 青逝痕 Tenkinoko 制作
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { readBattleReport } from './battleReportData';
+import { mapBannedBondsToCovenants } from './covenantBonds';
 import type { CovenantOcrState, NpcapInstallState, ReportFeed, ReportStatus } from './battleReports';
+
+export interface LightBattleSyncMeta {
+  match: number | null;
+  current: number | null;
+  latestRound: number | null;
+  mode: string;
+  bannedCovenants: string[];
+  hasMatchActivity: boolean;
+}
+
+export interface PacketSyncDecision {
+  matchKey: string;
+  packetBans: string[];
+  hasPacketBans: boolean;
+  hasDownlink: boolean;
+  liveRound: number | null;
+  liveRoundConfirmed: boolean;
+  shouldPauseAutoPoll: boolean;
+}
+
+const asObject = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+export function readLightBattleSyncMeta(rawReport: unknown): LightBattleSyncMeta | null {
+  const root = asObject(rawReport);
+  const players = asObject(root?.players);
+  const rounds = asObject(root?.rounds);
+  if (!root || !players || !rounds) return null;
+
+  const capture = asObject(root.capture);
+  const config = asObject(root.battle_config);
+  const match = typeof capture?.match === 'number' && Number.isFinite(capture.match) && capture.match >= 0
+    ? capture.match
+    : null;
+  const rawRound = capture?.round;
+  const current = typeof rawRound === 'number' && Number.isInteger(rawRound) && rawRound >= 1 && rawRound <= 15
+    ? rawRound
+    : null;
+  const mode = typeof config?.mode_id === 'string' ? config.mode_id.slice(0, 200) : '';
+  const bannedCovenants = mapBannedBondsToCovenants(config?.banned_bonds);
+
+  let latestRound: number | null = null;
+  for (let r = 15; r >= 1; r--) {
+    if (asObject(rounds[r])) {
+      latestRound = r;
+      break;
+    }
+  }
+
+  const hasSpawnPlan = Array.isArray(root.spawn_plan) && root.spawn_plan.some(item => {
+    const row = asObject(item);
+    return row !== null
+      && typeof row.round === 'number' && Number.isInteger(row.round) && row.round >= 1 && row.round <= 15
+      && typeof row.enemy_id === 'string' && row.enemy_id.length > 0;
+  });
+  const lineups = asObject(root.lineups);
+  const hasLineups = lineups !== null && [1, 2, 3, 4].some(s => asObject(lineups[s]) !== null);
+  const hasDeckPool = asObject(root.deck_pool) !== null;
+  const telemetry = asObject(root.telemetry);
+  const telemetryRounds = asObject(telemetry?.rounds);
+  const hasTelemetry = telemetry !== null && (
+    (Array.isArray(telemetry.operators) && telemetry.operators.some(op => Boolean(asObject(op)?.char_id)))
+    || (Array.isArray(telemetry.stage_devices) && telemetry.stage_devices.some(d => Boolean(asObject(d)?.unit_id)))
+    || asObject(telemetry.enemy_pool) !== null
+    || (telemetryRounds !== null && Object.keys(telemetryRounds).length > 0)
+  );
+
+  if (
+    latestRound === null
+    && !hasSpawnPlan
+    && !mode
+    && bannedCovenants.length === 0
+    && !hasTelemetry
+    && !hasLineups
+    && !hasDeckPool
+  ) {
+    return null;
+  }
+
+  const hasMatchActivity = current !== null
+    || latestRound !== null
+    || bannedCovenants.length > 0
+    || hasLineups
+    || hasTelemetry;
+
+  return {
+    match,
+    current,
+    latestRound,
+    mode,
+    bannedCovenants,
+    hasMatchActivity,
+  };
+}
+
+export function resolvePacketSyncSnapshot(
+  feed: ReportFeed,
+  wasAutoPollPaused = false,
+  previousMatchKey = '',
+): PacketSyncDecision {
+  let matchKey = '';
+  let packetBans: string[] = [];
+  let hasDownlink = false;
+  let liveRound: number | null = null;
+  let liveRoundConfirmed = false;
+  let hasMatchActivity = false;
+
+  if (feed.report) {
+    const meta = readLightBattleSyncMeta(feed.report);
+    if (meta) {
+      matchKey = `${feed.reportRun}:${meta.match ?? 'live'}`;
+      packetBans = meta.bannedCovenants;
+      hasDownlink = meta.current !== null || Boolean(meta.mode) || packetBans.length > 0;
+      hasMatchActivity = meta.hasMatchActivity;
+      if (meta.current !== null && meta.current >= 1 && meta.current <= 15) {
+        liveRound = meta.current;
+        liveRoundConfirmed = true;
+      } else if (meta.latestRound !== null && meta.latestRound >= 1 && meta.latestRound <= 15) {
+        liveRound = meta.latestRound;
+      }
+    }
+  }
+
+  const hasPacketBans = Boolean(matchKey && packetBans.length > 0);
+  const sameMatchKeptPaused = Boolean(matchKey && wasAutoPollPaused && previousMatchKey === matchKey);
+  const shouldPauseAutoPoll = Boolean(
+    matchKey && (
+      hasPacketBans
+      || (liveRound !== null && liveRound >= 1)
+      || (hasDownlink && hasMatchActivity)
+      || sameMatchKeptPaused
+    ),
+  );
+
+  return {
+    matchKey,
+    packetBans,
+    hasPacketBans,
+    hasDownlink,
+    liveRound,
+    liveRoundConfirmed,
+    shouldPauseAutoPoll,
+  };
+}
 
 export interface BattleBanSyncState {
   available: boolean;
@@ -46,36 +190,26 @@ export function useBattleBanSync(
   const appliedPacketRef = useRef('');
   const appliedOcrRef = useRef('');
   const packetActiveRef = useRef(false);
+  const autoPollPausedRef = useRef(false);
+  const lastPacketMatchKeyRef = useRef('');
   onSyncRef.current = onSync;
 
   const acceptPacket = useCallback((feed: ReportFeed) => {
-    let matchKey = '';
-    let packetBans: string[] = [];
-    let hasDownlink = false;
-    let liveRound: number | null = null;
-    let liveRoundConfirmed = false;
-    if (feed.report) {
-      try {
-        const parsed = readBattleReport(feed.report);
-        matchKey = `${feed.reportRun}:${parsed.match ?? 'live'}`;
-        packetBans = parsed.bannedCovenants;
-        hasDownlink = parsed.current !== null || Boolean(parsed.mode) || packetBans.length > 0;
-        if (parsed.current !== null && parsed.current >= 1 && parsed.current <= 15) {
-          liveRound = parsed.current;
-          liveRoundConfirmed = true;
-        } else {
-          const latest = parsed.rounds.at(-1)?.number ?? null;
-          if (latest !== null && latest >= 1 && latest <= 15) liveRound = latest;
-        }
-      } catch {
-        // Ignore unreadable snapshots; report page handles incompatible status.
-      }
-    }
-
-    const hasPacketBans = Boolean(matchKey && packetBans.length > 0);
-    if (packetActiveRef.current !== hasPacketBans) {
-      packetActiveRef.current = hasPacketBans;
-      void ocrApi?.setAutoPoll(!hasPacketBans);
+    const decision = resolvePacketSyncSnapshot(feed, autoPollPausedRef.current, lastPacketMatchKeyRef.current);
+    const {
+      matchKey,
+      packetBans,
+      hasPacketBans,
+      hasDownlink,
+      liveRound,
+      liveRoundConfirmed,
+      shouldPauseAutoPoll,
+    } = decision;
+    lastPacketMatchKeyRef.current = matchKey;
+    packetActiveRef.current = hasPacketBans;
+    if (autoPollPausedRef.current !== shouldPauseAutoPoll) {
+      autoPollPausedRef.current = shouldPauseAutoPoll;
+      void ocrApi?.setAutoPoll(!shouldPauseAutoPoll);
     }
 
     setState(prev => ({
@@ -174,6 +308,8 @@ export function useBattleBanSync(
     appliedPacketRef.current = '';
     appliedOcrRef.current = '';
     packetActiveRef.current = false;
+    autoPollPausedRef.current = false;
+    lastPacketMatchKeyRef.current = '';
     void ocrApi?.reset().catch(() => {});
     void ocrApi?.setAutoPoll(true).catch(() => {});
     setState(prev => ({

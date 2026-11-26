@@ -346,6 +346,8 @@ final class BattleCaptureState {
         messageCount++;
         long now = System.currentTimeMillis();
         lastUpdateAt = now;
+        int prevRound = currentRound;
+        boolean shouldPushOverlay = true;
 
         if ("phase".equals(ev.kind)) {
             boolean newSeed = ev.messageId == 300 && ev.stageSeed != 0 && ev.stageSeed != stageSeed;
@@ -468,7 +470,7 @@ final class BattleCaptureState {
             }
             updateShopLevels(ev);
         } else if ("runtime".equals(ev.kind)) {
-            updateRuntimeMaps(ev, now);
+            shouldPushOverlay = updateRuntimeMaps(ev, now);
         } else if ("spawn_plan".equals(ev.kind)) {
             if (currentRound > 1) {
                 boolean hasR1 = false;
@@ -554,27 +556,34 @@ final class BattleCaptureState {
             }
         }
 
-        if (currentRound > 0) {
+        if (currentRound > 0 && currentRound != prevRound) {
             try { OverlayService.notifyObservedRound(currentRound); } catch (Throwable ignored) {}
         }
-        pushToOverlay();
+        if (shouldPushOverlay) {
+            pushToOverlay();
+        }
     }
 
-    private static void updateShopLevels(StrongholdWireDecoder.Event ev) {
+    private static boolean updateShopLevels(StrongholdWireDecoder.Event ev) {
         long now = System.currentTimeMillis();
         int r = ev.round > 0 ? ev.round : Math.max(1, currentRound);
+        boolean changed = false;
         for (Map.Entry<Integer, Integer> e : ev.shopLevelBySeat.entrySet()) {
             int s = e.getKey();
             int lv = e.getValue() != null ? e.getValue() : 0;
             if (s >= 1 && s <= 4 && lv >= 1 && lv <= 6) {
                 Integer prev = shopLevelBySeat.put(s, lv);
+                if (!Integer.valueOf(lv).equals(prev)) {
+                    changed = true;
+                }
                 if ((prev != null && lv > prev) || (prev == null && lv >= 2)) {
                     String fromTxt = prev != null ? (prev + "本 → " + lv + "本") : ("升至 " + lv + "本");
                     appendLog("tier:" + s + ":" + lv, now, r, "tier", s, 0, "", lv, fromTxt);
                 }
             }
         }
-        updateSeatBonds(ev);
+        if (updateSeatBonds(ev)) changed = true;
+        return changed;
     }
 
     private static List<String> lookupUnitBonds(Map<String, List<String>> ownMap, String chessId, String charId) {
@@ -618,13 +627,25 @@ final class BattleCaptureState {
         return !opNorm.isEmpty() ? opNorm : ("#" + ident);
     }
 
-    private static void updateSeatBonds(StrongholdWireDecoder.Event ev) {
+    private static boolean bondListsEqual(List<BondStatus> a, List<BondStatus> b) {
+        if (a == b) return true;
+        if (a == null || b == null || a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            BondStatus x = a.get(i);
+            BondStatus y = b.get(i);
+            if (x.count != y.count || x.active != y.active || !x.name.equals(y.name)) return false;
+        }
+        return true;
+    }
+
+    private static boolean updateSeatBonds(StrongholdWireDecoder.Event ev) {
         if (ev.deployedPiecesBySeat.isEmpty()
             && ev.benchPiecesBySeat.isEmpty()
             && ev.deployedChessBySeat.isEmpty()
             && ev.equipIdentsBySeat.isEmpty()) {
-            return;
+            return false;
         }
+        boolean changed = false;
         for (int s = 1; s <= 4; s++) {
             boolean hasStructured = ev.deployedPiecesBySeat.containsKey(s) || ev.benchPiecesBySeat.containsKey(s);
             List<StrongholdWireDecoder.SeatPiece> deployedPieces = ev.deployedPiecesBySeat.get(s);
@@ -750,15 +771,18 @@ final class BattleCaptureState {
                 int cmp = Integer.compare(b.count, a.count);
                 return cmp != 0 ? cmp : a.name.compareTo(b.name);
             });
-            activeBondsBySeat.put(s, list);
+            List<BondStatus> prevList = activeBondsBySeat.put(s, list);
+            if (!bondListsEqual(prevList, list)) changed = true;
         }
+        return changed;
     }
 
-    private static void updateRuntimeMaps(StrongholdWireDecoder.Event ev, long now) {
-        updateShopLevels(ev);
+    private static boolean updateRuntimeMaps(StrongholdWireDecoder.Event ev, long now) {
+        boolean changed = updateShopLevels(ev);
         for (Map.Entry<Integer, Integer> e : ev.hpBySeat.entrySet()) {
             if (e.getKey() >= 1 && e.getKey() <= 4 && e.getValue() != null) {
-                hpBySeat.put(e.getKey(), e.getValue());
+                Integer prevHp = hpBySeat.put(e.getKey(), e.getValue());
+                if (!e.getValue().equals(prevHp)) changed = true;
             }
         }
         boolean anyDmg = false;
@@ -767,14 +791,24 @@ final class BattleCaptureState {
             int dmg = e.getValue() != null ? e.getValue() : 0;
             if (s >= 1 && s <= 4 && dmg > 0) {
                 Integer prev = bossDamageBySeat.get(s);
-                if (prev == null || dmg >= prev) bossDamageBySeat.put(s, dmg);
+                if (prev == null || dmg > prev) {
+                    bossDamageBySeat.put(s, dmg);
+                    changed = true;
+                }
                 anyDmg = true;
             }
         }
         if (anyDmg) {
-            if (bossStartMs == 0) bossStartMs = now;
+            long prevSec = bossStartMs > 0 ? (bossLastMs - bossStartMs) / 1000L : -1L;
+            if (bossStartMs == 0) {
+                bossStartMs = now;
+                changed = true;
+            }
             bossLastMs = now;
+            long curSec = (bossLastMs - bossStartMs) / 1000L;
+            if (curSec != prevSec) changed = true;
         }
+        return changed;
     }
 
     private static void mergeSpawns(List<StrongholdWireDecoder.SpawnPreview> previews) {

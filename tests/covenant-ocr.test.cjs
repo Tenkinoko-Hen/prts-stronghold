@@ -6,10 +6,13 @@ const {
   CORE_COVENANTS,
   SUB_COVENANTS,
   COVENANT_NAMES,
+  PS_WINRT_OCR_SCRIPT,
   classifyBadgeBgra,
+  looksLikeCovenantScreen,
   evaluateOcrLines,
   probeBottomSixSubBadges,
   mergeCovenantScanResult,
+  createWinRtOcrRunner,
   installCovenantOcr,
 } = require('../electron/covenant-ocr.cjs');
 
@@ -274,4 +277,176 @@ test('installCovenantOcr accumulates solo two-screen scans, prompts to scroll, a
   } finally {
     ocr.dispose();
   }
+});
+
+function downsampleBgra(srcBgra, srcW, srcH, dstW, dstH) {
+  const out = Buffer.alloc(dstW * dstH * 4, 0);
+  for (let y = 0; y < dstH; y++) {
+    const sy = Math.min(srcH - 1, Math.floor((y + 0.5) * srcH / dstH));
+    for (let x = 0; x < dstW; x++) {
+      const sx = Math.min(srcW - 1, Math.floor((x + 0.5) * srcW / dstW));
+      const sOff = (sy * srcW + sx) * 4;
+      const dOff = (y * dstW + x) * 4;
+      out[dOff] = srcBgra[sOff];
+      out[dOff + 1] = srcBgra[sOff + 1];
+      out[dOff + 2] = srcBgra[sOff + 2];
+      out[dOff + 3] = srcBgra[sOff + 3];
+    }
+  }
+  return out;
+}
+
+test('looksLikeCovenantScreen supports 320x180 thumbnail gating and two-stage capture skips 1080p on non-covenant frames', async () => {
+  const std = buildStandardScreen(new Set(['萨尔贡', '维多利亚']));
+  const thumb320 = downsampleBgra(std.bgra, std.width, std.height, 320, 180);
+  const thumb240 = downsampleBgra(std.bgra, std.width, std.height, 240, 135);
+  const thumb480 = downsampleBgra(std.bgra, std.width, std.height, 480, 270);
+  const dark320 = createDarkBgra(320, 180);
+
+  assert.equal(looksLikeCovenantScreen(thumb320, 320, 180).match, true);
+  assert.equal(looksLikeCovenantScreen(thumb240, 240, 135).match, true);
+  assert.equal(looksLikeCovenantScreen(thumb480, 480, 270).match, true);
+  assert.equal(looksLikeCovenantScreen(std.bgra, std.width, std.height).match, true);
+  assert.equal(looksLikeCovenantScreen(dark320, 320, 180).match, false);
+  assert.equal(looksLikeCovenantScreen(thumb240, 239, 135).match, false);
+  assert.equal(looksLikeCovenantScreen(createDarkBgra(200, 120), 200, 120).match, false);
+
+  const captureRequests = [];
+  let recognizeCalls = 0;
+  let activeIsCovenant = false;
+
+  const fakeMain = new EventEmitter();
+  fakeMain.isDestroyed = () => false;
+  fakeMain.getMediaSourceId = () => 'window:99:0';
+  fakeMain.webContents = {
+    mainFrame: { url: 'prts://app/' },
+    send: () => {},
+  };
+  const handlers = new Map();
+
+  const ocr = installCovenantOcr({
+    mainWindow: fakeMain,
+    ipcMain: {
+      handle: (name, fn) => handlers.set(name, fn),
+      removeHandler: (name) => handlers.delete(name),
+    },
+    desktopCapturer: {
+      getSources: async ({ thumbnailSize }) => {
+        captureRequests.push(thumbnailSize);
+        const w = thumbnailSize.width;
+        const h = thumbnailSize.height;
+        const bgra = activeIsCovenant
+          ? (w === std.width && h === std.height ? std.bgra : downsampleBgra(std.bgra, std.width, std.height, w, h))
+          : createDarkBgra(w, h);
+        return [{
+          id: 'window:2:0',
+          name: '明日方舟',
+          thumbnail: {
+            isEmpty: () => false,
+            getSize: () => ({ width: w, height: h }),
+            toBitmap: () => bgra,
+            toPNG: () => Buffer.from('hd'),
+          },
+        }];
+      },
+    },
+    clipboard: { readImage: () => ({ isEmpty: () => true }) },
+    globalShortcut: null,
+    ocrRunner: {
+      recognizePng: async () => {
+        recognizeCalls++;
+        return { lines: std.lines };
+      },
+      stop: () => {},
+    },
+    autoPollMs: 60_000,
+  });
+
+  try {
+    // 1. Non-covenant frame: only 320x180 requested, 1920x1080 & WinRT OCR skipped
+    await ocr.pollOnce();
+    assert.deepEqual(captureRequests, [{ width: 320, height: 180 }]);
+    assert.equal(recognizeCalls, 0);
+
+    // 2. Covenant frame appears: 320x180 gate hits -> upgrades to 1920x1080 -> 1 OCR call
+    activeIsCovenant = true;
+    await ocr.pollOnce();
+    assert.deepEqual(captureRequests, [
+      { width: 320, height: 180 },
+      { width: 320, height: 180 },
+      { width: 1920, height: 1080 },
+    ]);
+    assert.equal(recognizeCalls, 1);
+
+    // 3. Unchanged screen on next poll: only 320x180 requested, skips 1920x1080 & OCR
+    await ocr.pollOnce();
+    assert.deepEqual(captureRequests.slice(3), [{ width: 320, height: 180 }]);
+    assert.equal(recognizeCalls, 1);
+
+    // 4. Manual window scan goes directly to 1920x1080
+    const senderEvent = { sender: fakeMain.webContents, senderFrame: fakeMain.webContents.mainFrame };
+    await handlers.get('covenant-ocr-window')(senderEvent);
+    assert.deepEqual(captureRequests.slice(4), [{ width: 1920, height: 1080 }]);
+    assert.equal(recognizeCalls, 2);
+  } finally {
+    ocr.dispose();
+  }
+});
+
+test('createWinRtOcrRunner serializes concurrent recognizePng requests and rejects all on stop()', async () => {
+  const written = [];
+  let killed = 0;
+  let fakeProc = null;
+
+  const runner = createWinRtOcrRunner({
+    timeoutMs: 5_000,
+    spawnFn: () => {
+      fakeProc = new EventEmitter();
+      fakeProc.stdout = new EventEmitter();
+      fakeProc.stdout.setEncoding = () => {};
+      fakeProc.stdin = new EventEmitter();
+      fakeProc.stdin.write = (line) => {
+        written.push(JSON.parse(line.trim()));
+        return true;
+      };
+      fakeProc.kill = () => {
+        killed++;
+      };
+      return fakeProc;
+    },
+  });
+
+  // 1. Concurrent calls queue serially instead of clobbering pending
+  const p1 = runner.recognizePng(Buffer.from('img1'));
+  const p2 = runner.recognizePng(Buffer.from('img2'));
+  const p3 = runner.recognizePng(Buffer.from('img3'));
+
+  assert.equal(written.length, 1);
+  assert.equal(Buffer.from(written[0].image, 'base64').toString('utf8'), 'img1');
+
+  // Mismatched reqId line must be ignored
+  fakeProc.stdout.emit('data', JSON.stringify({ id: 'wrong-id', lines: [] }) + '\n');
+  assert.equal(written.length, 1);
+
+  // Resolve req1 -> dispatches req2
+  fakeProc.stdout.emit('data', JSON.stringify({ id: written[0].id, lines: [[{ t: '炎', x: 1, y: 1, w: 10, h: 10 }]] }) + '\n');
+  const r1 = await p1;
+  assert.equal(r1.lines[0][0].t, '炎');
+  assert.equal(written.length, 2);
+  assert.equal(Buffer.from(written[1].image, 'base64').toString('utf8'), 'img2');
+
+  // Calling stop() rejects both active (p2) and queued (p3) promises cleanly
+  runner.stop();
+  assert.equal(killed, 1);
+  await assert.rejects(p2, /OCR 进程已停止/);
+  await assert.rejects(p3, /OCR 进程已停止/);
+});
+
+test('PS_WINRT_OCR_SCRIPT disposes SoftwareBitmap/IDisposable decoder, encodes BMP, crops 0.80, and smart-skips rescue', () => {
+  assert.match(PS_WINRT_OCR_SCRIPT, /\$soft\s*=\s*\$null[\s\S]*try[\s\S]*finally[\s\S]*if \(\$soft\) \{ \$soft\.Dispose\(\) \}/);
+  assert.match(PS_WINRT_OCR_SCRIPT, /\$decoder\s*-is\s*\[System\.IDisposable\]/);
+  assert.match(PS_WINRT_OCR_SCRIPT, /ImageFormat\]::Bmp/);
+  assert.doesNotMatch(PS_WINRT_OCR_SCRIPT, /ImageFormat\]::Png/);
+  assert.match(PS_WINRT_OCR_SCRIPT, /\$src\.Width\s*\*\s*0\.80/);
+  assert.match(PS_WINRT_OCR_SCRIPT, /\$skipLeftRescue\s*=/);
 });

@@ -51,8 +51,10 @@ function Run-OcrOnBitmap([System.Drawing.Bitmap]$bmp, [double]$invScale, [double
   $ms = [System.IO.MemoryStream]::new()
   $ras = [Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
   $writer = [Windows.Storage.Streams.DataWriter]::new($ras)
+  $decoder = $null
+  $soft = $null
   try {
-    $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Bmp)
     $writer.WriteBytes($ms.ToArray())
     $null = Await ($writer.StoreAsync()) ([uint32])
     $ras.Seek(0)
@@ -75,6 +77,8 @@ function Run-OcrOnBitmap([System.Drawing.Bitmap]$bmp, [double]$invScale, [double
     }
     return $out
   } finally {
+    if ($soft) { $soft.Dispose() }
+    if ($decoder -is [System.IDisposable]) { $decoder.Dispose() }
     $writer.Dispose()
     $ras.Dispose()
     $ms.Dispose()
@@ -91,41 +95,68 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
     $raw = [Convert]::FromBase64String([string]$req.image)
     $inStream = [System.IO.MemoryStream]::new($raw)
     $src = [System.Drawing.Bitmap]::new($inStream)
+    $scaled = $null
+    $leftBmp = $null
+    $g = $null
+    $lg = $null
     try {
+      # 裁掉右侧 20% 无效地图预览区，仅保留左侧 0..80% 宽度与全高度（含顶部模式标题）
+      $mainCropW = [Math]::Max(1, [int]($src.Width * 0.80))
       $scale = if ($src.Width -lt 1800) { 2.0 } else { 1.0 }
-      $scaled = if ($scale -gt 1.0) {
-        $b = [System.Drawing.Bitmap]::new([int]($src.Width * $scale), [int]($src.Height * $scale))
-        $g = [System.Drawing.Graphics]::FromImage($b)
-        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $g.DrawImage($src, 0, 0, $b.Width, $b.Height)
-        $g.Dispose()
-        $b
-      } else { $src }
+      $scaled = [System.Drawing.Bitmap]::new([int]($mainCropW * $scale), [int]($src.Height * $scale))
+      $g = [System.Drawing.Graphics]::FromImage($scaled)
+      $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+      $g.DrawImage($src, [System.Drawing.Rectangle]::new(0, 0, $scaled.Width, $scaled.Height), [System.Drawing.Rectangle]::new(0, 0, $mainCropW, $src.Height), [System.Drawing.GraphicsUnit]::Pixel)
+      $g.Dispose()
+      $g = $null
       $lines = @(Run-OcrOnBitmap $scaled (1.0 / $scale) 0 0 0)
-      if ($scaled -ne $src) { $scaled.Dispose() }
+      $scaled.Dispose()
+      $scaled = $null
 
-      # 补扫最左列单字/双字盟约（如“炎”、“精准”、“聚合”在紧贴左边缘时易被整页版面切掉）
-      $cropW = [Math]::Max(40, [int]($src.Width * 0.16))
-      $cropY = [int]($src.Height * 0.28)
-      $cropH = [Math]::Max(40, [int]($src.Height * 0.68))
-      if ($cropY + $cropH -gt $src.Height) { $cropH = $src.Height - $cropY }
-      $subScale = if ($src.Width -lt 1800) { 3.0 } else { 2.0 }
-      $pad = 48
-      $leftBmp = [System.Drawing.Bitmap]::new([int]($cropW * $subScale + $pad * 2), [int]($cropH * $subScale))
-      $lg = [System.Drawing.Graphics]::FromImage($leftBmp)
-      $lg.Clear([System.Drawing.Color]::FromArgb(18, 22, 24))
-      $lg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-      $destRect = [System.Drawing.Rectangle]::new($pad, 0, [int]($cropW * $subScale), [int]($cropH * $subScale))
-      $srcRect = [System.Drawing.Rectangle]::new(0, $cropY, $cropW, $cropH)
-      $lg.DrawImage($src, $destRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
-      $lg.Dispose()
-      $extra = @(Run-OcrOnBitmap $leftBmp (1.0 / $subScale) 0 $cropY $pad)
-      $leftBmp.Dispose()
+      # 智能跳过第二遍左列补扫：仅在第一遍文本确实缺失左边缘关键盟约字时才对最左列放大补扫
+      $sb = [System.Text.StringBuilder]::new()
+      foreach ($ln in $lines) {
+        foreach ($w in $ln) {
+          $null = $sb.Append([string]$w.t)
+        }
+      }
+      $firstText = $sb.ToString() -replace '\s+', ''
+      $hasYan = $firstText.Contains('炎')
+      $hasPreci = $firstText.Contains('精准')
+      $hasDoc = $firstText.Contains('聚合')
+      $isQuickTitle = $firstText.Contains('极速模拟')
+      $skipLeftRescue = $hasYan -and $hasPreci -and ($hasDoc -or $isQuickTitle)
+
+      $extra = @()
+      if (-not $skipLeftRescue) {
+        $cropW = [Math]::Min($src.Width, [Math]::Max(40, [int]($src.Width * 0.16)))
+        $cropY = [int]($src.Height * 0.28)
+        $cropH = [Math]::Max(40, [int]($src.Height * 0.68))
+        if ($cropY + $cropH -gt $src.Height) { $cropH = [Math]::Max(1, $src.Height - $cropY) }
+        $subScale = if ($src.Width -lt 1800) { 3.0 } else { 2.0 }
+        $pad = 48
+        $leftBmp = [System.Drawing.Bitmap]::new([int]($cropW * $subScale + $pad * 2), [int]($cropH * $subScale))
+        $lg = [System.Drawing.Graphics]::FromImage($leftBmp)
+        $lg.Clear([System.Drawing.Color]::FromArgb(18, 22, 24))
+        $lg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $destRect = [System.Drawing.Rectangle]::new($pad, 0, [int]($cropW * $subScale), [int]($cropH * $subScale))
+        $srcRect = [System.Drawing.Rectangle]::new(0, $cropY, $cropW, $cropH)
+        $lg.DrawImage($src, $destRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
+        $lg.Dispose()
+        $lg = $null
+        $extra = @(Run-OcrOnBitmap $leftBmp (1.0 / $subScale) 0 $cropY $pad)
+        $leftBmp.Dispose()
+        $leftBmp = $null
+      }
 
       $allLines = @($lines) + @($extra)
       $resp = @{ id = $reqId; width = $src.Width; height = $src.Height; lines = $allLines } | ConvertTo-Json -Compress -Depth 6
       [Console]::Out.WriteLine($resp)
     } finally {
+      if ($lg) { $lg.Dispose() }
+      if ($leftBmp) { $leftBmp.Dispose() }
+      if ($g) { $g.Dispose() }
+      if ($scaled -and ($scaled -ne $src)) { $scaled.Dispose() }
       $src.Dispose()
       $inStream.Dispose()
     }
@@ -182,18 +213,19 @@ function classifyBadgeBgra(bgra, width, height, box) {
 }
 
 function looksLikeCovenantScreen(bgra, width, height) {
-  if (width < 480 || height < 270) return { match: false, fingerprint: '' };
+  if (!bgra || width < 240 || height < 135 || bgra.length < width * height * 4) return { match: false, fingerprint: '' };
   let total = 0;
   let emerald = 0;
   let dark = 0;
   let hash = 2166136261;
-  const stepX = Math.max(8, Math.floor(width / 96));
-  const stepY = Math.max(8, Math.floor(height / 54));
+  const stepX = Math.max(2, Math.floor(width / 96));
+  const stepY = Math.max(2, Math.floor(height / 54));
+  const xMin = Math.max(2, Math.floor(width * 0.01));
   const yMin = Math.floor(height * 0.16);
   const yMax = Math.floor(height * 0.88);
   const xMax = Math.floor(width * 0.78);
   for (let y = yMin; y < yMax; y += stepY) {
-    for (let x = 16; x < xMax; x += stepX) {
+    for (let x = xMin; x < xMax; x += stepX) {
       const offset = (y * width + x) * 4;
       const b = bgra[offset];
       const g = bgra[offset + 1];
@@ -521,26 +553,67 @@ function mergeCovenantScanResult(accumulatedStates, nextResult, { forceReset = f
   };
 }
 
-function createWinRtOcrRunner() {
+function createWinRtOcrRunner(options = {}) {
+  const spawnFn = options.spawnFn || spawn;
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 20_000;
   let child;
-  let pending;
+  let activeJob = null;
+  const queue = [];
   const encoded = Buffer.from(PS_WINRT_OCR_SCRIPT, 'utf16le').toString('base64');
 
   function stop() {
     const prev = child;
     child = undefined;
-    prev?.kill();
-    if (pending) {
-      const job = pending;
-      pending = undefined;
+    try { prev?.kill(); } catch { /* ignore */ }
+    const toReject = [];
+    if (activeJob) {
+      toReject.push(activeJob);
+      activeJob = null;
+    }
+    while (queue.length > 0) {
+      toReject.push(queue.shift());
+    }
+    for (const job of toReject) {
       clearTimeout(job.timer);
       job.reject(new Error('OCR 进程已停止'));
     }
   }
 
+  function pumpQueue() {
+    if (activeJob || queue.length === 0) return;
+    let proc;
+    try {
+      proc = ensure();
+    } catch (err) {
+      const failed = queue.shift();
+      failed?.reject(err instanceof Error ? err : new Error(String(err)));
+      pumpQueue();
+      return;
+    }
+    const job = queue.shift();
+    activeJob = job;
+    job.timer = setTimeout(() => {
+      if (activeJob !== job) return;
+      activeJob = null;
+      job.reject(new Error('本机 OCR 识别超时，请重试。'));
+      stop();
+    }, timeoutMs);
+    try {
+      const payload = (Buffer.isBuffer(job.pngBuffer) ? job.pngBuffer : Buffer.from(job.pngBuffer)).toString('base64');
+      proc.stdin.write(JSON.stringify({ id: job.id, image: payload }) + '\n');
+    } catch (err) {
+      if (activeJob === job) {
+        activeJob = null;
+        clearTimeout(job.timer);
+        job.reject(err instanceof Error ? err : new Error(String(err)));
+        stop();
+      }
+    }
+  }
+
   function ensure() {
     if (child) return child;
-    const proc = spawn('powershell.exe', [
+    const proc = spawnFn('powershell.exe', [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded,
     ], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
     child = proc;
@@ -561,24 +634,26 @@ function createWinRtOcrRunner() {
         if (!line) continue;
         let msg;
         try { msg = JSON.parse(line); } catch { continue; }
-        if (!pending || msg.id !== pending.id) continue;
-        const job = pending;
-        pending = undefined;
+        if (!activeJob || msg.id !== activeJob.id) continue;
+        const job = activeJob;
+        activeJob = null;
         clearTimeout(job.timer);
         if (msg.error) job.reject(new Error(msg.error));
         else job.resolve(msg);
+        pumpQueue();
       }
     });
     return proc;
   }
 
   function recognizePng(pngBuffer) {
-    const proc = ensure();
+    if (!Buffer.isBuffer(pngBuffer) && !(pngBuffer instanceof Uint8Array)) {
+      return Promise.reject(new Error('无效的 OCR 图像缓冲区'));
+    }
     const id = randomUUID();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { stop(); reject(new Error('本机 OCR 识别超时，请重试。')); }, 20_000);
-      pending = { id, resolve, reject, timer };
-      proc.stdin.write(JSON.stringify({ id, image: pngBuffer.toString('base64') }) + '\n');
+      queue.push({ id, pngBuffer, resolve, reject, timer: null });
+      pumpQueue();
     });
   }
 
@@ -647,11 +722,11 @@ function installCovenantOcr({
     return state;
   }
 
-  async function captureGameOrScreen(allowScreenFallback) {
+  async function captureGameOrScreen(allowScreenFallback, thumbnailSize = { width: 1920, height: 1080 }) {
     const ownHandle = mainWindow.getMediaSourceId().split(':')[1];
     const windows = await desktopCapturer.getSources({
       types: ['window'],
-      thumbnailSize: { width: 1920, height: 1080 },
+      thumbnailSize,
     });
     const gameWin = pickGameCaptureWindow(windows, ownHandle);
     if (gameWin && !gameWin.thumbnail.isEmpty()) {
@@ -660,7 +735,7 @@ function installCovenantOcr({
     if (!allowScreenFallback) return null;
     const screens = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 },
+      thumbnailSize,
     });
     const first = screens.find(s => !s.thumbnail.isEmpty());
     return first ? { image: first.thumbnail, label: '当前屏幕', isWindow: false } : null;
@@ -681,16 +756,25 @@ function installCovenantOcr({
     if (disposed || busy || !autoPollEnabled || mainWindow.isDestroyed()) return;
     busy = true;
     try {
-      const captured = await captureGameOrScreen(false);
-      if (!captured) return;
-      const size = captured.image.getSize();
-      if (Math.min(size.width, size.height) < 200) return;
-      const bgra = captured.image.toBitmap();
-      const gate = looksLikeCovenantScreen(bgra, size.width, size.height);
+      // Stage 1：极轻量 320×180 缩略图门控，日常带宽降低 ~97%，未命中时不抓 1080p
+      const thumbCaptured = await captureGameOrScreen(false, { width: 320, height: 180 });
+      if (!thumbCaptured || disposed || !autoPollEnabled || mainWindow.isDestroyed()) return;
+      const thumbSize = thumbCaptured.image.getSize();
+      if (thumbSize.width < 240 || thumbSize.height < 135) return;
+      const thumbBgra = thumbCaptured.image.toBitmap();
+      const gate = looksLikeCovenantScreen(thumbBgra, thumbSize.width, thumbSize.height);
       if (!gate.match || gate.fingerprint === lastAutoFingerprint) return;
       lastAutoFingerprint = gate.fingerprint;
 
+      // Stage 2：门控命中且指纹变化后，仅抓一次 1920×1080 高清画面送 WinRT OCR
+      const captured = await captureGameOrScreen(false, { width: 1920, height: 1080 });
+      if (!captured || disposed || !autoPollEnabled || mainWindow.isDestroyed()) return;
+      const size = captured.image.getSize();
+      if (Math.min(size.width, size.height) < 200) return;
+      const bgra = captured.image.toBitmap();
+
       const ocr = await runner.recognizePng(captured.image.toPNG());
+      if (disposed || !autoPollEnabled || mainWindow.isDestroyed()) return;
       const result = evaluateOcrLines(ocr.lines, bgra, size.width, size.height);
       const canMergePartial = accumulatedStates.size > 0 && !state.complete && result.seenCovenants.length >= 4;
       const validOpening = result.complete || (result.headerConfirmed && result.seenCovenants.length >= 16) || canMergePartial;
@@ -752,7 +836,7 @@ function installCovenantOcr({
           throw new Error('剪贴板中没有截图，请先按 Win+Shift+S 截图后再粘贴识别。');
         }
       } else {
-        const captured = await captureGameOrScreen(true);
+        const captured = await captureGameOrScreen(true, { width: 1920, height: 1080 });
         if (!captured) throw new Error('未找到明日方舟窗口或可用屏幕画面。');
         image = captured.image;
       }
@@ -841,6 +925,7 @@ function installCovenantOcr({
   pollTimer.unref?.();
 
   return {
+    pollOnce,
     dispose() {
       disposed = true;
       clearInterval(pollTimer);
@@ -855,6 +940,7 @@ module.exports = {
   CORE_COVENANTS,
   SUB_COVENANTS,
   COVENANT_NAMES,
+  PS_WINRT_OCR_SCRIPT,
   classifyCircleBgra,
   classifyBadgeBgra,
   looksLikeCovenantScreen,

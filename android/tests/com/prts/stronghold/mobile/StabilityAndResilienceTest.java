@@ -325,6 +325,25 @@ public final class StabilityAndResilienceTest {
         List<BattleCaptureState.EventLogEntry> capped = BattleCaptureState.getRecentLogs(400);
         check(capped.size() == 240, "ring buffer bounded at 240 entries, got " + capped.size());
         check(capped.get(0).seq > capped.get(capped.size() - 1).seq, "recent logs ordered newest-first");
+
+        // 3. High-frequency Boss runtime flood: 1000 mixed identical + escalating runtime events in pure JVM
+        BattleCaptureState.resetMatch();
+        StrongholdWireDecoder.Event bossInit = new StrongholdWireDecoder.Event("phase");
+        bossInit.messageId = 302;
+        bossInit.stageSeed = 99901;
+        bossInit.round = 14;
+        bossInit.phase = "boss";
+        bossInit.bossHp = 500000;
+        BattleCaptureState.accept(bossInit);
+        for (int i = 0; i < 1000; i++) {
+            StrongholdWireDecoder.Event rt = new StrongholdWireDecoder.Event("runtime");
+            int dmg = (i / 10) * 1500; // 10x identical packets per increment
+            rt.bossDamageBySeat.put(1, dmg);
+            rt.hpBySeat.put(1, 25);
+            BattleCaptureState.accept(rt);
+        }
+        BattleCaptureState.BossSnapshot finalBoss = BattleCaptureState.buildBossSnapshot();
+        check(finalBoss.teamDamage == 99 * 1500, "high-frequency runtime flood keeps exact final boss damage: " + finalBoss.teamDamage);
     }
 
     public static void main(String[] args) throws Exception {

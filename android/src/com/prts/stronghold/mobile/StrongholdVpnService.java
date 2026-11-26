@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 免 Root 本机回环分流 VpnService：
@@ -60,6 +61,7 @@ public final class StrongholdVpnService extends VpnService {
     private static final long RTO_BASE_MS = 400L;
     private static final int MAX_RETRIES = 8;
     private static final int MAX_CONSECUTIVE_UPSTREAM_FAILURES = 6;
+    static final int MAX_INBOUND_QUEUE = 2048;
 
     private static final String[] ARKNIGHTS_PACKAGES = {
         "com.hypergryph.arknights",
@@ -80,6 +82,7 @@ public final class StrongholdVpnService extends VpnService {
     private Thread tunReaderThread;
     private Thread reactorThread;
     private final ConcurrentLinkedQueue<byte[]> inboundPackets = new ConcurrentLinkedQueue<>();
+    private final AtomicInteger inboundQueueSize = new AtomicInteger(0);
     private final Map<SessionKey, TcpSession> tcpSessions = new HashMap<>();
     private final Map<SessionKey, UdpSession> udpSessions = new HashMap<>();
     private final Random random = new Random();
@@ -137,6 +140,7 @@ public final class StrongholdVpnService extends VpnService {
         if (intent != null && ACTION_RESTART.equals(intent.getAction())) {
             shutdownTunnel(null);
             StrongholdEnemyCatalog.ensureLoaded(getApplicationContext());
+            EnemyPortraitAtlas.preloadAsync(getApplicationContext());
             startForegroundNotification();
             startTunnel();
             return START_STICKY;
@@ -145,6 +149,7 @@ public final class StrongholdVpnService extends VpnService {
             return START_STICKY;
         }
         StrongholdEnemyCatalog.ensureLoaded(getApplicationContext());
+        EnemyPortraitAtlas.preloadAsync(getApplicationContext());
         startForegroundNotification();
         startTunnel();
         return START_STICKY;
@@ -236,6 +241,7 @@ public final class StrongholdVpnService extends VpnService {
             tunIn = new FileInputStream(tunFd.getFileDescriptor());
             tunOut = new FileOutputStream(tunFd.getFileDescriptor());
             selector = Selector.open();
+            clearBoundedQueue(inboundPackets, inboundQueueSize);
             running = true;
             active = this;
 
@@ -265,9 +271,38 @@ public final class StrongholdVpnService extends VpnService {
         return found;
     }
 
+    static boolean offerBoundedPacket(ConcurrentLinkedQueue<byte[]> queue, AtomicInteger queueSize, byte[] packet, int maxQueue) {
+        if (queue == null || queueSize == null || packet == null || maxQueue <= 0) return false;
+        if (queueSize.get() >= maxQueue) return false;
+        if (queue.offer(packet)) {
+            queueSize.incrementAndGet();
+            return true;
+        }
+        return false;
+    }
+
+    static byte[] pollBoundedPacket(ConcurrentLinkedQueue<byte[]> queue, AtomicInteger queueSize) {
+        if (queue == null || queueSize == null) return null;
+        byte[] raw = queue.poll();
+        if (raw != null) {
+            queueSize.decrementAndGet();
+        }
+        return raw;
+    }
+
+    static void clearBoundedQueue(ConcurrentLinkedQueue<byte[]> queue, AtomicInteger queueSize) {
+        if (queue != null) {
+            while (queue.poll() != null) {
+                if (queueSize != null) queueSize.decrementAndGet();
+            }
+        }
+        if (queueSize != null) queueSize.set(0);
+    }
+
     private void shutdownTunnel(String finalMessage) {
         running = false;
         if (active == this) active = null;
+        clearBoundedQueue(inboundPackets, inboundQueueSize);
         if (selector != null) {
             try { selector.wakeup(); } catch (Exception ignored) {}
         }
@@ -295,11 +330,15 @@ public final class StrongholdVpnService extends VpnService {
                     if (len < 0) break;
                     continue;
                 }
+                if (inboundQueueSize.get() >= MAX_INBOUND_QUEUE) {
+                    continue;
+                }
                 byte[] copy = new byte[len];
                 System.arraycopy(buf, 0, copy, 0, len);
-                inboundPackets.offer(copy);
-                Selector sel = selector;
-                if (sel != null) sel.wakeup();
+                if (offerBoundedPacket(inboundPackets, inboundQueueSize, copy, MAX_INBOUND_QUEUE)) {
+                    Selector sel = selector;
+                    if (sel != null) sel.wakeup();
+                }
             }
         } catch (Throwable ignored) {
             // 读取异常或正常关闭
@@ -355,7 +394,7 @@ public final class StrongholdVpnService extends VpnService {
 
     private void drainInbound(PacketCodec.ParsedPacket pkt) {
         byte[] raw;
-        while ((raw = inboundPackets.poll()) != null) {
+        while ((raw = pollBoundedPacket(inboundPackets, inboundQueueSize)) != null) {
             if (!PacketCodec.parse(raw, raw.length, pkt)) continue;
             if (pkt.protocol == PacketCodec.PROTO_TCP) {
                 handleInboundTcp(raw, pkt);
@@ -765,6 +804,7 @@ public final class StrongholdVpnService extends VpnService {
     }
 
     private void closeAllSessions() {
+        clearBoundedQueue(inboundPackets, inboundQueueSize);
         for (TcpSession s : new ArrayList<>(tcpSessions.values())) closeTcpSession(s, false);
         for (UdpSession u : new ArrayList<>(udpSessions.values())) closeUdpSession(u);
         if (selector != null) {

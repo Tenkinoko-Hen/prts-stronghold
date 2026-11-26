@@ -85,6 +85,65 @@ public final class CovenantDetectorTest {
         if (!blankRes.isEmpty()) {
             throw new AssertionError("bottom-6 blank must return empty");
         }
+
+        // 3. 验证 shouldRunLeftStripRescue 精确触发边界（消除标准满屏 / 单人第 1 屏 / 极速模式多余补扫）
+        if (CovenantDetector.shouldRunLeftStripRescue(null, "") || CovenantDetector.shouldRunLeftStripRescue(Collections.emptyMap(), "")) {
+            throw new AssertionError("null/empty found must NOT trigger left rescue");
+        }
+        Map<String, Integer> full26 = new HashMap<>();
+        for (String n : CovenantDetector.NAMES) full26.put(n, 1);
+        if (CovenantDetector.shouldRunLeftStripRescue(full26, "")) {
+            throw new AssertionError("complete 26 covenants must NOT trigger left rescue");
+        }
+
+        // 极速模式 18/18（8 核心 + 10 附加）不补扫；若 < 18 且缺左列「炎」则补扫
+        Map<String, Integer> quick18 = new HashMap<>();
+        String[] quickCore8 = { "炎", "萨尔贡", "阿戈尔", "叙拉古", "卡西米尔", "维多利亚", "谢拉格", "乌萨斯" };
+        String[] quickSub10 = { "精准", "远见", "投资人", "突袭", "不屈", "调和", "协防干员", "独行", "绝技", "聚合" };
+        for (String c : quickCore8) quick18.put(c, 1);
+        for (String s : quickSub10) quick18.put(s, 1);
+        if (CovenantDetector.shouldRunLeftStripRescue(quick18, "quick")) {
+            throw new AssertionError("quick mode 18/18 must NOT trigger left rescue");
+        }
+        Map<String, Integer> quickMissingYan = new HashMap<>(quick18);
+        quickMissingYan.remove("炎");
+        if (!CovenantDetector.shouldRunLeftStripRescue(quickMissingYan, "quick")) {
+            throw new AssertionError("quick mode missing left '炎' (<18) should trigger left rescue");
+        }
+
+        // 单人模拟第 1 屏恰好 core=10(含炎) + sub=10(灵巧..独行，缺底排绝技/精准/聚合) -> 不补扫！
+        Map<String, Integer> soloScreen1 = new HashMap<>();
+        for (String c : CovenantDetector.CORE_NAMES) soloScreen1.put(c, 1);
+        for (String s : Arrays.asList("灵巧", "坚守", "远见", "奇迹", "投资人", "突袭", "不屈", "调和", "协防干员", "独行")) {
+            soloScreen1.put(s, 1);
+        }
+        if (CovenantDetector.shouldRunLeftStripRescue(soloScreen1, "solo")) {
+            throw new AssertionError("solo screen 1 (10 core + 10 row-1 sub) must NOT trigger left rescue");
+        }
+        Map<String, Integer> soloMissingYan = new HashMap<>(soloScreen1);
+        soloMissingYan.remove("炎");
+        if (!CovenantDetector.shouldRunLeftStripRescue(soloMissingYan, "solo")) {
+            throw new AssertionError("solo screen 1 missing '炎' (core=9) should trigger left rescue");
+        }
+
+        // 非极速模式仅缺右列非左边缘项（如奥术）不补扫；缺左边缘（精准/聚合/灵巧/绝技）才补扫
+        Map<String, Integer> missingRightOnly = new HashMap<>(full26);
+        missingRightOnly.remove("奥术");
+        if (CovenantDetector.shouldRunLeftStripRescue(missingRightOnly, "")) {
+            throw new AssertionError("missing non-left sub item '奥术' should NOT trigger left rescue");
+        }
+        Map<String, Integer> missingLeftPreci = new HashMap<>(full26);
+        missingLeftPreci.remove("精准");
+        if (!CovenantDetector.shouldRunLeftStripRescue(missingLeftPreci, "")) {
+            throw new AssertionError("missing left-edge sub item '精准' should trigger left rescue");
+        }
+        Map<String, Integer> noisyTiny = new HashMap<>();
+        noisyTiny.put("萨尔贡", 1);
+        noisyTiny.put("阿戈尔", 1);
+        noisyTiny.put("远见", 1);
+        if (CovenantDetector.shouldRunLeftStripRescue(noisyTiny, "")) {
+            throw new AssertionError("tiny noisy frame (<7 core/sub) must NOT trigger left rescue");
+        }
     }
 
     public static void main(String[] args) throws Exception {

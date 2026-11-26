@@ -101,11 +101,11 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 15:18（加固 **Windows 便携包启动容错与自动兼容自愈**：默认规避高权限 GPU 沙箱冲突，新增 `--prts-safe-gpu` 全套兼容重试、NSIS 启动期无窗崩自动二次拉起与退出码弹窗、`Tray` / `userData` / `ready-to-show` 8s 兜底及 32 KB 滚动 `startup.log`，根治内置 Administrator / UAC 关闭 / ToDesk 远程桌面闪退，212/212 全栈测试 + NSIS `makensis` 试编译 + 双产品构建全绿）
+- **最后更新**：2026-11-26 16:13（修复全栈深测 **3 项 P0 稳定性漏洞 + 5 项 P1 流畅度与 OCR 提速优化**：Android OCR `addOnCompleteListener`/OOM 防 `busy` 死锁、PC WinRT `SoftwareBitmap.Dispose()` 与串行排队、Android VPN 2048 有界队列 + 100ms 悬浮窗合并节流、PC 两阶段 `320×180` 门控抓屏 + 0-Ban/对局中自动停轮询 + BMP 零压缩直喂提速、Android 精准左列补扫门控 + 图集后台异步预热 + 按需 `updateViewLayout`、PC 轻量 `readLightBattleSyncMeta` 去重解析，217/217 全栈测试 + WinRT BMP 实机烟测 + Android 2,992 项 Java 断言 + 双产品构建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **212/212 全绿**（`tsc --noEmit` 通过 + TS 125/125 + Node 26/26 + Python 61/61）
-  - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **932 项直跑全绿**
+  - `npm test` **217/217 全绿**（`tsc --noEmit` 通过 + TS 127/127 + Node 29/29 + Python 61/61）
+  - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **2,992 项断言直跑全绿**
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **今日已完成本地 `2.0.6` 全四端测试包（均位于本机 `release/`，未入 Git、未发 Release）**：
   - **PC 完整版**：`release/v2.0.6/PRTS-Stronghold-Full-2.0.6-Win64.exe`（240,532,644 字节 / 229.39 MiB，SHA-256: `1b83465f…50a914b`）

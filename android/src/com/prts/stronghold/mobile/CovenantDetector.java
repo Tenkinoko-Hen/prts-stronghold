@@ -231,4 +231,36 @@ final class CovenantDetector {
         }
         return out;
     }
+
+    /**
+     * 判断初轮全屏 OCR 后是否需要对最左列窄条执行 2x 放大补扫：
+     * - 已收齐 26 项或极速模式已收齐 18 项（>=8 核心 + >=10 附加）时不触发；
+     * - 非极速模式仅当核心已识别 7..9 项且缺少「炎」，或附加已识别 7..15 项且缺左列边缘项
+     *   （排除单人第 1 屏恰好 core >= 9 && sub == 10，底排 6 项未滚出的情况）时才触发补扫。
+     */
+    static boolean shouldRunLeftStripRescue(Map<String, Integer> found, String modeHint) {
+        if (found == null || found.isEmpty() || found.size() >= NAMES.length) return false;
+        int core = 0;
+        int sub = 0;
+        for (String name : found.keySet()) {
+            if (CORE_NAMES.contains(name)) core++;
+            else if (SUB_NAMES.contains(name)) sub++;
+        }
+        if ("quick".equals(modeHint)) {
+            if (found.size() >= 18 || (core >= 8 && sub >= 10)) return false;
+            return (core >= 6 && core < 8 && !found.containsKey("炎"))
+                || (sub >= 7 && sub < 10 && (!found.containsKey("精准") || !found.containsKey("聚合")));
+        }
+        if (core >= 7 && core < 10 && !found.containsKey("炎")) {
+            return true;
+        }
+        if (core >= 9 && sub == 10) {
+            return false;
+        }
+        boolean missingLeftSub = !found.containsKey("灵巧")
+            || !found.containsKey("绝技")
+            || !found.containsKey("精准")
+            || !found.containsKey("聚合");
+        return sub >= 7 && sub < 16 && missingLeftSub;
+    }
 }

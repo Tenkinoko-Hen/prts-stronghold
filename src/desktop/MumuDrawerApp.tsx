@@ -65,6 +65,7 @@ import {
 } from './battleReports';
 import { isSoloMode, type DeckPoolOperator } from './combatTelemetry';
 import { computeOperatorOdds } from './deckPoolMath';
+import { HotUpdateControl } from './HotUpdateControl';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
 import './desktop.css';
 import './battleReports.css';
@@ -383,6 +384,7 @@ export default function MumuDrawerApp({
         </div>
 
         <div className="mumu-top-actions">
+          <HotUpdateControl variant="compact" />
           {onToggleAlwaysOnTop && (
             <button
               type="button"

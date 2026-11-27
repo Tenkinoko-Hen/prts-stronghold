@@ -136,10 +136,58 @@ export interface WindowLayoutBridge {
   onState?(callback: (state: WindowLayoutState) => void): () => void;
 }
 
+export interface HotUpdatePatchInfo {
+  version: string;
+  product: string;
+  minNativeVersion: string;
+  maxNativeVersion?: string;
+  url: string;
+  sha256: string;
+  size: number;
+  signature: string;
+  notes?: string;
+}
+
+export interface HotUpdateNativeInfo {
+  version: string;
+  downloadUrl: string;
+  sha256?: string;
+  size?: number;
+  notes?: string;
+}
+
+export interface HotUpdateState {
+  nativeVersion: string;
+  uiVersion: string;
+  activeKind: 'builtin' | 'stable' | 'pending';
+  status: 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready-to-restart' | 'error';
+  downloadProgress: number;
+  error: string | null;
+  lastCheckedAt: string | null;
+  lastRollbackReason: string | null;
+  availableUi: HotUpdatePatchInfo | null;
+  stagedUiVersion: string | null;
+  nativeUpdate: HotUpdateNativeInfo | null;
+  activeData: Record<string, unknown> | null;
+  announcement: string | null;
+}
+
+export interface HotUpdateBridge {
+  getState(): Promise<HotUpdateState>;
+  check(): Promise<HotUpdateState>;
+  downloadUi(): Promise<HotUpdateState>;
+  applyRestart(): Promise<void>;
+  confirmHealthy(): Promise<HotUpdateState>;
+  rollback(): Promise<HotUpdateState>;
+  openNativeDownload(): Promise<boolean>;
+  onState(callback: (state: HotUpdateState) => void): () => void;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
       setAlwaysOnTop(flag: boolean): Promise<boolean>;
+      hotUpdate?: HotUpdateBridge;
       windowLayout?: WindowLayoutBridge;
       battleReports?: BattleReportsBridge;
       covenantOcr?: CovenantOcrBridge;

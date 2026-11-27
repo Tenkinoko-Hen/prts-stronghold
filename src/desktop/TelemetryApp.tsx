@@ -32,6 +32,7 @@ import { BattleReportTelemetry } from './BattleReportTelemetry';
 import { BattleReportDeckPool } from './BattleReportDeckPool';
 import { BattleReportRoster } from './BattleReportRoster';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
+import { HotUpdateControl } from './HotUpdateControl';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
 import { isSoloStageMode } from './combatTelemetry';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
@@ -331,6 +332,7 @@ export default function TelemetryApp({
         </nav>
 
         <div className="lite-tools">
+          <HotUpdateControl variant="lite" />
           <button
             type="button"
             className={`lite-tool-btn${replay ? ' is-highlight' : ''}`}

@@ -39,6 +39,7 @@ import {
   type WindowLayoutState,
 } from './desktop/battleReports';
 import { demoReport, type DemoScene } from './desktop/demo/battleReportFixture';
+import { HotUpdateControl } from './desktop/HotUpdateControl';
 import { LanSyncDialog } from './desktop/LanSyncDialog';
 import MumuDrawerApp from './desktop/MumuDrawerApp';
 import { BanPickState, getRecommendedPaceForRound } from './utils/tacticalLogic';
@@ -489,6 +490,7 @@ export default function App() {
               <span>{telemetryLabel}</span>
             </button>
           )}
+          <HotUpdateControl variant="desktop" />
           {isEmulatorClientSource(clientSource) && (desktopAPI?.windowLayout || isMumuDemo) && (
             <button
               type="button"

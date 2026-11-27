@@ -101,13 +101,14 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-27 14:44（修复 PC 宽屏模式「战术跟打」在回合推进 / 抓包更新 / 重连 / OCR→抓包切换时自动弹回「选择本局阵容」页的 P0 缺陷：① 后端 `electron/prts_battle_core/analyzer.py` 锁定同局首见非空 `banned_bonds` 并去重，换局按 `stage_seed` 重置；② 前端移除 `<MetaCompsView key={matchSyncId}>` 强拆重挂载、将 `guideStage` 提升至 `App.tsx` 受控管理、抽出纯函数 `decideBanSyncAction` 与 `normalizeBanSignature` 并在 `setBanState` updater 外统一同步状态；239/239 全栈单测 + Electron 45 真机 E2E 烟测 + 双产品 Worker 重建全绿）
+- **最后更新**：2026-11-27 19:29（提前落地 **双产品三层分级热更新系统 + Cloudflare 零绑卡后端工程** 并通过真实 Electron 45 签名热更新全链路 E2E：① 主进程 [electron/hot-update.cjs](../electron/hot-update.cjs) 实现 Ed25519 + SHA-256 + CRC32 验签、纯 Node 安全 ZIP 解压、A/B 槽位 15 秒健康看门狗与崩溃自动回滚、外壳升级自动清旧槽；② [electron/main.cjs](../electron/main.cjs) `prts://` 协议升级为「热更目录优先 + 缺失静态图回退内置 ASAR」增量覆盖模式，Full 热更包仅 **1.73 MiB**（对比全量 `dist/` 125.91 MiB）；③ [src/desktop/HotUpdateControl.tsx](../src/desktop/HotUpdateControl.tsx) 接入 PC Full / Lite / 抽屉三壳并上报 `confirmHealthy()`；④ [cloudflare/](../cloudflare/) 含 Wrangler 配置、D1 `prts-stronghold-db` 建表 SQL、清单 API 与 GitHub Release 白名单边缘缓存反代；⑤ 已落盘 [docs/CLOUD_HOTUPDATE_AND_COMPS_PLAN.md](CLOUD_HOTUPDATE_AND_COMPS_PLAN.md) 锁定社区阵容库 `04 阵容工坊` 4 项定案；**256/256 全栈单测 + 真实 Electron 45 热更新 E2E 全绿**）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **239/239 全绿**（`tsc --noEmit` 通过 + TS 132/132 + Node 41/41 + Python 66/66）
-  - 真实 Electron 45 跟打全流程 E2E 烟测通过（R1 首帧、R2–R5 乱序 Ban 推进、R5 重连换 `matchKey` 均保持跟打页与自选阵容不弹回；真正新局 R1 正常重置回选阵容页）
-  - 双产品 Windows Python Worker（`PRTS-Worker.exe` / `Telemetry-Worker.exe`）重建并自检通过
+  - `npm test` **256/256 全绿**（`tsc --noEmit` 通过 + TS 132/132 + Node 58/58 [含热更新与 Cloudflare Worker 17 项新测] + Python 66/66）
+  - 真实 Electron 45 签名热更新全链路 E2E 通过（`build-hot-patch.cjs` 生成 1.73 MiB 增量包 + Ed25519 签名 → HTTP 拉取验签解压 → 真 Electron 45 启动 `prts://` 加载热更槽 → React 挂载上报 `confirmHealthy()` → 晋升 `activeUi.status = "stable"`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
+  - **换机密钥提醒**：热更新签名私钥仅存本机仓外 `work/secrets/hot-update-ed25519.pem`（未入 Git），若需在家里电脑直接签发 L1/L2 热更补丁，请私下拷贝该 `.pem` 文件到家里仓库同路径（或重新生成并同步更新 `electron/hot-update-pubkey.cjs`）
+  - **下次接续第一步**：见 [docs/CLOUD_HOTUPDATE_AND_COMPS_PLAN.md](CLOUD_HOTUPDATE_AND_COMPS_PLAN.md) —— ① 在家里电脑执行 `cloudflare/` 远端 D1 建表、Worker 部署与 `api/cdn.arknightsprts.ggff.net` 域名绑定并验通；② 视需要出含热更新外壳的新版 EXE；③ 先起 Vite 模拟 UI 确认 `04 阵容工坊` 样式后再实现社区阵容库（Phase 2）
 - **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 15:01 同步刷新 PC 双包至 GitHub Release）**：
   - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `ea4439a` 替换更新）
   - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,628,926 字节，SHA-256: `ab7286d246cc52e865edcefcfb7bf9d13714bd15fec4fdc9cdfe56934cc2f73d`）

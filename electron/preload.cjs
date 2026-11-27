@@ -4,6 +4,20 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', Boolean(flag)),
   relaunchApp: () => ipcRenderer.invoke('app-relaunch'),
+  hotUpdate: {
+    getState: () => ipcRenderer.invoke('hot-update-get'),
+    check: () => ipcRenderer.invoke('hot-update-check'),
+    downloadUi: () => ipcRenderer.invoke('hot-update-download-ui'),
+    applyRestart: () => ipcRenderer.invoke('hot-update-apply-restart'),
+    confirmHealthy: () => ipcRenderer.invoke('hot-update-confirm-healthy'),
+    rollback: () => ipcRenderer.invoke('hot-update-rollback'),
+    openNativeDownload: () => ipcRenderer.invoke('hot-update-open-native'),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('hot-update-state', listener);
+      return () => ipcRenderer.removeListener('hot-update-state', listener);
+    },
+  },
   windowLayout: {
     getMode: () => ipcRenderer.invoke('window-layout-get'),
     setMode: (mode) => ipcRenderer.invoke('window-layout-set', mode === 'rail' ? 'rail' : mode === 'mumu-drawer' ? 'mumu-drawer' : 'wide'),

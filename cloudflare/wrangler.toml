@@ -1,0 +1,16 @@
+name = "prts-stronghold-api"
+main = "src/worker.mjs"
+compatibility_date = "2026-11-01"
+
+# 在 Workers & Pages 的 Settings → Domains & Routes → Add → Custom domain 中，
+# 将 api.arknightsprts.ggff.net 与 cdn.arknightsprts.ggff.net 分别绑定到此 Worker。
+[[d1_databases]]
+binding = "DB"
+database_name = "prts-stronghold-db"
+database_id = "d3aac764-0363-4228-a1fb-96b4db217fd6"
+
+[vars]
+GITHUB_REPO = "Tenkinoko-Hen/prts-stronghold"
+MAX_DAILY_UPLOADS = "10"
+WARN_REPORT_THRESHOLD = "3"
+HIDE_REPORT_THRESHOLD = "10"

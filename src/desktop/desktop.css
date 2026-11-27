@@ -498,3 +498,284 @@
   .d-round-head strong { font-size:31px; }
   .d-guide-right > .d-panel { padding:6px 9px; }
 }
+
+/* 热更新微胶囊与版本详情弹窗 */
+.desktop-app .d-hotupdate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #263346;
+  border-radius: 2px;
+  background: #0f1621;
+  color: #91a0b8;
+  font: 700 11px/1 var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 120ms, background-color 120ms, color 120ms;
+}
+.desktop-app .d-hotupdate-btn:hover:not(:disabled) {
+  border-color: #40d9c1;
+  background: #172334;
+  color: #e3eaf5;
+}
+.desktop-app .d-hotupdate-btn.is-lite {
+  border-color: #242b35;
+  background: #11151c;
+}
+.desktop-app .d-hotupdate-btn.is-compact {
+  height: 24px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 10.5px;
+}
+.desktop-app .d-hotupdate-btn.is-available {
+  border-color: rgba(246, 197, 74, 0.72);
+  background: rgba(246, 197, 74, 0.14);
+  color: #f6c54a;
+}
+.desktop-app .d-hotupdate-btn.is-available:hover:not(:disabled) {
+  border-color: #f6c54a;
+  background: rgba(246, 197, 74, 0.24);
+  color: #ffe680;
+}
+.desktop-app .d-hotupdate-btn.is-ready {
+  border-color: #f6c54a;
+  background: #f6c54a;
+  color: #0f1621;
+  font-weight: 800;
+}
+.desktop-app .d-hotupdate-btn.is-ready:hover:not(:disabled) {
+  border-color: #ffe680;
+  background: #ffe680;
+  color: #0f1621;
+}
+.d-hotupdate-spin {
+  animation: d-hotupdate-rotate 1s linear infinite;
+}
+@keyframes d-hotupdate-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.d-hotupdate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(540px, 100%);
+  font-size: 13px;
+  line-height: 1.55;
+  color: #e3eaf5;
+}
+.d-hotupdate-body p {
+  margin: 0;
+}
+.d-hotupdate-subtitle {
+  color: #91a0b8;
+  font-size: 12px;
+}
+.d-hotupdate-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid #263346;
+  border-left-width: 3px;
+  border-radius: 2px;
+  background: #0f1621;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.d-hotupdate-notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.d-hotupdate-notice.is-info {
+  border-color: rgba(246, 197, 74, 0.45);
+  border-left-color: #f6c54a;
+  background: rgba(246, 197, 74, 0.08);
+  color: #fde68a;
+}
+.d-hotupdate-notice.is-safe {
+  border-color: rgba(64, 217, 193, 0.48);
+  border-left-color: #40d9c1;
+  background: rgba(64, 217, 193, 0.09);
+  color: #7eeadf;
+}
+.d-hotupdate-notice.is-error {
+  border-color: rgba(248, 113, 113, 0.55);
+  border-left-color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+}
+
+.d-hotupdate-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #263346;
+  border-radius: 2px;
+  background: #0f1621;
+}
+.d-hotupdate-meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.d-hotupdate-meta-label {
+  font-size: 11px;
+  color: #91a0b8;
+}
+.d-hotupdate-meta-val {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font: 700 13px/1.3 var(--font-mono);
+  color: #f1f5f9;
+}
+.d-hotupdate-kind {
+  font-style: normal;
+  padding: 1px 6px;
+  border-radius: 2px;
+  border: 1px solid #263346;
+  background: #172232;
+  color: #91a0b8;
+  font: 700 10.5px/1.3 var(--font-mono);
+}
+.d-hotupdate-kind.is-stable {
+  border-color: rgba(64, 217, 193, 0.5);
+  background: rgba(64, 217, 193, 0.12);
+  color: #40d9c1;
+}
+.d-hotupdate-kind.is-pending {
+  border-color: rgba(246, 197, 74, 0.6);
+  background: rgba(246, 197, 74, 0.14);
+  color: #f6c54a;
+}
+.d-hotupdate-status-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #40d9c1;
+}
+
+.d-hotupdate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid #263346;
+  border-top: 2px solid #f6c54a;
+  border-radius: 2px;
+  background: #0f1621;
+}
+.d-hotupdate-card.is-native {
+  border-top-color: #40d9c1;
+}
+.d-hotupdate-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.d-hotupdate-card-head strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #f6c54a;
+}
+.d-hotupdate-card.is-native .d-hotupdate-card-head strong {
+  color: #40d9c1;
+}
+.d-hotupdate-size {
+  font: 700 11px/1.2 var(--font-mono);
+  color: #91a0b8;
+  padding: 2px 6px;
+  border: 1px solid #263346;
+  border-radius: 2px;
+  background: #141e2c;
+  white-space: nowrap;
+}
+.d-hotupdate-notes {
+  color: #cbd5e1;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.d-hotupdate-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.d-hotupdate-progress {
+  flex: 1;
+  height: 8px;
+  border: 1px solid #263346;
+  border-radius: 2px;
+  background: #090e16;
+  overflow: hidden;
+}
+.d-hotupdate-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #40d9c1, #f6c54a);
+  transition: width 140ms ease-out;
+}
+.d-hotupdate-progress-val {
+  min-width: 38px;
+  text-align: right;
+  font: 700 12px/1 var(--font-mono);
+  color: #f6c54a;
+}
+
+.d-hotupdate-shields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.d-hotupdate-shield {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid rgba(64, 217, 193, 0.38);
+  border-radius: 2px;
+  background: rgba(64, 217, 193, 0.08);
+  color: #40d9c1;
+  font: 700 11px/1.2 var(--font-mono);
+}
+
+.d-hotupdate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #263346;
+}
+.d-hotupdate-actions-tail {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.d-hotupdate-rollback {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+.d-hotupdate-rollback:hover:not(:disabled) {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.14);
+}
+
+@media (max-width: 500px) {
+  .d-hotupdate-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .d-hotupdate-actions-tail {
+    margin-left: 0;
+  }
+}

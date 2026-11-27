@@ -2,7 +2,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, screen, Tray, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, screen, shell, Tray, Menu } = require('electron');
+const { createHotUpdateManager } = require('./hot-update.cjs');
+const HOT_UPDATE_PUBKEY = require('./hot-update-pubkey.cjs');
 const { installBattleReports } = require('./battle-reports.cjs');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
 const { installHudOverlay } = require('./hud-overlay.cjs');
@@ -121,17 +123,51 @@ if (gotSingleInstanceLock) {
 }
 
 if (gotSingleInstanceLock) app.whenReady().then(() => {
-  const root = path.join(app.getAppPath(), 'dist');
+  const relaunchApp = () => {
+    isQuitting = true;
+    try { app.releaseSingleInstanceLock(); } catch {}
+    app.relaunch({
+      args: safeGpuMode ? buildSafeGpuRelaunchArgs(process.argv) : process.argv.slice(1),
+    });
+    app.exit(0);
+  };
+  const builtinDistDir = path.join(app.getAppPath(), 'dist');
+  const hotUpdate = createHotUpdateManager({
+    product,
+    userDataDir: app.getPath('userData'),
+    builtinDistDir,
+    nativeVersion: app.getVersion(),
+    publicKeyPem: process.env.PRTS_HOT_UPDATE_PUBKEY_PEM || HOT_UPDATE_PUBKEY.publicKeyPem,
+    manifestUrl: process.env.PRTS_HOT_UPDATE_MANIFEST_URL || undefined,
+    allowLocalhost: process.env.PRTS_HOT_UPDATE_ALLOW_LOCALHOST === '1',
+    fetchImpl: (url, init) => net.fetch(url, init),
+    openExternal: (url) => shell.openExternal(url),
+    getMainWindow: () => mainWindow,
+    relaunchApp,
+    logStartup,
+  });
+  const resolveWithinRoot = (baseDir, relPath) => {
+    const resolved = path.resolve(baseDir, `.${relPath}`);
+    const relative = path.relative(baseDir, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+    return resolved;
+  };
   protocol.handle('prts', (request) => {
     const url = new URL(request.url);
     if (url.host !== 'app' || request.method !== 'GET') return new Response('Forbidden', { status: 403 });
     let requestedPath;
     try { requestedPath = decodeURIComponent(url.pathname); }
     catch { return new Response('Bad request', { status: 400 }); }
-    const file = path.resolve(root, `.${requestedPath === '/' ? '/index.html' : requestedPath}`);
-    const relative = path.relative(root, file);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) return new Response('Forbidden', { status: 403 });
-    return net.fetch(pathToFileURL(file).href);
+    const normalizedPath = requestedPath === '/' ? '/index.html' : requestedPath;
+    const activeRoot = hotUpdate.getUiRoot();
+    const activeFile = resolveWithinRoot(activeRoot, normalizedPath);
+    if (!activeFile) return new Response('Forbidden', { status: 403 });
+    if (activeRoot !== builtinDistDir && !fs.existsSync(activeFile)) {
+      const fallbackFile = resolveWithinRoot(builtinDistDir, normalizedPath);
+      if (!fallbackFile) return new Response('Forbidden', { status: 403 });
+      return net.fetch(pathToFileURL(fallbackFile).href);
+    }
+    return net.fetch(pathToFileURL(activeFile).href);
   });
   const layoutFile = path.join(app.getPath('userData'), 'window-layout.json');
   const defaultPin = Boolean(desktop.defaultAlwaysOnTop);
@@ -247,6 +283,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
   const isTrustedMainSender = (event) => !mainWindow.isDestroyed()
     && event.sender === mainWindow.webContents
     && event.senderFrame === mainWindow.webContents.mainFrame;
+  hotUpdate.installHotUpdateIpc(ipcMain, isTrustedMainSender);
 
   const getLayoutPublicState = () => ({
     mode: layoutState.mode,
@@ -429,12 +466,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
 
   ipcMain.handle('app-relaunch', (event) => {
     if (!isTrustedMainSender(event)) return;
-    isQuitting = true;
-    try { app.releaseSingleInstanceLock(); } catch {}
-    app.relaunch({
-      args: safeGpuMode ? buildSafeGpuRelaunchArgs(process.argv) : process.argv.slice(1),
-    });
-    app.exit(0);
+    return relaunchApp();
   });
   ipcMain.handle('set-always-on-top', (event, flag) => {
     if (!isTrustedMainSender(event) || typeof flag !== 'boolean') return false;
@@ -741,7 +773,10 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     }
   };
 
+  let autoUpdateTimer;
   mainWindow.on('closed', () => {
+    clearTimeout(autoUpdateTimer);
+    hotUpdate.dispose();
     if (readyShowTimer) {
       clearTimeout(readyShowTimer);
       readyShowTimer = null;
@@ -757,6 +792,9 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
   let lastRendererCrashAt = 0;
   mainWindow.webContents.once('did-finish-load', () => {
     if (mainWindow.isDestroyed()) return;
+    if (process.env.PRTS_DISABLE_AUTO_UPDATE !== '1') {
+      autoUpdateTimer = setTimeout(() => void hotUpdate.checkForUpdates().catch(() => {}), 4000);
+    }
     if (
       safeGpuMode
       && process.argv.includes('--prts-safe-gpu')
@@ -790,6 +828,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
       rendererRecoverCount,
     });
     if (isQuitting || mainWindow.isDestroyed() || details?.reason === 'clean-exit') return;
+    if (hotUpdate.handleRendererGone()) return;
     const now = Date.now();
     if (now - lastRendererCrashAt > 60_000) rendererRecoverCount = 0;
     lastRendererCrashAt = now;

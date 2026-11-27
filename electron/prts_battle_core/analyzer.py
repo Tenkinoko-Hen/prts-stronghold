@@ -499,8 +499,8 @@ class Analyzer:
                         conn.model.set_players(event['players'])
                     if event.get('mode_id'):
                         conn.model.battle_config = {key: event[key] for key in ['mode_id', 'boss_id', 'hidden_boss_id']}
-                    if event.get('banned_bonds'):
-                        conn.model.banned_bonds = tuple(event['banned_bonds'])
+                    if event.get('banned_bonds') and not conn.model.banned_bonds:
+                        conn.model.banned_bonds = tuple(dict.fromkeys(event['banned_bonds']))
                     if event.get('squads') or event.get('banned_units'):
                         conn.model.set_roster_squads(event.get('squads'), event.get('banned_units'))
                     if event.get('shops'):

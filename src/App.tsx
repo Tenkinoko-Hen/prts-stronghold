@@ -1,5 +1,5 @@
 // 青逝痕 Tenkinoko 制作
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AppWindow, BookOpen, Calculator, Grid, Images, PanelRight, Pin, Repeat2, Smartphone } from 'lucide-react';
 import { PRODUCT_BRAND } from './brand/productBrand';
 import {
@@ -15,7 +15,13 @@ import { CovenantEncyclopediaView } from './components/CovenantEncyclopediaView'
 import { StackingCalculatorView } from './components/StackingCalculatorView';
 import { TransferItemsView } from './components/TransferItemsView';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
-import { useBattleBanSync } from './desktop/battleBanSync';
+import {
+  decideBanSyncAction,
+  useBattleBanSync,
+  type BanSyncSource,
+  type CurrentGuideSyncState,
+  type GuideStage,
+} from './desktop/battleBanSync';
 import { readBattleReport } from './desktop/battleReportData';
 import {
   emulatorShortLabel,
@@ -90,7 +96,23 @@ export default function App() {
   const [currentRound, setCurrentRound] = useState<number>(1);
   const [autoFollowRound, setAutoFollowRound] = useState<boolean>(true);
   const [banState, setBanState] = useState<BanPickState>({ bannedCovenants: [], bannedOperators: [] });
+  const [guideStage, setGuideStage] = useState<GuideStage>('picker');
   const [matchSyncId, setMatchSyncId] = useState('');
+  const [matchSyncSource, setMatchSyncSource] = useState<BanSyncSource | null>(null);
+  const guideSyncRef = useRef<CurrentGuideSyncState>({
+    matchSyncId,
+    matchSyncSource,
+    banState,
+    currentRound,
+    stage: guideStage,
+  });
+  guideSyncRef.current = {
+    matchSyncId,
+    matchSyncSource,
+    banState,
+    currentRound,
+    stage: guideStage,
+  };
 
   const [windowMode, setWindowMode] = useState<WindowLayoutMode>(isMumuDemo ? 'mumu-drawer' : 'wide');
   const [mumuPlacement, setMumuPlacement] = useState<'outside-right' | 'inside-right' | 'screen-right' | null>(
@@ -185,18 +207,24 @@ export default function App() {
   }, []);
 
   const { sync: banSync, resync: resyncBans, reset: resetBanSync, scanWindow, scanClipboard } = useBattleBanSync(value => {
-    setBanState(previous => {
-      const unchanged = previous.bannedCovenants.length === value.bannedCovenants.length
-        && value.bannedCovenants.every(name => previous.bannedCovenants.includes(name));
-      if (unchanged && previous.bannedOperators.length === 0 && matchSyncId) {
-        return previous;
-      }
+    const action = decideBanSyncAction(value, guideSyncRef.current);
+    const nextRound = action.resetCompAndRound ? (value.liveRound ?? 1) : guideSyncRef.current.currentRound;
+    guideSyncRef.current = {
+      matchSyncId: action.nextMatchSyncId,
+      matchSyncSource: action.nextMatchSyncSource,
+      banState: action.nextBanState,
+      currentRound: nextRound,
+      stage: action.nextStage,
+    };
+    setBanState(action.nextBanState);
+    setMatchSyncId(action.nextMatchSyncId);
+    setMatchSyncSource(action.nextMatchSyncSource);
+    if (action.resetCompAndRound) {
       setSelectedCompId(META_COMPS[0].id);
-      setCurrentRound(1);
+      setCurrentRound(nextRound);
       setAutoFollowRound(true);
-      setMatchSyncId(value.matchKey);
-      return { bannedCovenants: value.bannedCovenants, bannedOperators: [] };
-    });
+      setGuideStage(action.nextStage);
+    }
   }, desktopAPI?.battleReports || isMumuDemo ? { externalFeed: latestFeed } : undefined);
 
   useEffect(() => {
@@ -222,8 +250,20 @@ export default function App() {
 
   const clearBans = async () => {
     resetBanSync();
-    setBanState({ bannedCovenants: [], bannedOperators: [] });
+    const emptyBanState: BanPickState = { bannedCovenants: [], bannedOperators: [] };
+    guideSyncRef.current = {
+      matchSyncId: '',
+      matchSyncSource: null,
+      banState: emptyBanState,
+      currentRound: 1,
+      stage: 'picker',
+    };
+    setBanState(emptyBanState);
+    setMatchSyncId('');
+    setMatchSyncSource(null);
+    setGuideStage('picker');
     setSelectedCompId(META_COMPS[0].id);
+    setCurrentRound(1);
     setAutoFollowRound(true);
   };
 
@@ -519,8 +559,9 @@ export default function App() {
 
       {/* 2. Domain 01: Tactical Guide (Picker + Round-by-Round) */}
       <MetaCompsView
-        key={matchSyncId}
         visible={activeDomain === 'guide'}
+        stage={guideStage}
+        onStageChange={setGuideStage}
         banState={banState}
         onChangeBanState={setBanState}
         banSync={banSync}

@@ -101,13 +101,12 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-27 09:08（新增 4 项实局反馈修复与增强并重编双端 Worker：① 全面适配 **雷电模拟器（LDPlayer 9 / 5 / 4）** 抓包、`5554..5585` 控制端口过滤、贴边战术抽屉/Lite 吸附/HUD 联动与 Ban 选 OCR 识别；② **Windows 10 自动选用官方高兼容 Npcap v1.80**（Win11 保持最新），并自动修复 `0x800700b7` 残留驱动/注册表与 `MaxNumFilters=14`；③ **修复 14–15 回合长战报导出 PNG 失败**——改用同源 `Blob` URL 突破 Chromium 2 MiB `data:` URL 上限，清洗非法 XML 控制字符并自动多档降阶重试；④ **根治阵亡观战后「我」席位漂移到活到最后的队友身上**——锁定同局 `conn.player`、接入 `354` 商店购买回包锚定、封堵观战 `300`/`341`/`311` 篡改与前端/Android 漂移；236/236 全栈单测 + 双 Worker 重编全绿）
+- **最后更新**：2026-11-27 14:44（修复 PC 宽屏模式「战术跟打」在回合推进 / 抓包更新 / 重连 / OCR→抓包切换时自动弹回「选择本局阵容」页的 P0 缺陷：① 后端 `electron/prts_battle_core/analyzer.py` 锁定同局首见非空 `banned_bonds` 并去重，换局按 `stage_seed` 重置；② 前端移除 `<MetaCompsView key={matchSyncId}>` 强拆重挂载、将 `guideStage` 提升至 `App.tsx` 受控管理、抽出纯函数 `decideBanSyncAction` 与 `normalizeBanSignature` 并在 `setBanState` updater 外统一同步状态；239/239 全栈单测 + Electron 45 真机 E2E 烟测 + 双产品 Worker 重建全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **236/236 全绿**（`tsc --noEmit` 通过 + TS 130/130 + Node 41/41 + Python 65/65）
+  - `npm test` **239/239 全绿**（`tsc --noEmit` 通过 + TS 132/132 + Node 41/41 + Python 66/66）
+  - 真实 Electron 45 跟打全流程 E2E 烟测通过（R1 首帧、R2–R5 乱序 Ban 推进、R5 重连换 `matchKey` 均保持跟打页与自选阵容不弹回；真正新局 R1 正常重置回选阵容页）
   - 双产品 Windows Python Worker（`PRTS-Worker.exe` / `Telemetry-Worker.exe`）重建并自检通过
-  - Electron 45 四模式实机烟测与 Win10/Win11 Npcap 版本自动分流校验通过
-  - Android `BattleCaptureState.java` Java 8 编译及观战防漂移单测通过（完整 APK 未重打，沿用 `2.1.0`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 09:22 同步刷新 PC 双包至 GitHub Release）**：
   - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `052be0b` 替换更新）

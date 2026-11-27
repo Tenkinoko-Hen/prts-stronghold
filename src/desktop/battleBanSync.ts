@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mapBannedBondsToCovenants } from './covenantBonds';
 import type { CovenantOcrState, NpcapInstallState, ReportFeed, ReportStatus } from './battleReports';
+import type { BanPickState } from '../utils/tacticalLogic';
 
 export interface LightBattleSyncMeta {
   match: number | null;
@@ -164,8 +165,107 @@ export interface BattleBanSyncState {
   npcapInstall?: NpcapInstallState;
 }
 
+export type GuideStage = 'picker' | 'detail';
+export type BanSyncSource = 'packet' | 'ocr';
+
+export interface BanSyncPayload {
+  matchKey: string;
+  bannedCovenants: string[];
+  source: BanSyncSource;
+  liveRound: number | null;
+  manualResync?: boolean;
+}
+
+export interface CurrentGuideSyncState {
+  matchSyncId: string;
+  matchSyncSource: BanSyncSource | null;
+  banState: BanPickState;
+  currentRound: number;
+  stage: GuideStage;
+}
+
+export interface BanSyncAction {
+  isNewMatch: boolean;
+  nextBanState: BanPickState;
+  nextMatchSyncId: string;
+  nextMatchSyncSource: BanSyncSource | null;
+  nextStage: GuideStage;
+  resetCompAndRound: boolean;
+}
+
+export function normalizeBanSignature(matchKey: string, bannedCovenants: readonly string[]): string {
+  return `${matchKey}:${[...new Set(bannedCovenants)].sort().join(',')}`;
+}
+
+function sameCovenantSet(a: readonly string[], b: readonly string[]): boolean {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  if (setA.size !== setB.size) return false;
+  for (const item of setA) {
+    if (!setB.has(item)) return false;
+  }
+  return true;
+}
+
+export function decideBanSyncAction(
+  incoming: BanSyncPayload,
+  current: CurrentGuideSyncState,
+): BanSyncAction {
+  const normalizedIncomingBans = [...new Set(incoming.bannedCovenants)];
+  const sameBans = sameCovenantSet(current.banState.bannedCovenants, normalizedIncomingBans);
+  const hasPreviousMatch = current.matchSyncId !== '';
+  const matchKeyChanged = hasPreviousMatch && incoming.matchKey !== '' && incoming.matchKey !== current.matchSyncId;
+
+  const isOcrToPacketHandoff =
+    current.matchSyncSource === 'ocr'
+    && incoming.source === 'packet'
+    && (sameBans || current.currentRound <= 2);
+
+  const isPacketToOcrOverride =
+    current.matchSyncSource === 'packet'
+    && incoming.source === 'ocr';
+
+  let isNewMatch = false;
+  if (!incoming.manualResync && matchKeyChanged && !isOcrToPacketHandoff && !isPacketToOcrOverride) {
+    if (incoming.source === 'packet') {
+      if (incoming.liveRound !== null && incoming.liveRound >= 2) {
+        isNewMatch = false;
+      } else if (incoming.liveRound === 1) {
+        isNewMatch = current.currentRound >= 2 || !sameBans;
+      } else {
+        isNewMatch = !sameBans;
+      }
+    } else {
+      isNewMatch = !sameBans && current.currentRound >= 2;
+    }
+  }
+
+  if (isNewMatch) {
+    return {
+      isNewMatch: true,
+      nextBanState: { bannedCovenants: normalizedIncomingBans, bannedOperators: [] },
+      nextMatchSyncId: incoming.matchKey,
+      nextMatchSyncSource: incoming.source,
+      nextStage: 'picker',
+      resetCompAndRound: true,
+    };
+  }
+
+  return {
+    isNewMatch: false,
+    nextBanState: {
+      bannedCovenants: normalizedIncomingBans,
+      bannedOperators: current.banState.bannedOperators,
+    },
+    nextMatchSyncId: incoming.matchKey || current.matchSyncId,
+    nextMatchSyncSource: incoming.matchKey ? incoming.source : current.matchSyncSource,
+    nextStage: current.stage,
+    resetCompAndRound: false,
+  };
+}
+
 export function useBattleBanSync(
-  onSync: (payload: { matchKey: string; bannedCovenants: string[]; source: 'packet' | 'ocr' }) => void,
+  onSync: (payload: BanSyncPayload) => void,
   options?: { externalFeed?: ReportFeed | null },
 ) {
   const api = window.electronAPI?.battleReports;
@@ -227,10 +327,10 @@ export function useBattleBanSync(
     }));
 
     if (hasPacketBans) {
-      const signature = `${matchKey}:${packetBans.join(',')}`;
+      const signature = normalizeBanSignature(matchKey, packetBans);
       if (signature !== appliedPacketRef.current) {
         appliedPacketRef.current = signature;
-        onSyncRef.current({ matchKey, bannedCovenants: packetBans, source: 'packet' });
+        onSyncRef.current({ matchKey, bannedCovenants: packetBans, source: 'packet', liveRound });
       }
     }
   }, [ocrApi]);
@@ -269,6 +369,7 @@ export function useBattleBanSync(
           matchKey: ocr.id,
           bannedCovenants: ocr.bannedCovenants,
           source: 'ocr',
+          liveRound: null,
         });
       }
     };
@@ -300,9 +401,11 @@ export function useBattleBanSync(
         matchKey: state.matchKey,
         bannedCovenants: state.bannedCovenants,
         source: state.syncSource ?? 'packet',
+        liveRound: state.liveRound,
+        manualResync: true,
       });
     }
-  }, [state.bannedCovenants, state.matchKey, state.syncSource]);
+  }, [state.bannedCovenants, state.liveRound, state.matchKey, state.syncSource]);
 
   const reset = useCallback(() => {
     appliedPacketRef.current = '';

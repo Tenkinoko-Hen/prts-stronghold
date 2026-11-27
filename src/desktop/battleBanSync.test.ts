@@ -1,7 +1,13 @@
 // 青逝痕 Tenkinoko 制作
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readLightBattleSyncMeta, resolvePacketSyncSnapshot } from './battleBanSync';
+import {
+  decideBanSyncAction,
+  normalizeBanSignature,
+  readLightBattleSyncMeta,
+  resolvePacketSyncSnapshot,
+  type CurrentGuideSyncState,
+} from './battleBanSync';
 import { readBattleReport } from './battleReportData';
 import { demoReport } from './demo/battleReportFixture';
 
@@ -124,4 +130,147 @@ test('resolvePacketSyncSnapshot pauses OCR auto-poll for 0-ban matches and no-Np
   }, true, '2:3');
   assert.equal(nextMatchPre.matchKey, '2:4');
   assert.equal(nextMatchPre.shouldPauseAutoPoll, false);
+});
+
+test('normalizeBanSignature sorts and deduplicates banned covenants', () => {
+  assert.equal(
+    normalizeBanSignature('1:1', ['拉特兰', '炎', '拉特兰']),
+    normalizeBanSignature('1:1', ['炎', '拉特兰']),
+  );
+});
+
+test('decideBanSyncAction preserves guide stage, comp, and manual bans across intra-match syncs and transitions', () => {
+  // 黄金向量 2：首次同步不踢回选阵容
+  const initialSyncCurrent: CurrentGuideSyncState = {
+    matchSyncId: '',
+    matchSyncSource: null,
+    banState: { bannedCovenants: [], bannedOperators: ['维什戴尔'] },
+    currentRound: 1,
+    stage: 'detail',
+  };
+  const initialSyncAction = decideBanSyncAction(
+    { matchKey: '1:1', bannedCovenants: ['炎', '精准'], source: 'packet', liveRound: 1 },
+    initialSyncCurrent,
+  );
+  assert.equal(initialSyncAction.isNewMatch, false);
+  assert.equal(initialSyncAction.resetCompAndRound, false);
+  assert.equal(initialSyncAction.nextStage, 'detail');
+  assert.equal(initialSyncAction.nextMatchSyncId, '1:1');
+  assert.deepEqual(initialSyncAction.nextBanState.bannedOperators, ['维什戴尔']);
+
+  // 黄金向量 3：同局手动禁选干员或手动重新同步不踢回
+  const manualResyncCurrent: CurrentGuideSyncState = {
+    matchSyncId: '1:1',
+    matchSyncSource: 'packet',
+    banState: { bannedCovenants: ['炎', '精准'], bannedOperators: ['维什戴尔'] },
+    currentRound: 4,
+    stage: 'detail',
+  };
+  const manualResyncAction = decideBanSyncAction(
+    { matchKey: '1:1', bannedCovenants: ['炎', '精准'], source: 'packet', liveRound: 4, manualResync: true },
+    manualResyncCurrent,
+  );
+  assert.equal(manualResyncAction.isNewMatch, false);
+  assert.equal(manualResyncAction.resetCompAndRound, false);
+  assert.equal(manualResyncAction.nextStage, 'detail');
+  assert.deepEqual(manualResyncAction.nextBanState.bannedOperators, ['维什戴尔']);
+
+  // 黄金向量 4：局中 R5 重连 / Worker 重启换 matchKey 绝不踢回
+  const r5ReconnectCurrent: CurrentGuideSyncState = {
+    matchSyncId: '1:1',
+    matchSyncSource: 'packet',
+    banState: { bannedCovenants: ['炎', '精准'], bannedOperators: ['维什戴尔'] },
+    currentRound: 5,
+    stage: 'detail',
+  };
+  const r5ReconnectAction = decideBanSyncAction(
+    { matchKey: '2:1', bannedCovenants: ['炎', '萨尔贡'], source: 'packet', liveRound: 5 },
+    r5ReconnectCurrent,
+  );
+  assert.equal(r5ReconnectAction.isNewMatch, false);
+  assert.equal(r5ReconnectAction.resetCompAndRound, false);
+  assert.equal(r5ReconnectAction.nextStage, 'detail');
+  assert.equal(r5ReconnectAction.nextMatchSyncId, '2:1');
+  assert.deepEqual(r5ReconnectAction.nextBanState.bannedOperators, ['维什戴尔']);
+
+  // 黄金向量 5：局中 R5 重启首帧 liveRound: null 且同 Ban 集不踢回
+  const r5NullRoundCurrent: CurrentGuideSyncState = {
+    matchSyncId: '1:1',
+    matchSyncSource: 'packet',
+    banState: { bannedCovenants: ['炎', '精准'], bannedOperators: [] },
+    currentRound: 5,
+    stage: 'detail',
+  };
+  const r5NullRoundAction = decideBanSyncAction(
+    { matchKey: '2:1', bannedCovenants: ['精准', '炎'], source: 'packet', liveRound: null },
+    r5NullRoundCurrent,
+  );
+  assert.equal(r5NullRoundAction.isNewMatch, false);
+  assert.equal(r5NullRoundAction.nextStage, 'detail');
+
+  // 黄金向量 6：OCR → Packet 同局接管不踢回
+  const ocrToPacketCurrent: CurrentGuideSyncState = {
+    matchSyncId: 'ocr-1',
+    matchSyncSource: 'ocr',
+    banState: { bannedCovenants: ['炎'], bannedOperators: [] },
+    currentRound: 1,
+    stage: 'detail',
+  };
+  const ocrToPacketAction = decideBanSyncAction(
+    { matchKey: '1:1', bannedCovenants: ['炎', '精准'], source: 'packet', liveRound: 1 },
+    ocrToPacketCurrent,
+  );
+  assert.equal(ocrToPacketAction.isNewMatch, false);
+  assert.equal(ocrToPacketAction.resetCompAndRound, false);
+  assert.equal(ocrToPacketAction.nextStage, 'detail');
+  assert.equal(ocrToPacketAction.nextMatchSyncId, '1:1');
+  assert.equal(ocrToPacketAction.nextMatchSyncSource, 'packet');
+
+  // 黄金向量 7：真正新局 R12 → 新 matchKey R1 正常重置回 picker
+  const r12FinishedCurrent: CurrentGuideSyncState = {
+    matchSyncId: '1:1',
+    matchSyncSource: 'packet',
+    banState: { bannedCovenants: ['炎', '精准'], bannedOperators: ['维什戴尔'] },
+    currentRound: 12,
+    stage: 'detail',
+  };
+  const nextMatchDiffBans = decideBanSyncAction(
+    { matchKey: '1:2', bannedCovenants: ['维多利亚'], source: 'packet', liveRound: 1 },
+    r12FinishedCurrent,
+  );
+  assert.equal(nextMatchDiffBans.isNewMatch, true);
+  assert.equal(nextMatchDiffBans.resetCompAndRound, true);
+  assert.equal(nextMatchDiffBans.nextStage, 'picker');
+  assert.deepEqual(nextMatchDiffBans.nextBanState.bannedOperators, []);
+
+  const nextMatchSameBans = decideBanSyncAction(
+    { matchKey: '1:2', bannedCovenants: ['炎', '精准'], source: 'packet', liveRound: 1 },
+    r12FinishedCurrent,
+  );
+  assert.equal(nextMatchSameBans.isNewMatch, true);
+  assert.equal(nextMatchSameBans.resetCompAndRound, true);
+  assert.equal(nextMatchSameBans.nextStage, 'picker');
+  assert.deepEqual(nextMatchSameBans.nextBanState.bannedOperators, []);
+
+  const nextMatchPreFrame = decideBanSyncAction(
+    { matchKey: '1:2', bannedCovenants: ['维多利亚'], source: 'packet', liveRound: null },
+    r12FinishedCurrent,
+  );
+  assert.equal(nextMatchPreFrame.isNewMatch, true);
+  assert.equal(nextMatchPreFrame.nextStage, 'picker');
+
+  // 黄金向量 8：Packet 活跃时手动触发 OCR 校对不踢回
+  const packetToOcrCurrent: CurrentGuideSyncState = {
+    matchSyncId: '1:1',
+    matchSyncSource: 'packet',
+    banState: { bannedCovenants: ['炎'], bannedOperators: [] },
+    currentRound: 6,
+    stage: 'detail',
+  };
+  const packetToOcrAction = decideBanSyncAction(
+    { matchKey: 'ocr-2', bannedCovenants: ['维多利亚'], source: 'ocr', liveRound: null },
+    packetToOcrCurrent,
+  );
+  assert.equal(packetToOcrAction.isNewMatch, false);
+  assert.equal(packetToOcrAction.nextStage, 'detail');
 });

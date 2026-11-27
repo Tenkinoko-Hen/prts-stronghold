@@ -171,6 +171,17 @@ class AnalyzerTests(unittest.TestCase):
     def event(self, key, event, message_id):
         self.analyzer._record_event(self.analyzer.connections[key], key, message_id, event)
 
+    def test_banned_bonds_locked_within_same_match_and_reset_on_new_match(self):
+        cases = (
+            (20, 1, ('bond_flame', 'bond_precise', 'bond_flame'), ['bond_flame', 'bond_precise']),
+            (20, 2, ('bond_precise', 'bond_sargon'), ['bond_flame', 'bond_precise']),
+            (21, 1, ('bond_victoria',), ['bond_victoria']),
+        )
+        for seed, number, bonds, expected in cases:
+            with self.subTest(seed=seed, round=number):
+                self.event(OLD, {**phase(number, seed=seed), 'banned_bonds': bonds}, 300)
+                self.assertEqual(self.analyzer.snapshot()['battle_config']['banned_bonds'], expected)
+
     def test_new_match_promotes_buffered_result_after_old_socket_disappears(self):
         self.event(OLD, phase(4, seed=20), 300)
         self.event(OLD, settle(3, 2), 311)

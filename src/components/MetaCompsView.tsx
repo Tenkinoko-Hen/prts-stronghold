@@ -31,11 +31,15 @@ interface MetaCompsViewProps {
   onJumpTo2DMap(): void;
   onJumpToPriorityCovenants(): void;
   onJumpToTransfers?(): void;
+  stage?: 'picker' | 'detail';
+  onStageChange?(stage: 'picker' | 'detail'): void;
 }
 
 export function MetaCompsView(props: MetaCompsViewProps) {
   const { banState, onChangeBanState, banSync, onResyncBans, onClearBans, selectedCompId, onSelectCompId } = props;
-  const [stage, setStage] = useState<'picker' | 'detail'>('picker');
+  const [internalStage, setInternalStage] = useState<'picker' | 'detail'>('picker');
+  const stage = props.stage ?? internalStage;
+  const setStage = props.onStageChange ?? setInternalStage;
   const [difficulty, setDifficulty] = useState('全部');
   const [page, setPage] = useState(0);
   const [dialog, setDialog] = useState<'operators' | 'help' | 'reset' | null>(null);
@@ -50,7 +54,7 @@ export function MetaCompsView(props: MetaCompsViewProps) {
     [key]: previous[key].includes(name) ? previous[key].filter(item => item !== name) : [...previous[key], name],
   }));
   const reset = async () => {
-    try { await onClearBans(); props.onChangeRound(1); setDialog(null); setResetError(''); }
+    try { await onClearBans(); setDialog(null); setResetError(''); }
     catch { setResetError('重置未完成，请重试。'); }
   };
   const chips = (names: readonly string[], group: string) => <div className="d-ban-grid">{names.map(name => {

@@ -109,10 +109,10 @@ npm run build
   - Electron 45 四模式实机烟测与 Win10/Win11 Npcap 版本自动分流校验通过
   - Android `BattleCaptureState.java` Java 8 编译及观战防漂移单测通过（完整 APK 未重打，沿用 `2.1.0`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
-- **已发布最新正式版本（`v2.1.0` · Latest，2026-11-26 21:05 发布至 GitHub Release）**：
-  - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（对应 tag `v2.1.0` → `0541d6c`）
-  - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,623,807 字节，SHA-256: `e6d5c25cd63334fbc73e81b9d0fe6048d6270d287ed5a2b7fce69e728150dbd1`）
-  - **PC 纯净版（Lite）**：`PRTS-Stronghold-Lite-2.1.0-Win64.exe`（126.63 MiB / 132,781,466 字节，SHA-256: `1635179323558ada643951b0d68c244b782543611585800b275b155dc08b602f`）
+- **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 09:22 同步刷新 PC 双包至 GitHub Release）**：
+  - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `052be0b` 替换更新）
+  - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,627,422 字节，SHA-256: `07e75529e1e1f4cf25aeab0065ad6e0dfdc37e0114b76f2c78a4e861bb824cd2`）
+  - **PC 纯净版（Lite）**：`PRTS-Stronghold-Lite-2.1.0-Win64.exe`（126.64 MiB / 132,787,259 字节，SHA-256: `9b385df8bd6c975f9a82aef7f0d6e0baab024b772b24f66537edd2b6b0167e80`）
   - **Android 完整版**：`PRTS-Stronghold-2.1.0-Android.apk`（143.04 MiB / 149,984,238 字节，VersionCode `210`，SHA-256: `2770e7bf4e538a8f3390217dbca106d582597d3fc10110402d0e53cb16e41db8`，v2/v3 签名校验通过）
   - **Android 纯净版（卫戍战报仪 Lite）**：`PRTS-Stronghold-Lite-2.1.0-Android.apk`（32.18 MiB / 33,746,446 字节，VersionCode `210`，SHA-256: `cf48ed430b4ed57a361229c5d5ef7c827a895e5d5f9e87f9cd2dfc559844d81c`，v2/v3 签名校验通过）
 - **最近一次正式发布版本**：

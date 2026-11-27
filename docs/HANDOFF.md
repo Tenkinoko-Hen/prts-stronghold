@@ -108,10 +108,10 @@ npm run build
   - 真实 Electron 45 跟打全流程 E2E 烟测通过（R1 首帧、R2–R5 乱序 Ban 推进、R5 重连换 `matchKey` 均保持跟打页与自选阵容不弹回；真正新局 R1 正常重置回选阵容页）
   - 双产品 Windows Python Worker（`PRTS-Worker.exe` / `Telemetry-Worker.exe`）重建并自检通过
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
-- **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 09:22 同步刷新 PC 双包至 GitHub Release）**：
-  - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `052be0b` 替换更新）
-  - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,627,422 字节，SHA-256: `07e75529e1e1f4cf25aeab0065ad6e0dfdc37e0114b76f2c78a4e861bb824cd2`）
-  - **PC 纯净版（Lite）**：`PRTS-Stronghold-Lite-2.1.0-Win64.exe`（126.64 MiB / 132,787,259 字节，SHA-256: `9b385df8bd6c975f9a82aef7f0d6e0baab024b772b24f66537edd2b6b0167e80`）
+- **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 15:01 同步刷新 PC 双包至 GitHub Release）**：
+  - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `ea4439a` 替换更新）
+  - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,628,926 字节，SHA-256: `ab7286d246cc52e865edcefcfb7bf9d13714bd15fec4fdc9cdfe56934cc2f73d`）
+  - **PC 纯净版（Lite）**：`PRTS-Stronghold-Lite-2.1.0-Win64.exe`（126.64 MiB / 132,786,734 字节，SHA-256: `aae8d314af9ef472c8497108ac2a134b26c3ea225156fdb6d80c24c8661af8e3`）
   - **Android 完整版**：`PRTS-Stronghold-2.1.0-Android.apk`（143.04 MiB / 149,984,238 字节，VersionCode `210`，SHA-256: `2770e7bf4e538a8f3390217dbca106d582597d3fc10110402d0e53cb16e41db8`，v2/v3 签名校验通过）
   - **Android 纯净版（卫戍战报仪 Lite）**：`PRTS-Stronghold-Lite-2.1.0-Android.apk`（32.18 MiB / 33,746,446 字节，VersionCode `210`，SHA-256: `cf48ed430b4ed57a361229c5d5ef7c827a895e5d5f9e87f9cd2dfc559844d81c`，v2/v3 签名校验通过）
 - **最近一次正式发布版本**：

@@ -1,5 +1,5 @@
 # 青逝痕 Tenkinoko 制作
-"""Windows IPv4 capture restricted to TCP connections owned by Arknights.exe or MuMu."""
+"""Windows IPv4 capture restricted to TCP connections owned by Arknights.exe, MuMu, or LDPlayer."""
 
 from collections import deque
 import ctypes as ct
@@ -31,6 +31,11 @@ _MUMU_HUB_TITLE_KEYWORDS = (
     "multi-instance",
     "multi instance",
     "app center",
+    "雷电多开器",
+    "雷电游戏中心",
+    "雷电圈",
+    "ldmultiplayer",
+    "ldstore",
 )
 
 PC_PROCESS_NAMES = frozenset({"arknights.exe"})
@@ -52,6 +57,20 @@ MUMU_PROCESS_NAMES = MUMU_INSTANCE_PROCESS_NAMES | frozenset({
     "mumuvmmservice.exe",
     "mumuvmmsvc.exe",
     "mumunxsvc.exe",
+})
+
+# LDPlayer (9 / 5 / 4) processes; strictly excludes dnmultiplayer(ex).exe and ldnews.exe.
+LDPLAYER_WINDOW_PROCESS_NAMES = frozenset({"dnplayer.exe"})
+LDPLAYER_INSTANCE_PROCESS_NAMES = LDPLAYER_WINDOW_PROCESS_NAMES | frozenset({
+    "ld9boxheadless.exe",
+    "ldvboxheadless.exe",
+    "ldboxheadless.exe",
+})
+LDPLAYER_PROCESS_NAMES = LDPLAYER_INSTANCE_PROCESS_NAMES | frozenset({
+    "ld9boxsvc.exe",
+    "ldvboxsvc.exe",
+    "ldboxsvc.exe",
+    "ld9boxnetdhcp.exe",
 })
 
 
@@ -121,13 +140,16 @@ def _is_mumu_hub_title(title: str) -> bool:
     return any(keyword in title or keyword in folded for keyword in _MUMU_HUB_TITLE_KEYWORDS)
 
 
-def _select_best_mumu_window(candidates: list[tuple[str, str, int, int, int, int]]) -> dict | None:
-    """Pick the best MuMu emulator window from (exe, title, x, y, width, height) in Z-order.
+def _select_best_emulator_window(
+    candidates: list[tuple[str, str, int, int, int, int]],
+    *,
+    process_names: frozenset[str],
+    window_process_names: frozenset[str],
+) -> dict | None:
+    """Pick the best emulator window from (exe, title, x, y, width, height) in Z-order.
 
-    MuMu Player 12 (v4/v5 `MuMuNxDevice.exe`) renders app tabs internally in Qt while keeping
-    the Win32 top-level title as the instance name (e.g. `MuMu安卓设备-1`). Prefer explicit
-    Arknights/明日方舟 titles when present, and otherwise dock to the largest visible emulator
-    instance window (excluding launcher/hub windows).
+    Prefer explicit Arknights/明日方舟 titles when present, and otherwise dock to the
+    largest visible emulator instance window (excluding launcher/hub windows).
     """
     best_rank: tuple[int, int] | None = None
     best_window: dict | None = None
@@ -136,9 +158,9 @@ def _select_best_mumu_window(candidates: list[tuple[str, str, int, int, int, int
         title = raw_title.strip()
         if not title or width < 300 or height < 200:
             continue
-        if _is_arknights_title(title) and exe_key in MUMU_PROCESS_NAMES:
+        if _is_arknights_title(title) and exe_key in process_names:
             tier = 2
-        elif exe_key in MUMU_WINDOW_PROCESS_NAMES and not _is_mumu_hub_title(title):
+        elif exe_key in window_process_names and not _is_mumu_hub_title(title):
             tier = 1
         else:
             continue
@@ -155,9 +177,31 @@ def _select_best_mumu_window(candidates: list[tuple[str, str, int, int, int, int
     return best_window
 
 
-def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
-    mumu_pids = {pid: exe.casefold() for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
-    if not mumu_pids or not hasattr(ct, "windll"):
+def _select_best_mumu_window(candidates: list[tuple[str, str, int, int, int, int]]) -> dict | None:
+    """Pick the best MuMu emulator window from (exe, title, x, y, width, height) in Z-order."""
+    return _select_best_emulator_window(
+        candidates,
+        process_names=MUMU_PROCESS_NAMES,
+        window_process_names=MUMU_WINDOW_PROCESS_NAMES,
+    )
+
+
+def _select_best_ldplayer_window(candidates: list[tuple[str, str, int, int, int, int]]) -> dict | None:
+    """Pick the best LDPlayer emulator window from (exe, title, x, y, width, height) in Z-order."""
+    return _select_best_emulator_window(
+        candidates,
+        process_names=LDPLAYER_PROCESS_NAMES,
+        window_process_names=LDPLAYER_WINDOW_PROCESS_NAMES,
+    )
+
+
+def _find_emulator_window(
+    process_map: dict[int, str],
+    process_names: frozenset[str],
+    selector: Callable[[list[tuple[str, str, int, int, int, int]]], dict | None],
+) -> dict | None:
+    target_pids = {pid: exe.casefold() for pid, exe in process_map.items() if exe.casefold() in process_names}
+    if not target_pids or not hasattr(ct, "windll"):
         return None
     user32 = ct.windll.user32
     dwmapi = getattr(ct.windll, "dwmapi", None)
@@ -187,7 +231,7 @@ def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
             return True
         pid = wt.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ct.byref(pid))
-        exe = mumu_pids.get(pid.value)
+        exe = target_pids.get(pid.value)
         if exe is None:
             return True
         length = user32.GetWindowTextLengthW(hwnd)
@@ -217,17 +261,27 @@ def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
         return True
 
     user32.EnumWindows(enum_proc(callback), 0)
-    return _select_best_mumu_window(candidates)
+    return selector(candidates)
+
+
+def find_mumu_arknights_window(process_map: dict[int, str]) -> dict | None:
+    return _find_emulator_window(process_map, MUMU_PROCESS_NAMES, _select_best_mumu_window)
 
 
 find_mumu_window = find_mumu_arknights_window
+
+
+def find_ldplayer_arknights_window(process_map: dict[int, str]) -> dict | None:
+    return _find_emulator_window(process_map, LDPLAYER_PROCESS_NAMES, _select_best_ldplayer_window)
 
 
 def resolve_capture_target(
     process_map: dict[int, str],
     mumu_window: dict | None,
     *,
+    ldplayer_window: dict | None = None,
     has_mumu_traffic: bool = False,
+    has_ldplayer_traffic: bool = False,
 ) -> tuple[str, set[int], dict | None]:
     pc_pids = {pid for pid, exe in process_map.items() if exe.casefold() in PC_PROCESS_NAMES}
     if pc_pids:
@@ -239,11 +293,18 @@ def resolve_capture_target(
     mumu_pids = {pid for pid, exe in process_map.items() if exe.casefold() in MUMU_PROCESS_NAMES}
     if mumu_pids and (mumu_instance_pids or mumu_window is not None or has_mumu_traffic):
         return ("mumu", mumu_pids, mumu_window)
+    ldplayer_instance_pids = {
+        pid for pid, exe in process_map.items()
+        if exe.casefold() in LDPLAYER_INSTANCE_PROCESS_NAMES
+    }
+    ldplayer_pids = {pid for pid, exe in process_map.items() if exe.casefold() in LDPLAYER_PROCESS_NAMES}
+    if ldplayer_pids and (ldplayer_instance_pids or ldplayer_window is not None or has_ldplayer_traffic):
+        return ("ldplayer", ldplayer_pids, ldplayer_window)
     return ("none", set(), None)
 
 
 def _is_mumu_control_port(port: int) -> bool:
-    return port in _MUMU_CONTROL_PORTS or 5555 <= port <= 5585 or 16384 <= port <= 16500
+    return port in _MUMU_CONTROL_PORTS or 5554 <= port <= 5585 or 16384 <= port <= 16500
 
 
 def _is_likely_stronghold_port(port: int) -> bool:
@@ -433,19 +494,27 @@ def segments(
                     process_map = {pid: "arknights.exe" for pid in game_pids()}
                 else:
                     process_map = list_process_map()
-                detected_window = find_mumu_arknights_window(process_map)
+                detected_mumu_window = find_mumu_arknights_window(process_map)
+                detected_ldplayer_window = find_ldplayer_arknights_window(process_map)
                 has_mumu_traffic = client == "mumu" and any(
                     _is_likely_stronghold_port(server[1]) for _, server in connections
                 )
+                has_ldplayer_traffic = client == "ldplayer" and any(
+                    _is_likely_stronghold_port(server[1]) for _, server in connections
+                )
                 client, pids, mumu_window = resolve_capture_target(
-                    process_map, detected_window, has_mumu_traffic=has_mumu_traffic
+                    process_map,
+                    detected_mumu_window,
+                    ldplayer_window=detected_ldplayer_window,
+                    has_mumu_traffic=has_mumu_traffic,
+                    has_ldplayer_traffic=has_ldplayer_traffic,
                 )
             checked = refresh_receivers or (bool(deferred) and now >= next_connection_check)
             if checked:
                 previous = connections
                 connections = (
                     game_connections(pids, exclude_mumu_control=True)
-                    if client == "mumu"
+                    if client in ("mumu", "ldplayer")
                     else game_connections(pids)
                 )
                 game_servers = {server for _, server in connections}

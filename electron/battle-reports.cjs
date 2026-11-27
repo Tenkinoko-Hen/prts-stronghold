@@ -5,8 +5,8 @@ const { windowsWorkerLaunch } = require('./windows-runtime.cjs');
 const { NPCAP_DOWNLOAD_PAGE, hasNpcap, runNpcapInstaller } = require('./npcap-installer.cjs');
 
 const WORKER_STATUSES = new Set(['waiting', 'connecting', 'listening', 'permission', 'unavailable', 'incompatible']);
-const CLIENT_SOURCES = new Set(['none', 'pc', 'mumu']);
-const CLIENT_SOURCE_LABELS = { mumu: 'MuMu 模拟器', pc: 'PC 原生端', none: '未检测到' };
+const CLIENT_SOURCES = new Set(['none', 'pc', 'mumu', 'ldplayer']);
+const CLIENT_SOURCE_LABELS = { mumu: 'MuMu 模拟器', ldplayer: '雷电模拟器', pc: 'PC 原生端', none: '未检测到' };
 const MAX_REPORT = 8 * 1024 * 1024;
 const DIAGNOSTICS = /^PRTS_REPORT_DIAG(?: [0-9]{1,12}){8}$/;
 const DETAILS = /^PRTS_REPORT_DETAIL(?: [0-9]{1,12}){10}$/;
@@ -19,7 +19,7 @@ function parseSourceMessage(message, screenApi) {
     return null;
   }
   const clientSource = message.client;
-  if (clientSource !== 'mumu' || !message.mumuWindow || typeof message.mumuWindow !== 'object') {
+  if ((clientSource !== 'mumu' && clientSource !== 'ldplayer') || !message.mumuWindow || typeof message.mumuWindow !== 'object') {
     return { clientSource, mumuWindow: null };
   }
   const raw = message.mumuWindow;

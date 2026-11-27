@@ -237,11 +237,54 @@ test('same-match sparse updates and reconnect keep old assist pairs, but a corre
 });
 
 test('a corrected seat does not mislabel an old assist as mine or make the pair disappear', () => {
-  const first = updateLiveReport({ history: [] }, report(1, 4, { 4: covered }, 3), 1, 100);
+  const provisional = readBattleReport({ capture: { match: 1, round: 4, self: 3, self_basis: 'help' }, players: {}, rounds: { 4: covered } });
+  const first = updateLiveReport({ history: [] }, provisional, 1, 100);
   const state = updateLiveReport(first, report(1, 5, { 5: { phase: 'prep' } }, 2), 1, 101);
   const html = detailView(state.live!.report, 4);
   assert.match(html, /队友互兜.*1号.*3号.*1/);
   assert.doesNotMatch(html, /我给谁兜|谁给我兜/);
+});
+
+test('mergeSameMatch locks a confirmed self seat against spectator drift and null updates', () => {
+  const initial = readBattleReport({
+    capture: { match: 4, round: 8, self: 4 },
+    players: { 1: '甲', 2: '乙', 3: '丙', 4: '我' },
+    eliminated: { 4: 8 },
+    rounds: {
+      8: {
+        phase: 'settle',
+        self_leaks: 1,
+        self_leak_enemies: [typedEnemy],
+      },
+    },
+  });
+  let state = updateLiveReport({ history: [] }, initial, 1, 100);
+
+  // Spectator 300/341 or sparse snapshot attempting to drift self to seat 3 or null must be ignored
+  const driftedTo3 = readBattleReport({
+    capture: { match: 4, round: 10, self: 3 },
+    players: { 1: '甲', 2: '乙', 3: '丙', 4: '我' },
+    eliminated: { 4: 8 },
+    rounds: { 10: { phase: 'prep' } },
+  });
+  state = updateLiveReport(state, driftedTo3, 1, 110);
+  assert.equal(state.live!.report.self, 4);
+  assert.equal(state.live!.report.selfBySettlement, false);
+  assert.equal(state.live!.report.rounds[0].selfLeakEnemies?.[0].id, typedEnemy.id);
+
+  const driftedToHelp = readBattleReport({
+    capture: { match: 4, round: 11, self: 3, self_basis: 'help' },
+    players: {},
+    rounds: { 11: { phase: 'settle' } },
+  });
+  state = updateLiveReport(state, driftedToHelp, 1, 120);
+  assert.equal(state.live!.report.self, 4);
+  assert.equal(state.live!.report.selfBySettlement, false);
+
+  const driftedToNull = report(4, 12, { 12: { phase: 'prep' } }, null);
+  state = updateLiveReport(state, driftedToNull, 1, 130);
+  assert.equal(state.live!.report.self, 4);
+  assert.equal(state.live!.report.selfBySettlement, false);
 });
 
 test('manual game nicknames label assists locally and stay with that match through refresh and reconnect', () => {

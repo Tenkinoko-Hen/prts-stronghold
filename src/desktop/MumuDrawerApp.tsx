@@ -51,6 +51,8 @@ import { EnemyAvatar, SpawnPreview } from './BattleReportSpawns';
 import { BattleReportTelemetry, CompactOperatorBadge } from './BattleReportTelemetry';
 import { SeatTelemetryStrip } from './SeatTelemetryStrip';
 import {
+  emulatorShortLabel,
+  isEmulatorClientSource,
   reportWithPlayerNames,
   type BattleReportsBridge,
   type ClientSource,
@@ -320,13 +322,15 @@ export default function MumuDrawerApp({
   const bossNumber = bossFilter?.key === entryKey ? bossFilter.round : defaultBossRound(report);
   const previewRound = previewFilter?.key === entryKey ? previewFilter.round : replay ? 'all' : 'follow';
 
+  const isEmulator = isEmulatorClientSource(clientSource);
+  const emulatorLabel = emulatorShortLabel(clientSource);
   const topRoundLabel = report
     ? `R${liveRound ?? currentRound} · ${liveShopLevel}本`
-    : 'MuMu 待进局';
+    : `${emulatorLabel} 待进局`;
 
   const footerTone = npcapInstalled === false || restarting || reportStatus === 'failed' || reportStatus === 'permission'
     ? 'warn'
-    : clientSource === 'mumu' && reportStatus === 'listening'
+    : isEmulator && reportStatus === 'listening'
       ? 'live'
       : 'idle';
   const footerText = npcapInstalled === false
@@ -335,8 +339,8 @@ export default function MumuDrawerApp({
       ? (failureReason || '采集自动重连中…')
       : reportStatus === 'failed'
         ? '采集中断（不影响游戏）'
-        : clientSource === 'mumu'
-          ? (reportStatus === 'listening' ? 'MuMu 监听中' : reportStatus === 'permission' ? '需管理员权限' : 'MuMu 待进局')
+        : isEmulator
+          ? (reportStatus === 'listening' ? `${emulatorLabel} 监听中` : reportStatus === 'permission' ? '需管理员权限' : `${emulatorLabel} 待进局`)
           : reportStatus === 'listening'
             ? '协议监听中'
             : '待进局';
@@ -369,9 +373,9 @@ export default function MumuDrawerApp({
           <span className="mumu-brand-chip">{PRODUCT_BRAND.shortName}</span>
           <span
             className="mumu-source-pill"
-            data-mumu={clientSource === 'mumu'}
+            data-mumu={isEmulator}
             data-live={liveView}
-            title={placement === 'inside-right' ? '右侧空间不足，已叠放至 MuMu 内侧最右' : '已吸附 MuMu 窗口'}
+            title={placement === 'inside-right' ? `右侧空间不足，已叠放至 ${emulatorLabel} 内侧最右` : `已吸附 ${emulatorLabel} 窗口`}
           >
             <span className="mumu-dot" aria-hidden="true" />
             <span>{topRoundLabel}</span>
@@ -386,7 +390,7 @@ export default function MumuDrawerApp({
               aria-pressed={alwaysOnTop}
               disabled={pinPending}
               onClick={onToggleAlwaysOnTop}
-              title={alwaysOnTop ? '取消窗口置顶（切换其他软件时不再遮挡）' : '置顶窗口（MuMu 全屏叠放时建议开启）'}
+              title={alwaysOnTop ? '取消窗口置顶（切换其他软件时不再遮挡）' : `置顶窗口（${emulatorLabel} 全屏叠放时建议开启）`}
             >
               <Pin size={11} />
               <span>{alwaysOnTop ? '已置顶' : '置顶'}</span>
@@ -397,7 +401,7 @@ export default function MumuDrawerApp({
               type="button"
               className="mumu-top-btn"
               onClick={onSnapMumu}
-              title="重新吸附定位到 MuMu 窗口右侧"
+              title={`重新吸附定位到 ${emulatorLabel} 窗口右侧`}
             >
               <Crosshair size={11} />
               <span>吸附</span>
@@ -419,7 +423,7 @@ export default function MumuDrawerApp({
               type="button"
               className="mumu-top-btn"
               onClick={onCollapseToHud}
-              title="收起到 MuMu 顶部微缩悬浮条"
+              title={`收起到 ${emulatorLabel} 顶部微缩悬浮条`}
             >
               <PanelTopClose size={11} />
               <span>收起</span>
@@ -429,7 +433,7 @@ export default function MumuDrawerApp({
       </header>
 
       {/* 2. 32px 4 Tactical Tabs */}
-      <nav className="mumu-tabs" role="tablist" aria-label="MuMu 战术抽屉标签">
+      <nav className="mumu-tabs" role="tablist" aria-label={`${emulatorLabel} 战术抽屉标签`}>
         {([
           ['overview', '总览', LayoutDashboard],
           ['guide', '跟打', Compass],
@@ -453,7 +457,7 @@ export default function MumuDrawerApp({
         <div className="mumu-inside-alert" role="status">
           <span>
             <AlertTriangle size={11} />
-            当前内侧叠放于 MuMu 右侧（空间不足）
+            当前内侧叠放于 {emulatorLabel} 右侧（空间不足）
           </span>
           {onCollapseToHud && (
             <button type="button" onClick={onCollapseToHud}>
@@ -494,7 +498,7 @@ export default function MumuDrawerApp({
                   </span>
                 </header>
                 <p className="mumu-muted">
-                  等待 MuMu 进入卫戍对局，进局后自动同步四席双轨兜漏、血量、本数与实时已激活盟约。
+                  等待 {emulatorLabel} 进入卫戍对局，进局后自动同步四席双轨兜漏、血量、本数与实时已激活盟约。
                 </p>
               </section>
             ) : (
@@ -673,10 +677,10 @@ export default function MumuDrawerApp({
                     className="mumu-btn is-primary"
                     disabled={!banSync.ocrAvailable || banSync.ocrStatus === 'scanning'}
                     onClick={() => void onScanWindow()}
-                    title="截取 MuMu 游戏窗口识别开局受限盟约"
+                    title={`截取 ${emulatorLabel} 游戏窗口识别开局受限盟约`}
                   >
                     <ScanLine size={12} />
-                    {banSync.ocrStatus === 'scanning' ? '识别中…' : '识别 MuMu 禁选'}
+                    {banSync.ocrStatus === 'scanning' ? '识别中…' : `识别 ${emulatorLabel} 禁选`}
                   </button>
                 )}
                 {banSync.bannedCovenants.length > 0 && (

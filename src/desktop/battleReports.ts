@@ -2,8 +2,16 @@
 import { mergeBossRound, REPORT_SEATS, type BattleReport, type BattleRound } from './battleReportData';
 
 export type ReportStatus = 'starting' | 'waiting' | 'connecting' | 'listening' | 'permission' | 'paused' | 'unavailable' | 'incompatible' | 'failed';
-export type ClientSource = 'none' | 'pc' | 'mumu';
+export type ClientSource = 'none' | 'pc' | 'mumu' | 'ldplayer';
 export type WindowLayoutMode = 'wide' | 'rail' | 'mumu-drawer';
+
+export function isEmulatorClientSource(source?: ClientSource): boolean {
+  return source === 'mumu' || source === 'ldplayer';
+}
+
+export function emulatorShortLabel(source?: ClientSource): string {
+  return source === 'ldplayer' ? '雷电' : 'MuMu';
+}
 export interface MumuWindowBounds {
   title?: string;
   x: number;
@@ -202,13 +210,21 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
   const rounds = new Map(incoming.rounds.map(row => [row.number, row]));
   const names = { ...incoming.names };
   let changed = false;
+  let self = incoming.self;
+  let selfBySettlement = incoming.selfBySettlement;
+  // Once the local player's seat is confirmed (not settlement-inferred), prevent spectator or corrupt frames from drifting it.
+  if (previous.self !== null && !previous.selfBySettlement && incoming.self !== previous.self) {
+    self = previous.self;
+    selfBySettlement = false;
+    changed = true;
+  }
   for (const seat of REPORT_SEATS) if (!names[seat] && previous.names[seat]) {
     names[seat] = previous.names[seat];
     changed = true;
   }
   for (const old of previous.rounds) {
     let row = rounds.get(old.number);
-    const oldKinds = incoming.self === previous.self ? old.selfLeakEnemies : old.selfLeakEnemies && [];
+    const oldKinds = self === previous.self ? old.selfLeakEnemies : old.selfLeakEnemies && [];
     if (!row) {
       row = oldKinds === old.selfLeakEnemies ? old : { ...old, selfLeakEnemies: oldKinds };
     } else {
@@ -225,7 +241,7 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
       if (missingAssist && missingLeaks && old.allPlayersLeaked) row = { ...row, allPlayersLeaked: true };
       if (row.selfLeaks === null && old.selfLeaks !== null) {
         row = { ...row, selfLeaks: old.selfLeaks, selfLeakEnemies: oldKinds,
-          unassignedSelfLeaks: incoming.self === null ? old.selfLeaks : null };
+          unassignedSelfLeaks: self === null ? old.selfLeaks : null };
       }
       if (missingAssist && hasAssistResult(old)) {
         row = { ...row, assists: old.assists, assistsStatus: old.assistsStatus,
@@ -287,7 +303,7 @@ function mergeSameMatch(previous: BattleReport, incoming: BattleReport): BattleR
     telemetry = previous.telemetry;
     changed = true;
   }
-  return changed ? { ...incoming, names, hp, eliminated, bossRounds, bannedCovenants, defeatedBossRounds, lineups, deckPool, telemetry, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
+  return changed ? { ...incoming, self, selfBySettlement, names, hp, eliminated, bossRounds, bannedCovenants, defeatedBossRounds, lineups, deckPool, telemetry, rounds: [...rounds.values()].sort((a, b) => a.number - b.number) } : incoming;
 }
 
 export function updateLiveReport(records: ReportRecords, report: BattleReport | null, run: number, now: number): ReportRecords {
@@ -300,10 +316,10 @@ export function updateLiveReport(records: ReportRecords, report: BattleReport | 
   const sameLive = live?.key === key ? live : undefined;
   const previous = sameLive ?? history.find(entry => entry.key === key);
   const next = previous && report.match !== null ? mergeSameMatch(previous.report, report) : report;
-  if (sameLive) return { live: { ...sameLive, manualSelfSeat: report.self === null ? sameLive.manualSelfSeat : undefined, report: next }, history };
+  if (sameLive) return { live: { ...sameLive, manualSelfSeat: next.self === null ? sameLive.manualSelfSeat : undefined, report: next }, history };
   const rest = history.filter(entry => entry.key !== key && entry.key !== live?.key);
   return {
-    live: { manualNames: previous?.manualNames, manualSelfSeat: report.self === null ? previous?.manualSelfSeat : undefined,
+    live: { manualNames: previous?.manualNames, manualSelfSeat: next.self === null ? previous?.manualSelfSeat : undefined,
       key, report: next, label: report.match === null ? '本地实况' : `本地对局 ${report.match}`,
       seenAt: previous?.seenAt ?? now },
     history: (live ? [live, ...rest] : rest).slice(0, MAX_REPORT_HISTORY),

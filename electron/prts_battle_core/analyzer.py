@@ -312,7 +312,7 @@ class Analyzer:
                 # Explicit loading without a roster: start a provisional match, not a round rollback.
                 # A subsequent full scene can still recover a known match via self.matches.
                 self._reset_match(conn)
-            if uid in range(1, 5):
+            if conn.player is None and uid in range(1, 5):
                 conn.player = uid
             return True
         game = (event.get('stage_id'), event['stage_seed'], tuple(sorted(event['players'].items())))
@@ -321,12 +321,29 @@ class Analyzer:
                          and event['round'] == 0 and bool(conn.model.rounds))
         if uid not in range(1, 5):
             uid = conn.player if same_game or (conn.match_key is None and not reset_partial) else None
+        elif (same_game and conn.player in range(1, 5)) or (
+            not reset_partial
+            and conn.match_key is None
+            and conn.player in range(1, 5)
+            and conn.player in conn.model.eliminated
+        ):
+            uid = conn.player
         fingerprint = (*game, uid)
         if fingerprint not in self.matches:
-            # 同一地图种子和队伍只有一个候选时，缺失席位不应制造第二局。
-            compatible = [key for key in self.matches if key[:3] == game and (uid is None or key[3] is None)]
+            # 同一地图种子和队伍只有一个候选时，缺失席位不应制造第二局；
+            # 本机在同局重连前已阵亡观战时，也不能因 self_uid 切到存活队友而分裂出第二局。
+            compatible = [
+                key for key in self.matches
+                if key[:3] == game and (
+                    uid is None
+                    or key[3] is None
+                    or key[3] in self.matches[key][0].eliminated
+                )
+            ]
             if len(compatible) == 1:
                 fingerprint = compatible[0]
+                if fingerprint[3] in range(1, 5):
+                    uid = fingerprint[3]
         previous = self.matches.get(fingerprint)
         if previous and previous[2] > conn.generation:
             return False
@@ -452,6 +469,12 @@ class Analyzer:
                 if event.get('shops'):
                     conn.model.set_shops(event['shops'])
                 if kind == 'shop_purchase_result':
+                    preparation = event.get('preparation')
+                    if conn.player is None and preparation:
+                        seat = preparation[0]
+                        if seat in range(1, 5) and seat not in conn.model.eliminated:
+                            conn.player = seat
+                    self._flush_local_finishes(conn)
                     return None
                 preparation = event['preparation']
                 seat, hp, number = preparation[:3]
@@ -582,7 +605,9 @@ class Analyzer:
                         self.boss_events['unassigned'] += 1
                 if kind == 'step':
                     uplink = event.get('uplink', False)
-                    if uplink and event.get('uid') in range(1, 5):
+                    active_round = max(model.current_round, max(model.rounds, default=0))
+                    if uplink and conn.player is None and event.get('uid') in range(1, 5):
+                        if not model.eliminated or active_round <= min(model.eliminated.values()):
                             conn.player = event['uid']
                     boss_round, inferred = (self._boss_uplink_context(conn, event['steps'])
                                             if uplink else self._boss_data_context(conn))
@@ -617,22 +642,45 @@ class Analyzer:
                         conn.local_finishes[number] = event
                 if conn.player is None and conn.local_finishes and kind in ('phase', 'self_finish'):
                     # Actual spawn instances may arrive after the local result, even without a help stage.
-                    candidates = {model.identify_own_player(number, finish['escaped_ids'])
-                                  for number, finish in conn.local_finishes.items()} - {None}
+                    first_elim = min(model.eliminated.values()) if model.eliminated else None
+                    candidates = {
+                        model.identify_own_player(number, finish['escaped_ids'])
+                        for number, finish in conn.local_finishes.items()
+                        if first_elim is None or number <= first_elim
+                    } - {None}
                     if len(candidates) == 1:
                         conn.player = candidates.pop()
-                if conn.player in range(1, 5):
-                    if conn.local_finishes:
-                        for number, finish in conn.local_finishes.items():
-                            model.set_self_leaks(number, conn.player, finish['escaped_count'], escaped_ids=finish['escaped_ids'], token_ids=finish['escaped_token_ids'])
-                        conn.local_finishes.clear()
+                self._flush_local_finishes(conn)
+
+    @staticmethod
+    def _flush_local_finishes(conn: Connection) -> None:
+        if conn.player not in range(1, 5) or not conn.local_finishes:
+            return
+        model = conn.model
+        elim_round = model.eliminated.get(conn.player)
+        for number, finish in conn.local_finishes.items():
+            if elim_round is not None and number > elim_round:
+                continue
+            model.set_self_leaks(
+                number,
+                conn.player,
+                finish['escaped_count'],
+                escaped_ids=finish['escaped_ids'],
+                token_ids=finish['escaped_token_ids'],
+            )
+        conn.local_finishes.clear()
+
     def snapshot(self) -> dict:
         key, conn = self.current if self.current else (None, None)
         player = conn.player if conn else None
         if conn and player is None:
             # 不把协防关联推得的席位写进对局身份。出现冲突或明确席位后重新判断。
-            candidates = {conn.model.identify_player_from_help(number, finish['escaped_ids'], finish['escaped_token_ids'])
-                          for number, finish in conn.local_finishes.items()} - {None}
+            first_elim = min(conn.model.eliminated.values()) if conn.model.eliminated else None
+            candidates = {
+                conn.model.identify_player_from_help(number, finish['escaped_ids'], finish['escaped_token_ids'])
+                for number, finish in conn.local_finishes.items()
+                if first_elim is None or number <= first_elim
+            } - {None}
             if len(candidates) == 1:
                 player = candidates.pop()
         summary = {
@@ -659,6 +707,8 @@ class Analyzer:
                 if conn.player is not None:
                     value = conn.model.rounds[number].local_leaks.get(conn.player)
                 else:
+                    if player is not None and player in conn.model.eliminated and number > conn.model.eliminated[player]:
+                        finish = None
                     value = finish['escaped_count'] if finish is not None else None
                     if value is not None and player is None:
                         row['unassigned_self_leaks'] = value

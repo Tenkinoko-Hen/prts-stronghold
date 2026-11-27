@@ -665,7 +665,7 @@ function isArknightsWindowName(name) {
   if (!text) return false;
   return text === '明日方舟'
     || /^Arknights\b/i.test(text)
-    || /(?:明日方舟|Arknights).*MuMu|MuMu.*(?:明日方舟|Arknights)/i.test(text);
+    || /(?:明日方舟|Arknights).*(?:MuMu|雷电|LDPlayer)|(?:MuMu|雷电|LDPlayer).*(?:明日方舟|Arknights)/i.test(text);
 }
 
 function isMumuEmulatorWindowName(name) {
@@ -677,12 +677,22 @@ function isMumuEmulatorWindowName(name) {
   return /(?:MuMu安卓设备|MuMu模拟器|MuMu\s*Player|NemuPlayer)/i.test(text);
 }
 
+function isLdplayerEmulatorWindowName(name) {
+  const text = String(name || '').trim();
+  if (!text) return false;
+  if (/(?:多开器|游戏中心|应用中心|模拟器中心|雷电圈|Multi[-\s]?Instance|App\s*Center|LDMultiPlayer|LDStore)/i.test(text)) {
+    return false;
+  }
+  return /(?:雷电模拟器|LDPlayer)/i.test(text);
+}
+
 function pickGameCaptureWindow(windows, ownHandle) {
   const external = (Array.isArray(windows) ? windows : []).filter(
     s => s && !(s.id?.startsWith('window:') && s.id.split(':')[1] === ownHandle),
   );
   return external.find(s => isArknightsWindowName(s.name))
     || external.find(s => isMumuEmulatorWindowName(s.name))
+    || external.find(s => isLdplayerEmulatorWindowName(s.name))
     || null;
 }
 
@@ -951,6 +961,7 @@ module.exports = {
   createWinRtOcrRunner,
   isArknightsWindowName,
   isMumuEmulatorWindowName,
+  isLdplayerEmulatorWindowName,
   pickGameCaptureWindow,
   installCovenantOcr,
 };

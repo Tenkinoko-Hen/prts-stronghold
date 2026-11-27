@@ -17,10 +17,13 @@ const {
   detectConflictingNetworkApps,
   formatNpcapFailureMessage,
   inspectNpcapFailure,
+  isWindows10OrOlder,
+  parseMaxNumFilters,
   parseNpcapInstallLog,
   parsePnputilNpcapDrivers,
   parseSymlinkEvaluationDisabled,
   pickLatestNpcapInstaller,
+  pickNpcapInstallerForOs,
   prepareNpcapEnvironment,
   runNpcapInstaller,
 } = require('../electron/npcap-installer.cjs');
@@ -29,6 +32,7 @@ const {
   evaluateOcrLines,
   extractCovenantBoxesFromLine,
   isArknightsWindowName,
+  isLdplayerEmulatorWindowName,
   isMumuEmulatorWindowName,
   looksLikeCovenantScreen,
   pickGameCaptureWindow,
@@ -824,6 +828,17 @@ HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem
       filesInUse: true,
       markedForDelete: true,
       serviceCreateFailed: true,
+      alreadyExists: false,
+    },
+  );
+  assert.deepEqual(
+    parseNpcapInstallLog('Failed to create the npcap service: 0x800700b7 ERROR_ALREADY_EXISTS'),
+    {
+      symlinkDisabled: false,
+      filesInUse: false,
+      markedForDelete: false,
+      serviceCreateFailed: true,
+      alreadyExists: true,
     },
   );
   assert.deepEqual(parseNpcapInstallLog('Npcap installed cleanly'), {
@@ -831,6 +846,7 @@ HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem
     filesInUse: false,
     markedForDelete: false,
     serviceCreateFailed: false,
+    alreadyExists: false,
   });
 
   const tasklistCsv = [
@@ -861,7 +877,7 @@ test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink
     hasNpcapFn: () => false,
     runCommand: async () => { commandCount += 1; return { code: 0, stdout: '', stderr: '' }; },
   });
-  assert.deepEqual(skippedNonWin, { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, needsReboot: false });
+  assert.deepEqual(skippedNonWin, { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false });
   assert.equal(commandCount, 0);
 
   const skippedInstalled = await prepareNpcapEnvironment({
@@ -869,7 +885,7 @@ test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink
     hasNpcapFn: () => true,
     runCommand: async () => { commandCount += 1; return { code: 0, stdout: '', stderr: '' }; },
   });
-  assert.deepEqual(skippedInstalled, { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, needsReboot: false });
+  assert.deepEqual(skippedInstalled, { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false });
   assert.equal(commandCount, 0);
 
   // Full cleanup: repairs L2L/L2R, stops & deletes npcap, preserves npf when legacy WinPcap exists, deletes only allowlisted oem drivers
@@ -879,11 +895,15 @@ test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink
     platform: 'win32',
     hasNpcapFn: () => false,
     hasLegacyWinPcapFn: () => true,
+    removePathFn: () => {},
     sleepFn: async () => {},
     runCommand: async (file, args) => {
       callsWithWinPcap.push([file, ...args]);
-      if (file === 'reg.exe') {
+      if (file === 'reg.exe' && args[0] === 'query' && args[1].endsWith('FileSystem')) {
         return { code: 0, stdout: '    SymlinkLocalToLocalEvaluation    REG_DWORD    0x0\n', stderr: '' };
+      }
+      if (file === 'reg.exe' && args[0] === 'query' && args[1].endsWith('Network')) {
+        return { code: 0, stdout: '    MaxNumFilters    REG_DWORD    0xe\n', stderr: '' };
       }
       if (file === 'sc.exe' && args[0] === 'query' && args[1] === 'npcap') {
         npcapPolls += 1;
@@ -905,6 +925,7 @@ test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink
     cleanedServices: ['npcap'],
     cleanedDrivers: ['oem9.inf'],
     repairedSymlink: true,
+    repairedMaxFilters: false,
     needsReboot: false,
   });
   assert.ok(callsWithWinPcap.some((c) => c.join(' ') === 'fsutil.exe behavior set SymlinkEvaluation L2L:1 L2R:1'));
@@ -916,9 +937,15 @@ test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink
     platform: 'win32',
     hasNpcapFn: () => false,
     hasLegacyWinPcapFn: () => false,
+    removePathFn: () => {},
     sleepFn: async () => {},
     runCommand: async (file, args) => {
-      if (file === 'reg.exe') return { code: 0, stdout: '    SymlinkLocalToLocalEvaluation    REG_DWORD    0x1\n', stderr: '' };
+      if (file === 'reg.exe' && args[0] === 'query' && args[1].endsWith('FileSystem')) {
+        return { code: 0, stdout: '    SymlinkLocalToLocalEvaluation    REG_DWORD    0x1\n', stderr: '' };
+      }
+      if (file === 'reg.exe' && args[0] === 'query' && args[1].endsWith('Network')) {
+        return { code: 0, stdout: '    MaxNumFilters    REG_DWORD    0x8\n', stderr: '' };
+      }
       if (file === 'sc.exe' && args[0] === 'query' && args[1] === 'npcap') return { code: 1060, stdout: '', stderr: '' };
       if (file === 'sc.exe' && args[0] === 'query' && args[1] === 'npf') return { code: 0, stdout: 'STATE : 1 STOPPED', stderr: '' };
       if (file === 'sc.exe' && args[0] === 'stop' && args[1] === 'npf') return { code: 1062, stdout: '', stderr: '' };
@@ -932,6 +959,7 @@ test('prepareNpcapEnvironment skips when installed or non-win32, repairs symlink
     cleanedServices: ['npf'],
     cleanedDrivers: [],
     repairedSymlink: false,
+    repairedMaxFilters: true,
     needsReboot: true,
   });
 });
@@ -1144,4 +1172,221 @@ test('battle-reports-install-npcap stops worker before install, surfaces failure
   } finally {
     br.dispose();
   }
+});
+
+test('isWindows10OrOlder and pickNpcapInstallerForOs select Npcap 1.80 on Win10 and latest on Win11', async () => {
+  assert.equal(isWindows10OrOlder('10.0.19045', 'win32'), true);
+  assert.equal(isWindows10OrOlder('10.0.10240', 'win32'), true);
+  assert.equal(isWindows10OrOlder('6.1.7601', 'win32'), true);
+  assert.equal(isWindows10OrOlder('6.3.9600', 'win32'), true);
+  assert.equal(isWindows10OrOlder('10.0.22000', 'win32'), false);
+  assert.equal(isWindows10OrOlder('10.0.22631', 'win32'), false);
+  assert.equal(isWindows10OrOlder('11.0.26100', 'win32'), false);
+  assert.equal(isWindows10OrOlder('10.0.19045', 'linux'), false);
+  assert.equal(isWindows10OrOlder('invalid', 'win32'), false);
+  assert.equal(isWindows10OrOlder('', 'win32'), false);
+
+  const fullHtml = `
+    <a href="npcap-1.79.exe">npcap-1.79.exe</a>
+    <a href="npcap-1.80.exe">npcap-1.80.exe</a>
+    <a href="npcap-1.89.exe">npcap-1.89.exe</a>
+    <a href="npcap-1.100.exe">npcap-1.100.exe</a>
+  `;
+  assert.deepEqual(
+    pickNpcapInstallerForOs(fullHtml, { platform: 'win32', release: '10.0.19045' }),
+    {
+      version: '1.80',
+      filename: 'npcap-1.80.exe',
+      url: 'https://npcap.com/dist/npcap-1.80.exe',
+      reason: 'win10-compat',
+    },
+  );
+  assert.deepEqual(
+    pickNpcapInstallerForOs(fullHtml, { platform: 'win32', release: '10.0.22631' }),
+    {
+      version: '1.100',
+      filename: 'npcap-1.100.exe',
+      url: 'https://npcap.com/dist/npcap-1.100.exe',
+      reason: 'latest',
+    },
+  );
+  // Fallback on Win10 when 1.80 is missing: highest <= 1.80, then latest
+  const no180Html = '<a href="npcap-1.78.exe"></a><a href="npcap-1.79.exe"></a><a href="npcap-1.85.exe"></a>';
+  assert.equal(pickNpcapInstallerForOs(no180Html, { platform: 'win32', release: '10.0.19045' }).version, '1.79');
+  const onlyNewerHtml = '<a href="npcap-1.85.exe"></a><a href="npcap-1.90.exe"></a>';
+  assert.equal(pickNpcapInstallerForOs(onlyNewerHtml, { platform: 'win32', release: '10.0.19045' }).version, '1.90');
+
+  // runNpcapInstaller uses Win10 compat download message & picks 1.80 on Win10
+  const progress = [];
+  const win10Run = await runNpcapInstaller({
+    platform: 'win32',
+    osRelease: '10.0.19045',
+    hasNpcapFn: () => false,
+    prepareEnvFn: async () => ({ cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false }),
+    onProgress: (status, message) => progress.push({ status, message }),
+    fetchFn: async (_url, opts) => {
+      if (opts?.destPath) {
+        fs.writeFileSync(opts.destPath, 'stub', 'utf8');
+        return { bytes: 4 };
+      }
+      return fullHtml;
+    },
+    spawnFn: () => {
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('close', 1));
+      return child;
+    },
+    inspectFailureFn: async () => ({
+      prep: { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false },
+      logDiag: {},
+      conflicts: [],
+    }),
+  });
+  assert.equal(win10Run.version, '1.80');
+  assert.ok(progress.some((p) => p.status === 'downloading' && p.message.includes('Windows 10') && p.message.includes('npcap-1.80.exe')));
+});
+
+test('parseMaxNumFilters, 0x800700b7 cleanup in prepareNpcapEnvironment, and failure diagnostics work accurately', async () => {
+  const os = require('node:os');
+  assert.equal(parseMaxNumFilters('    MaxNumFilters    REG_DWORD    0x8\n'), 8);
+  assert.equal(parseMaxNumFilters('    MaxNumFilters    REG_DWORD    0xe\n'), 14);
+  assert.equal(parseMaxNumFilters('    MaxNumFilters    REG_DWORD    14\n'), 14);
+  assert.equal(parseMaxNumFilters('ERROR: The system was unable to find the specified registry key or value.'), null);
+
+  const commands = [];
+  const removedPaths = [];
+  const prepRes = await prepareNpcapEnvironment({
+    platform: 'win32',
+    hasNpcapFn: () => false,
+    hasLegacyWinPcapFn: () => false,
+    sleepFn: async () => {},
+    removePathFn: (p) => {
+      removedPaths.push(p);
+      throw new Error('EPERM');
+    },
+    runCommand: async (file, args) => {
+      commands.push([file, ...args]);
+      if (file === 'reg.exe' && args[0] === 'query' && args[1].endsWith('Network')) {
+        return { code: 0, stdout: '    MaxNumFilters    REG_DWORD    0x8\n', stderr: '' };
+      }
+      if (file === 'sc.exe' && args[0] === 'query') return { code: 1060, stdout: '', stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.equal(prepRes.repairedMaxFilters, true);
+  assert.ok(commands.some((c) => c.join(' ') === 'reg.exe delete HKLM\\SYSTEM\\CurrentControlSet\\Services\\npcap /f'));
+  assert.ok(commands.some((c) => c.join(' ') === 'reg.exe delete HKLM\\SYSTEM\\CurrentControlSet\\Services\\npf /f'));
+  assert.ok(commands.some((c) => c.join(' ') === 'reg.exe add HKLM\\SYSTEM\\CurrentControlSet\\Control\\Network /v MaxNumFilters /t REG_DWORD /d 14 /f'));
+  assert.ok(removedPaths.some((p) => p.endsWith('npcap.sys')));
+  assert.ok(removedPaths.some((p) => /Npcap$/i.test(p)));
+  assert.equal(removedPaths.length, 3);
+
+  const noConflictMsg = formatNpcapFailureMessage({
+    prep: { needsReboot: false, repairedMaxFilters: true },
+    logDiag: { alreadyExists: true, serviceCreateFailed: true },
+    conflicts: [],
+    exitCode: 1,
+  });
+  assert.ok(noConflictMsg.includes('0x800700b7'));
+  assert.ok(noConflictMsg.includes('MaxNumFilters'));
+  assert.ok(noConflictMsg.includes('14'));
+  assert.ok(noConflictMsg.includes('重启'));
+  assert.ok(noConflictMsg.includes('未安装 Npcap 前仍可通过内置通道正常记录本路战报'));
+
+  const conflictMsg = formatNpcapFailureMessage({
+    prep: { needsReboot: false },
+    logDiag: { alreadyExists: true },
+    conflicts: ['Clash Verge'],
+    exitCode: 1,
+  });
+  assert.ok(conflictMsg.includes('Clash Verge'));
+  assert.ok(conflictMsg.includes('占用网卡过滤驱动'));
+
+  const tmpProgFiles = fs.mkdtempSync(path.join(os.tmpdir(), 'prts-progfiles-b7-'));
+  try {
+    const npcapLogDir = path.join(tmpProgFiles, 'Npcap');
+    fs.mkdirSync(npcapLogDir, { recursive: true });
+    fs.writeFileSync(path.join(npcapLogDir, 'NPFInstall.log'), 'CreateService failed 0x800700b7 ERROR_ALREADY_EXISTS\n', 'utf8');
+    let prepareCalled = false;
+    const diag = await inspectNpcapFailure({
+      startedAt: Date.now(),
+      programFilesDir: tmpProgFiles,
+      hasNpcapFn: () => false,
+      prepareEnvFn: async () => {
+        prepareCalled = true;
+        return { cleanedServices: ['npcap'], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: true, needsReboot: false };
+      },
+      runCommand: async () => ({ code: 0, stdout: '', stderr: '' }),
+    });
+    assert.equal(prepareCalled, true);
+    assert.equal(diag.logDiag.alreadyExists, true);
+    assert.equal(diag.prep.repairedMaxFilters, true);
+  } finally {
+    fs.rmSync(tmpProgFiles, { recursive: true, force: true });
+  }
+});
+
+test('LDPlayer source parsing and OCR window recognition support LDPlayer with priority PC > MuMu > LDPlayer', () => {
+  const ldDip = parseSourceMessage(
+    {
+      kind: 'source',
+      client: 'ldplayer',
+      mumuWindow: { title: '雷电模拟器', x: 150, y: 90, width: 1920, height: 1080 },
+    },
+    {
+      screenToDipRect: (_win, r) => ({
+        x: Math.round(r.x / 1.5),
+        y: Math.round(r.y / 1.5),
+        width: Math.round(r.width / 1.5),
+        height: Math.round(r.height / 1.5),
+      }),
+    },
+  );
+  assert.deepEqual(ldDip, {
+    clientSource: 'ldplayer',
+    mumuWindow: { title: '雷电模拟器', x: 100, y: 60, width: 1280, height: 720 },
+  });
+  assert.deepEqual(
+    parseSourceMessage({ kind: 'source', client: 'ldplayer', mumuWindow: null }),
+    { clientSource: 'ldplayer', mumuWindow: null },
+  );
+
+  assert.equal(isArknightsWindowName('雷电模拟器 - 明日方舟'), true);
+  assert.equal(isArknightsWindowName('LDPlayer - Arknights'), true);
+  assert.equal(isArknightsWindowName('雷电模拟器'), false);
+
+  assert.equal(isLdplayerEmulatorWindowName('雷电模拟器'), true);
+  assert.equal(isLdplayerEmulatorWindowName('雷电模拟器-1'), true);
+  assert.equal(isLdplayerEmulatorWindowName('LDPlayer-9'), true);
+  assert.equal(isLdplayerEmulatorWindowName('雷电多开器'), false);
+  assert.equal(isLdplayerEmulatorWindowName('雷电游戏中心'), false);
+  assert.equal(isLdplayerEmulatorWindowName('雷电圈'), false);
+  assert.equal(isLdplayerEmulatorWindowName('LDMultiPlayer'), false);
+  assert.equal(isLdplayerEmulatorWindowName('LDStore'), false);
+
+  assert.equal(
+    pickGameCaptureWindow([
+      { id: 'window:1:0', name: 'PRTS Stronghold' },
+      { id: 'window:2:0', name: '雷电多开器' },
+      { id: 'window:3:0', name: '雷电模拟器' },
+      { id: 'window:4:0', name: 'MuMu安卓设备-1' },
+    ], '1')?.name,
+    'MuMu安卓设备-1',
+  );
+  assert.equal(
+    pickGameCaptureWindow([
+      { id: 'window:1:0', name: 'PRTS Stronghold' },
+      { id: 'window:2:0', name: 'LDMultiPlayer' },
+      { id: 'window:3:0', name: '雷电模拟器-1' },
+    ], '1')?.name,
+    '雷电模拟器-1',
+  );
+  assert.equal(
+    pickGameCaptureWindow([
+      { id: 'window:3:0', name: '雷电模拟器' },
+      { id: 'window:4:0', name: 'MuMu安卓设备-1' },
+      { id: 'window:5:0', name: '明日方舟' },
+    ], '1')?.name,
+    '明日方舟',
+  );
 });

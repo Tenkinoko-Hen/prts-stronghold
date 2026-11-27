@@ -6,6 +6,7 @@ import { STRONGHOLD_REPORT_BRAND, TELEMETRY_REPORT_BRAND } from '../brand/produc
 import { readBattleReport } from './battleReportData';
 import { renderBattleReportHtml } from './battleReportDocument';
 import { exportCount, summarizeBattleReport } from './battleReportExport';
+import { computeExportScales, sanitizeSvgXml } from './battleReportImage';
 import { demoReport } from './demo/battleReportFixture';
 
 const date = new Date(2026, 10, 23, 15, 42);
@@ -259,4 +260,26 @@ test('exported document embeds inline operator avatar sprite strip, segmented Bo
   assert.match(html, /首领削血分布/);
   assert.match(html, /各回合漏怪与协防态势/);
   assert.doesNotMatch(html, /<script\b|<link\b|\bsrc=|https?:\/\//i);
+});
+
+test('sanitizeSvgXml strips illegal XML 1.0 control characters while keeping valid whitespace and text', () => {
+  const dirty = '<svg><text>玩家\u0000名\u0007\u0008\t\n\r\u000B\u000C\u000E\u001F\uFFFE\uFFFF_测试</text></svg>';
+  assert.equal(sanitizeSvgXml(dirty), '<svg><text>玩家名\t\n\r_测试</text></svg>');
+});
+
+test('computeExportScales produces descending deduplicated scales capped by pixel limits with downscale fallbacks', () => {
+  assert.deepEqual(computeExportScales(1160, 2000), [2, 1.25, 1, 0.75, 0.5]);
+
+  const longScales = computeExportScales(1160, 10000);
+  assert.equal(longScales[0], 1.2);
+  assert.deepEqual(longScales.slice(1), [1, 0.75, 0.5]);
+
+  assert.deepEqual(computeExportScales(1160, 16000), [0.75, 0.5]);
+  assert.deepEqual(computeExportScales(1160, 24000), [0.5]);
+
+  for (const invalid of [computeExportScales(0, 1000), computeExportScales(1160, 0), computeExportScales(1160, 40000)]) {
+    assert.ok(invalid.length >= 1);
+    assert.ok(invalid.every(s => Number.isFinite(s) && s > 0));
+    for (let i = 1; i < invalid.length; i++) assert.ok(invalid[i - 1] > invalid[i]);
+  }
 });

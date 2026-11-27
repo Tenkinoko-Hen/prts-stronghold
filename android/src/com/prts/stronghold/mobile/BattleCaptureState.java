@@ -382,7 +382,7 @@ final class BattleCaptureState {
                 appendLog("match:" + matchSerial, now, Math.max(1, ev.round), "match", 0, 0, "", 0, "对局已连接 · 实时抓包同步中");
             }
 
-            if (ev.selfUid >= 1 && ev.selfUid <= 4) selfSeat = ev.selfUid;
+            if (ev.selfUid >= 1 && ev.selfUid <= 4 && selfSeat == 0) selfSeat = ev.selfUid;
             if (ev.bossId != null && !ev.bossId.isEmpty()) bossIdRaw = ev.bossId;
             for (Map.Entry<Integer, String> p : ev.players.entrySet()) {
                 if (p.getKey() >= 1 && p.getKey() <= 4 && p.getValue() != null && !p.getValue().trim().isEmpty()) {
@@ -485,12 +485,17 @@ final class BattleCaptureState {
             mergeSpawns(ev.spawnPreviews);
         } else if ("self_finish".equals(ev.kind)) {
             if (ev.round >= 1 && ev.round <= 15 && !ev.fromRejoin) {
-                if (ev.round > currentRound) currentRound = ev.round;
-                RoundLeakRecord rec = leakRecord(ev.round);
-                rec.selfLeaksRaw = Math.max(0, ev.selfEscapedCount);
-                int seat = selfSeat >= 1 && selfSeat <= 4 ? selfSeat : 1;
-                if (rec.selfLeaksRaw > rec.leakedBySeat[seat]) {
-                    rec.leakedBySeat[seat] = rec.selfLeaksRaw;
+                boolean selfEliminated = selfSeat >= 1 && selfSeat <= 4 && seatHp(selfSeat) == 0;
+                if (!selfEliminated) {
+                    if (ev.round > currentRound) currentRound = ev.round;
+                    RoundLeakRecord rec = leakRecord(ev.round);
+                    rec.selfLeaksRaw = Math.max(0, ev.selfEscapedCount);
+                    int seat = selfSeat >= 1 && selfSeat <= 4 ? selfSeat : 1;
+                    if (rec.selfLeaksRaw > rec.leakedBySeat[seat]) {
+                        rec.leakedBySeat[seat] = rec.selfLeaksRaw;
+                    }
+                } else {
+                    shouldPushOverlay = false;
                 }
             }
         } else if ("help_kill".equals(ev.kind)) {

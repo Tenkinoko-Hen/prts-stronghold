@@ -491,6 +491,100 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(set(new['rounds']), {1})
         self.assertEqual(new['rounds'][1]['assist_pairs'], [])
 
+    def test_eliminated_player_spectating_keeps_self_seat_across_300_341_311_and_reconnect(self):
+        players = {1: 'P1', 2: 'P2', 3: 'P3', 4: 'P4'}
+        alive_status = {s: {'hp': 25, 'finished': True} for s in range(1, 5)}
+        self.event(OLD, {**phase(1, 'prep', seed=88), 'self_uid': 4, 'players': players, 'player_status': alive_status}, 300)
+        first_match = self.analyzer.snapshot()['capture']['match']
+        self.assertEqual(self.analyzer.snapshot()['capture']['self'], 4)
+
+        # R8: seat 4 loses HP -> 0 (eliminated at R8) and emits own R8 self_finish
+        dead_status = {1: {'hp': 12, 'finished': True}, 2: {'hp': 10, 'finished': True},
+                       3: {'hp': 8, 'finished': True}, 4: {'hp': 0, 'finished': True}}
+        self.event(OLD, {**phase(8, 'settle'), 'player_status': dead_status}, 302)
+        self.event(OLD, settle(8, 2), 311)
+
+        # R9-R14: spectating surviving seat 3; 300 switches self_uid=3, 341 sends uid=3, 311 sends spectator self_finish
+        self.event(OLD, {**phase(9, 'prep', seed=88), 'self_uid': 3, 'players': players, 'player_status': dead_status}, 300)
+        self.event(OLD, settle(9, 5), 311)
+        self.event(OLD, {**phase(10, 'settle', escaped=(3,)), 'player_status': dead_status}, 302)
+        self.event(OLD, settle(10, 1), 311)
+        self.event(OLD, {**phase(14, 'boss'), 'boss_hp': 200000, 'player_status': dead_status}, 302)
+        self.event(OLD, {'kind': 'step', 'uplink': True, 'uid': 3, 'steps': ((1, ((3, (15000, 10, 1, 3)),)),)}, 341)
+        self.event(OLD, settle(14, 3), 311)
+
+        # Reconnect on NEW: spectator 311 arrives before reconnect 300 with self_uid=3
+        self.analyzer.retire_connections([OLD])
+        self.event(NEW, settle(11, 4), 311)
+        self.event(NEW, {**phase(14, 'boss', seed=88), 'self_uid': 3, 'players': players, 'player_status': dead_status}, 300)
+
+        snap = self.analyzer.snapshot()
+        self.assertEqual(snap['capture']['match'], first_match)
+        self.assertEqual(len(self.analyzer.matches), 1)
+        self.assertEqual(snap['capture']['self'], 4)
+        self.assertEqual(snap['rounds'][8]['self_leaks'], 2)
+        for spectator_round in (9, 10, 11, 14):
+            if spectator_round in snap['rounds']:
+                self.assertNotIn('self_leaks', snap['rounds'][spectator_round])
+                self.assertNotIn(4, snap['rounds'][spectator_round]['leaks'])
+        self.assertEqual(snap['rounds'][14]['boss_uplink'], {3: 15000})
+
+    def test_missing_opening_300_locks_self_seat_from_354_shop_purchase_result(self):
+        # Buffer R2 self_finish before seat is known, align downlink with 302 (no self_uid), then receive wire 354 for seat 4
+        self.analyzer.accept(segment(OLD, 2, settle_frame(2, 3)), 'up')
+        scene302 = boss_scene_frame(3, 3)
+        self.analyzer.accept(segment(OLD[::-1], 100, scene302), 'down')
+        prep_body = bytearray()
+        prep_body += struct.pack('!BhB', 4, 24, 3)  # seat=4, hp=24, round=3
+        prep_body += struct.pack('!7B', 3, 0, 0, 0, 0, 0, 0)
+        prep_body += struct.pack('!HB', 0, 1)  # goods=0, seq=1
+        prep_body += struct.pack('!5H', 0, 0, 0, 0, 0)  # pieces, equips, traps, positions, bonds
+        prep_body += struct.pack('!HBH', 0, 0, 0)  # sp_prepare_after + enemies
+        prep_body += struct.pack('!HBH', 0, 0, 0)  # after_enemies
+        prep_body += struct.pack('!H', 0) + wire_text('') + bytes(13)
+        f354 = frame(354, b'\x00\x00\x00\x00\x00\x00\x01' + bytes(prep_body))
+        self.analyzer.accept(segment(OLD[::-1], 100 + len(scene302), f354), 'down')
+
+        snap = self.analyzer.snapshot()
+        self.assertEqual(self.analyzer.parse_errors, 0)
+        self.assertEqual(snap['capture']['self'], 4)
+        self.assertEqual(snap['rounds'][2]['self_leaks'], 3)
+
+    def test_missing_300_354_spectator_311_after_elimination_does_not_misidentify_survivor(self):
+        from electron.prts_battle_core.wire import SpawnGroup
+
+        # Case 1: No 300/354 at all; seat 4 eliminated at R8, then R9 spectator 311 matches survivor seat 3
+        dead_status = {3: {'hp': 10, 'finished': True}, 4: {'hp': 0, 'finished': True}}
+        self.event(OLD, {**phase(8, 'settle'), 'player_status': dead_status}, 302)
+        self.analyzer.accept(segment(OLD, 2, settle_frame(9, 2, instances=(101, 102))), 'up')
+        self.event(OLD, {
+            **phase(9, 'self'),
+            'spawn_groups': (SpawnGroup(3, 'synthetic_a', 0, 0, (101, 102)),),
+        }, 302)
+        self.analyzer.accept(segment(OLD, 2 + len(settle_frame(9, 2, instances=(101, 102))),
+                                     help_frame(9, [(1, 3, 101, False)], remaining=[(3, 102, False)])), 'up')
+        # Also R14 uplink step from spectating seat 3 after elimination must not lock self=3
+        self.event(OLD, {**phase(14, 'boss'), 'boss_hp': 200000, 'player_status': dead_status}, 302)
+        self.event(OLD, {'kind': 'step', 'uplink': True, 'uid': 3, 'steps': ((1, ((3, (9000, 10, 1, 3)),)),)}, 341)
+        snap = self.analyzer.snapshot()
+        self.assertIsNone(snap['capture']['self'])
+        self.assertEqual(snap['rounds'][14]['boss_uplink'], {3: 9000})
+
+        # Case 2: R4 help settlement identified seat 4 (self_basis='help'), then R8 seat 4 eliminated,
+        # R9 spectator 311 + 313 for seat 3 must keep player=4 and not leak R9 spectator count to R9
+        analyzer2 = Analyzer()
+        analyzer2.accept(segment(OLD, 1, syn=True), 'up')
+        conn2 = analyzer2.connections[OLD]
+        r4_packets = settle_frame(4, 1, instances=(50,)) + help_frame(4, [(1, 4, 50, False)])
+        analyzer2.accept(segment(OLD, 2, r4_packets), 'up')
+        analyzer2._record_event(conn2, OLD, 302, {**phase(8, 'settle'), 'player_status': dead_status})
+        r9_packets = settle_frame(9, 2, instances=(60, 61)) + help_frame(9, [(1, 3, 60, False)], remaining=[(3, 61, False)])
+        analyzer2.accept(segment(OLD, 2 + len(r4_packets), r9_packets), 'up')
+        snap2 = analyzer2.snapshot()
+        self.assertEqual(snap2['capture']['self'], 4)
+        self.assertEqual(snap2['rounds'][4]['self_leaks'], 1)
+        self.assertNotIn('self_leaks', snap2['rounds'][9])
+
 
 class BossCaptureTests(unittest.TestCase):
     def setUp(self):
@@ -1238,6 +1332,112 @@ class MumuCaptureDetectionTests(unittest.TestCase):
             finally:
                 stream.close()
         self.assertEqual(sources, [{'client': 'mumu', 'mumuWindow': win}])
+
+    def test_ldplayer_9_5_4_detection_priority_hub_exclusion_and_port_5554_filter(self):
+        import socket
+        from electron.prts_battle_core.windows_capture import (
+            _is_mumu_control_port,
+            _parse_tcp_table,
+            _select_best_ldplayer_window,
+            resolve_capture_target,
+        )
+
+        ld_win = {'title': '雷电模拟器', 'x': 120, 'y': 60, 'width': 1280, 'height': 720}
+        mumu_win = {'title': 'MuMu安卓设备-1', 'x': 40, 'y': 40, 'width': 1280, 'height': 720}
+
+        # 1. LDPlayer 9 / 5 / 4 process recognition (strictly excludes dnmultiplayer(ex).exe and ldnews.exe)
+        ld9_map = {301: 'dnplayer.exe', 302: 'Ld9BoxHeadless.exe', 303: 'Ld9BoxSVC.exe', 304: 'Ld9BoxNetDHCP.exe', 305: 'dnmultiplayerex.exe', 306: 'ldnews.exe'}
+        self.assertEqual(resolve_capture_target(ld9_map, None, ldplayer_window=ld_win), ('ldplayer', {301, 302, 303, 304}, ld_win))
+
+        ld5_map = {311: 'dnplayer.exe', 312: 'LdVBoxHeadless.exe', 313: 'LdVBoxSVC.exe', 314: 'dnmultiplayer.exe'}
+        self.assertEqual(resolve_capture_target(ld5_map, None, ldplayer_window=None), ('ldplayer', {311, 312, 313}, None))
+
+        ld4_map = {321: 'dnplayer.exe', 322: 'LdBoxHeadless.exe', 323: 'LdBoxSVC.exe'}
+        self.assertEqual(resolve_capture_target(ld4_map, None, ldplayer_window=ld_win), ('ldplayer', {321, 322, 323}, ld_win))
+
+        # 2. Multi-instance launcher / news / service-only without active instance must NOT misdetect
+        launcher_only = {305: 'dnmultiplayerex.exe', 306: 'ldnews.exe', 303: 'Ld9BoxSVC.exe'}
+        self.assertEqual(resolve_capture_target(launcher_only, None, ldplayer_window=None), ('none', set(), None))
+        self.assertEqual(
+            resolve_capture_target({303: 'Ld9BoxSVC.exe'}, None, has_ldplayer_traffic=True),
+            ('ldplayer', {303}, None),
+        )
+
+        # 3. Priority strictly PC > MuMu > LDPlayer > none
+        all_map = {101: 'Arknights.exe', 202: 'MuMuNxDevice.exe', 301: 'dnplayer.exe', 302: 'Ld9BoxHeadless.exe'}
+        self.assertEqual(resolve_capture_target(all_map, mumu_win, ldplayer_window=ld_win), ('pc', {101}, None))
+        mumu_and_ld = {202: 'MuMuNxDevice.exe', 301: 'dnplayer.exe', 302: 'Ld9BoxHeadless.exe'}
+        self.assertEqual(resolve_capture_target(mumu_and_ld, mumu_win, ldplayer_window=ld_win), ('mumu', {202}, mumu_win))
+
+        # 4. _select_best_ldplayer_window excludes hubs & non-dnplayer processes, prefers Arknights title
+        self.assertEqual(
+            _select_best_ldplayer_window([
+                ('dnmultiplayerex.exe', '雷电多开器 - 明日方舟', 0, 0, 1600, 900),
+                ('ldnews.exe', '明日方舟攻略', 0, 0, 1280, 720),
+                ('dnplayer.exe', '雷电多开器', 0, 0, 1400, 800),
+                ('dnplayer.exe', '雷电游戏中心', 0, 0, 1400, 800),
+                ('dnplayer.exe', '雷电圈', 0, 0, 1400, 800),
+                ('dnplayer.exe', 'LDMultiPlayer', 0, 0, 1400, 800),
+                ('dnplayer.exe', 'LDStore', 0, 0, 1400, 800),
+                ('dnplayer.exe', '雷电模拟器', 120, 60, 1280, 720),
+            ]),
+            ld_win,
+        )
+        self.assertEqual(
+            _select_best_ldplayer_window([
+                ('dnplayer.exe', '雷电模拟器-1', 0, 0, 1600, 900),
+                ('dnplayer.exe', 'LDPlayer - Arknights', 100, 50, 1280, 720),
+            ]),
+            {'title': 'LDPlayer - Arknights', 'x': 100, 'y': 50, 'width': 1280, 'height': 720},
+        )
+        self.assertIsNone(_select_best_ldplayer_window([
+            ('dnmultiplayer.exe', '雷电多开器', 0, 0, 1280, 720),
+            ('dnplayer.exe', '雷电游戏中心', 0, 0, 1280, 720),
+            ('dnplayer.exe', 'Mini', 0, 0, 200, 150),
+        ]))
+
+        # 5. Control port 5554 (LDPlayer Console) & 5555 (ADB) filtered; game ports preserved
+        self.assertTrue(_is_mumu_control_port(5554))
+        self.assertTrue(_is_mumu_control_port(5555))
+        self.assertTrue(_is_mumu_control_port(5556))
+
+        def row(state: int, lip: str, lport: int, rip: str, rport: int, pid: int) -> bytes:
+            return (
+                struct.pack('<I4s', state, socket.inet_aton(lip))
+                + struct.pack('!H2x', lport)
+                + socket.inet_aton(rip)
+                + struct.pack('!H2x', rport)
+                + struct.pack('<I', pid)
+            )
+
+        rows = [
+            row(5, '192.168.1.10', 50100, '192.168.1.10', 5554, 302), # LDPlayer console 5554
+            row(5, '192.168.1.10', 50101, '192.168.1.10', 5555, 302), # LDPlayer ADB 5555
+            row(5, '10.0.2.15', 43211, '203.0.113.8', 6101, 302),    # Stronghold 6101
+        ]
+        buf = struct.pack('<I', len(rows)) + b''.join(rows)
+        self.assertEqual(
+            _parse_tcp_table(buf, {302}, exclude_mumu_control=True),
+            {(('10.0.2.15', 43211), ('203.0.113.8', 6101))},
+        )
+
+        # 6. segments emits ldplayer source callback with mumuWindow key
+        stopped = Event()
+        sources = []
+        with patch('electron.prts_battle_core.windows_capture.list_process_map', return_value={301: 'dnplayer.exe'}), \
+             patch('electron.prts_battle_core.windows_capture.find_ldplayer_arknights_window', return_value=ld_win), \
+             patch('electron.prts_battle_core.windows_capture.game_connections', return_value={OLD}) as mock_conns, \
+             patch('electron.prts_battle_core.windows_capture.monotonic', return_value=0.0), \
+             patch('electron.prts_battle_core.windows_capture.open_receiver'), \
+             patch('electron.prts_battle_core.windows_capture.select', return_value=([], [], [])), \
+             redirect_stderr(io.StringIO()):
+            stream = segments(stopped, lambda _: None, on_source=sources.append)
+            try:
+                self.assertIsNone(next(stream))
+            finally:
+                stream.close()
+        self.assertEqual(sources, [{'client': 'ldplayer', 'mumuWindow': ld_win}])
+        mock_conns.assert_called_with({301}, exclude_mumu_control=True)
 
     def test_set_shops_treats_negative_position_as_bench_not_deployed(self):
         stats = MatchStats()

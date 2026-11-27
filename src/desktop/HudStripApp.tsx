@@ -21,7 +21,7 @@ import { formatCovenantsTooltip, normalizeOperatorName } from './covenantBonds';
 import { computeOperatorOdds } from './deckPoolMath';
 import { HUD_SCALE_SPECS, buildHudBossTeamData, buildHudLeakData } from './hudTelemetryViewModel';
 import { PRTS_CHART } from './prtsChartKit';
-import type { HudOverlayState, HudScale } from './battleReports';
+import { emulatorShortLabel, isEmulatorClientSource, type HudOverlayState, type HudScale } from './battleReports';
 import './desktop.css';
 import './battleReports.css';
 
@@ -617,11 +617,11 @@ export default function HudStripApp({
               >
                 {scaleSpec.label}
               </button>
-              {(state.clientSource === 'mumu' || state.drawerCollapsed) && (
+              {(isEmulatorClientSource(state.clientSource) || state.drawerCollapsed) && (
                 <button
                   type="button"
                   onClick={() => void hudApi?.expandDrawer?.()}
-                  title={isLiteBrand ? '展开右侧 MuMu 战报窄栏' : '展开右侧 MuMu 战术抽屉'}
+                  title={isLiteBrand ? `展开右侧 ${emulatorShortLabel(state.clientSource)} 战报窄栏` : `展开右侧 ${emulatorShortLabel(state.clientSource)} 战术抽屉`}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',

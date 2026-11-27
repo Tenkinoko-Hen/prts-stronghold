@@ -186,6 +186,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
   let latestClientSource = 'none';
   let latestMumuWindow = null;
   let mumuPlacement = null;
+  const isEmulatorSource = (src) => src === 'mumu' || src === 'ldplayer';
 
   const getModeAlwaysOnTop = (mode = layoutState.mode) => {
     if (mode === 'mumu-drawer') return Boolean(layoutState.mumuAlwaysOnTop);
@@ -340,7 +341,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
         const display = screen.getDisplayMatching(current);
         const wa = display.workArea;
         if (mode === 'rail') {
-          if (snapMumu || (latestClientSource === 'mumu' && isManual)) {
+          if (snapMumu || (isEmulatorSource(latestClientSource) && isManual)) {
             if (isAuto) {
               autoEnteredMumu = true;
               autoEnteredFromMode = prevMode;
@@ -369,7 +370,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
           } else {
             hudOverlay?.setDrawerCollapsed(false);
           }
-          if (isManual && latestClientSource === 'mumu') {
+          if (isManual && isEmulatorSource(latestClientSource)) {
             manualOverride = true;
           }
         }
@@ -414,7 +415,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     mumuPlacement = null;
     autoEnteredMumu = false;
     drawerCollapsed = false;
-    if (isManual && latestClientSource === 'mumu') {
+    if (isManual && isEmulatorSource(latestClientSource)) {
       manualOverride = true;
     }
     if (hudOpenedByCollapse) {
@@ -461,13 +462,13 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     if (product.mode === 'full') {
       if (nextMode === 'mumu-drawer') {
         manualOverride = false;
-        return switchLayoutMode('mumu-drawer', { isManual: true, isAuto: latestClientSource === 'mumu' });
+        return switchLayoutMode('mumu-drawer', { isManual: true, isAuto: isEmulatorSource(latestClientSource) });
       }
       return switchLayoutMode('wide', { isManual: true });
     }
     if (nextMode === 'rail') {
       manualOverride = false;
-      return switchLayoutMode('rail', { isManual: true, snapMumu: latestClientSource === 'mumu' });
+      return switchLayoutMode('rail', { isManual: true, snapMumu: isEmulatorSource(latestClientSource) });
     }
     return switchLayoutMode('wide', { isManual: true });
   });
@@ -475,10 +476,10 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     if (!isTrustedMainSender(event)) return getLayoutPublicState();
     manualOverride = false;
     if (product.mode === 'telemetry') {
-      return switchLayoutMode('rail', { isManual: true, isAuto: latestClientSource === 'mumu', snapMumu: true });
+      return switchLayoutMode('rail', { isManual: true, isAuto: isEmulatorSource(latestClientSource), snapMumu: true });
     }
     if (layoutState.mode !== 'mumu-drawer') {
-      return switchLayoutMode('mumu-drawer', { isManual: true, isAuto: latestClientSource === 'mumu' });
+      return switchLayoutMode('mumu-drawer', { isManual: true, isAuto: isEmulatorSource(latestClientSource) });
     }
     snapWindowToMumu(true);
     return sendLayoutState();
@@ -507,7 +508,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     autoMumuEnabled = Boolean(enabled);
     if (autoMumuEnabled) {
       manualOverride = false;
-      if (latestClientSource === 'mumu') {
+      if (isEmulatorSource(latestClientSource)) {
         if (product.mode === 'full' && layoutState.mode !== 'mumu-drawer') {
           return switchLayoutMode('mumu-drawer', { isAuto: true });
         }
@@ -529,7 +530,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
     }
     if (product.mode === 'full' && layoutState.mode === 'mumu-drawer') {
       snapWindowToMumu(false);
-    } else if (product.mode === 'telemetry' && layoutState.mode === 'rail' && latestClientSource === 'mumu') {
+    } else if (product.mode === 'telemetry' && layoutState.mode === 'rail' && isEmulatorSource(latestClientSource)) {
       snapWindowToMumu(false);
     }
     sendLayoutState();
@@ -577,7 +578,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
           if (product.mode === 'full') {
             manualOverride = false;
             if (layoutState.mode !== 'mumu-drawer') {
-              switchLayoutMode('mumu-drawer', { isAuto: latestClientSource === 'mumu' });
+              switchLayoutMode('mumu-drawer', { isAuto: isEmulatorSource(latestClientSource) });
             } else {
               snapWindowToMumu(true);
               sendLayoutState();
@@ -585,8 +586,8 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
           } else {
             manualOverride = false;
             if (layoutState.mode !== 'rail') {
-              switchLayoutMode('rail', { isManual: true, snapMumu: latestClientSource === 'mumu' });
-            } else if (latestClientSource === 'mumu') {
+              switchLayoutMode('rail', { isManual: true, snapMumu: isEmulatorSource(latestClientSource) });
+            } else if (isEmulatorSource(latestClientSource)) {
               snapWindowToMumu(true);
               sendLayoutState();
             } else {
@@ -615,7 +616,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
           lanSync?.updateBattleFeed(feed);
 
           if (product.mode === 'telemetry') {
-            if (latestClientSource === 'mumu') {
+            if (isEmulatorSource(latestClientSource)) {
               const moved = mumuWindowMovedSignificantly(prevWin, latestMumuWindow);
               if (autoMumuEnabled && !manualOverride && (!autoEnteredMumu || layoutState.mode !== 'rail')) {
                 switchLayoutMode('rail', { isAuto: true, snapMumu: true });
@@ -664,7 +665,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
             }
             return;
           }
-          if (latestClientSource === 'mumu') {
+          if (isEmulatorSource(latestClientSource)) {
             const moved = mumuWindowMovedSignificantly(prevWin, latestMumuWindow);
             if (layoutState.mode !== 'mumu-drawer' && autoMumuEnabled && !manualOverride) {
               switchLayoutMode('mumu-drawer', { isAuto: true });

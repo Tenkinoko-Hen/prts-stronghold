@@ -101,13 +101,13 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-26 19:27（修复内测 PC 端两项真实环境问题：① Windows 渲染进程 `render-process-gone` 无限弹窗死循环自愈——开窗前/沙盒启动失败/60s 内二次崩溃自动切换 `--prts-safe-gpu --disable-gpu --disable-gpu-sandbox --no-sandbox` 兼容模式并在成功渲染后写入 `startup-prefs.json` 持久记忆、支持 `--prts-normal-gpu` 退出、修复恢复弹窗误导文案与无参重启；② Npcap 一键安装全自动预检修复——安装前自动 `stopAndWait` 停止自家采集 Worker、自动清理缺失 `wpcap.dll` 时的残留 `npcap`/`npf` 服务与严格白名单 `npcap.inf` 驱动库、自动恢复被禁用的 L2L/L2R 本地符号链接策略以根治 `0x800705b7`、失败后解析 Npcap 日志与只读检测冲突网卡软件并自动恢复内置本路采集；226/226 全栈单测 + 4 模式实机 Electron 烟测 + 真实 Windows `pnputil`/`reg`/`tasklist` 解析验证全绿）
+- **最后更新**：2026-11-27 09:08（新增 4 项实局反馈修复与增强并重编双端 Worker：① 全面适配 **雷电模拟器（LDPlayer 9 / 5 / 4）** 抓包、`5554..5585` 控制端口过滤、贴边战术抽屉/Lite 吸附/HUD 联动与 Ban 选 OCR 识别；② **Windows 10 自动选用官方高兼容 Npcap v1.80**（Win11 保持最新），并自动修复 `0x800700b7` 残留驱动/注册表与 `MaxNumFilters=14`；③ **修复 14–15 回合长战报导出 PNG 失败**——改用同源 `Blob` URL 突破 Chromium 2 MiB `data:` URL 上限，清洗非法 XML 控制字符并自动多档降阶重试；④ **根治阵亡观战后「我」席位漂移到活到最后的队友身上**——锁定同局 `conn.player`、接入 `354` 商店购买回包锚定、封堵观战 `300`/`341`/`311` 篡改与前端/Android 漂移；236/236 全栈单测 + 双 Worker 重编全绿）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **226/226 全绿**（`tsc --noEmit` 通过 + TS 127/127 + Node 38/38 + Python 61/61）
-  - Electron 45 四模式实机烟测（标准启动 → `--prts-safe-gpu` 持久写入 `startup-prefs.json` → 无参自动继承兼容模式 → `--prts-normal-gpu` 清除偏好）全部通过
-  - Windows 真机只读校验 `parsePnputilNpcapDrivers` / `parseSymlinkEvaluationDisabled` / `detectConflictingNetworkApps` 及已安装态 `prepareNpcapEnvironment` 零副作用全部通过
-  - Android `aapt2` + `javac`（`stronghold` 与 `telemetry` 各 72 份 Java 源码/测试）及 7 组 Java 单测 **2,992 项断言直跑全绿**
+  - `npm test` **236/236 全绿**（`tsc --noEmit` 通过 + TS 130/130 + Node 41/41 + Python 65/65）
+  - 双产品 Windows Python Worker（`PRTS-Worker.exe` / `Telemetry-Worker.exe`）重建并自检通过
+  - Electron 45 四模式实机烟测与 Win10/Win11 Npcap 版本自动分流校验通过
+  - Android `BattleCaptureState.java` Java 8 编译及观战防漂移单测通过（完整 APK 未重打，沿用 `2.1.0`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
 - **已发布最新正式版本（`v2.1.0` · Latest，2026-11-26 21:05 发布至 GitHub Release）**：
   - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（对应 tag `v2.1.0` → `0541d6c`）

@@ -33,7 +33,10 @@ export function BattleReportExportDialog({ report, onClose }: { report: ReportSu
     setBusy(true);
     setError('');
     try { download(await renderBattleReportPng(html), `${report.filename}.png`); }
-    catch { setError('长图未能生成，请重试或下载文档。'); }
+    catch (err) {
+      console.error('[PRTS Export PNG]', err);
+      setError('长图未能生成，请重试或下载文档。');
+    }
     finally { setBusy(false); }
   };
   return <DesktopDialog title="导出战报文档" onClose={onClose}>

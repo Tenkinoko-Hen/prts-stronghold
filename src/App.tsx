@@ -18,6 +18,8 @@ import { ImageLightboxModal } from './components/ImageLightboxModal';
 import { useBattleBanSync } from './desktop/battleBanSync';
 import { readBattleReport } from './desktop/battleReportData';
 import {
+  emulatorShortLabel,
+  isEmulatorClientSource,
   updateLiveReport,
   type ClientSource,
   type HudOverlayState,
@@ -447,18 +449,18 @@ export default function App() {
               <span>{telemetryLabel}</span>
             </button>
           )}
-          {clientSource === 'mumu' && (desktopAPI?.windowLayout || isMumuDemo) && (
+          {isEmulatorClientSource(clientSource) && (desktopAPI?.windowLayout || isMumuDemo) && (
             <button
               type="button"
               onClick={() => {
                 if (desktopAPI?.windowLayout) void desktopAPI.windowLayout.setMode('mumu-drawer');
                 else setWindowMode('mumu-drawer');
               }}
-              title="切换到 MuMu 右侧贴边战术抽屉（方案 A）"
+              title={`切换到 ${emulatorShortLabel(clientSource)} 右侧贴边战术抽屉（方案 A）`}
               className="d-button d-small d-mumu-switch-btn"
             >
               <PanelRight size={13} />
-              <span>MuMu 抽屉</span>
+              <span>{clientSource === 'ldplayer' ? '雷电抽屉' : `${emulatorShortLabel(clientSource)} 抽屉`}</span>
             </button>
           )}
           {desktopAPI?.hud && (

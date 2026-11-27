@@ -63,18 +63,63 @@ function compareVersion(a, b) {
   return 0;
 }
 
-function pickLatestNpcapInstaller(html) {
-  if (typeof html !== 'string' || !html) return null;
+function collectNpcapInstallers(html) {
   const seen = new Map();
+  if (typeof html !== 'string' || !html) return seen;
   const pattern = /\bnpcap-(\d+(?:\.\d+)+)\.exe\b/g;
   let match;
   while ((match = pattern.exec(html)) !== null) {
     seen.set(match[1], match[0]);
   }
+  return seen;
+}
+
+function isWindows10OrOlder(release = os.release(), platform = process.platform) {
+  if (platform !== 'win32' || typeof release !== 'string') return false;
+  const match = release.trim().match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return false;
+  const major = Number.parseInt(match[1], 10);
+  const build = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(major) || !Number.isFinite(build)) return false;
+  if (major < 10) return true;
+  if (major === 10) return build < 22000;
+  return false;
+}
+
+function pickLatestNpcapInstaller(html) {
+  const seen = collectNpcapInstallers(html);
   if (!seen.size) return null;
   const latestVersion = [...seen.keys()].sort(compareVersion).at(-1);
   const filename = seen.get(latestVersion);
   return { version: latestVersion, filename, url: `${NPCAP_DIST_URL}${filename}` };
+}
+
+function pickNpcapInstallerForOs(html, { platform = process.platform, release = os.release() } = {}) {
+  const seen = collectNpcapInstallers(html);
+  if (!seen.size) return null;
+  const versions = [...seen.keys()].sort(compareVersion);
+  const latestVersion = versions.at(-1);
+  if (isWindows10OrOlder(release, platform)) {
+    let chosenVersion = seen.has('1.80') ? '1.80' : null;
+    if (!chosenVersion) {
+      const compat = versions.filter((v) => compareVersion(v, '1.80') <= 0);
+      chosenVersion = compat.at(-1) || latestVersion;
+    }
+    const filename = seen.get(chosenVersion);
+    return {
+      version: chosenVersion,
+      filename,
+      url: `${NPCAP_DIST_URL}${filename}`,
+      reason: 'win10-compat',
+    };
+  }
+  const filename = seen.get(latestVersion);
+  return {
+    version: latestVersion,
+    filename,
+    url: `${NPCAP_DIST_URL}${filename}`,
+    reason: 'latest',
+  };
 }
 
 function assertNpcapUrl(rawUrl) {
@@ -192,6 +237,18 @@ function parseSymlinkEvaluationDisabled(regOutput) {
   return false;
 }
 
+function parseMaxNumFilters(regOutput) {
+  if (typeof regOutput !== 'string' || !regOutput) return null;
+  for (const line of regOutput.split(/\r?\n/)) {
+    const match = line.match(/^\s*MaxNumFilters\s+REG_DWORD\s+(0x[0-9a-f]+|\d+)\s*$/i);
+    if (!match) continue;
+    const raw = match[1];
+    const value = /^0x/i.test(raw) ? Number.parseInt(raw, 16) : Number.parseInt(raw, 10);
+    if (Number.isSafeInteger(value) && value >= 0) return value;
+  }
+  return null;
+}
+
 function parseNpcapInstallLog(logText) {
   const text = typeof logText === 'string' ? logText : '';
   return {
@@ -199,6 +256,7 @@ function parseNpcapInstallLog(logText) {
     filesInUse: /files in use|Cannot completely uninstall Npcap/i.test(text),
     markedForDelete: MARKED_FOR_DELETE_RE.test(text),
     serviceCreateFailed: /Failed to create the npcap service/i.test(text),
+    alreadyExists: /0x800700b7|\b800700b7\b|ERROR_ALREADY_EXISTS/i.test(text),
   };
 }
 
@@ -292,11 +350,18 @@ async function cleanupResidualService(serviceName, { runCmd, sleep }) {
   return { cleaned: true, needsReboot };
 }
 
+function defaultRemovePath(targetPath) {
+  try {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  } catch {}
+}
+
 async function prepareNpcapEnvironment({
   platform = process.platform,
   runCommand,
   hasNpcapFn = hasNpcap,
   hasLegacyWinPcapFn = defaultHasLegacyWinPcap,
+  removePathFn,
   sleepFn,
   onProgress,
 } = {}) {
@@ -304,6 +369,7 @@ async function prepareNpcapEnvironment({
     cleanedServices: [],
     cleanedDrivers: [],
     repairedSymlink: false,
+    repairedMaxFilters: false,
     needsReboot: false,
   };
   if (platform !== 'win32' || hasNpcapFn()) {
@@ -312,6 +378,7 @@ async function prepareNpcapEnvironment({
 
   const runCmd = (file, args) => safeRunCommand(runCommand, file, args);
   const sleep = typeof sleepFn === 'function' ? sleepFn : (ms) => new Promise((r) => setTimeout(r, ms));
+  const removePath = typeof removePathFn === 'function' ? removePathFn : defaultRemovePath;
   void onProgress;
 
   // A. 修复被组策略/精简系统关闭的本地符号链接评估策略（仅恢复 L2L/L2R 默认值）
@@ -323,23 +390,29 @@ async function prepareNpcapEnvironment({
     }
   }
 
-  // B. 清理 wpcap.dll 缺失但内核仍残留的 npcap 服务
+  // B. 清理 wpcap.dll 缺失但内核仍残留的 npcap 服务与残留注册表项
   const npcapCleanup = await cleanupResidualService('npcap', { runCmd, sleep });
   if (npcapCleanup.cleaned) {
     result.cleanedServices.push('npcap');
     if (npcapCleanup.needsReboot) result.needsReboot = true;
   }
+  if (!npcapCleanup.needsReboot) {
+    await runCmd('reg.exe', ['delete', 'HKLM\\SYSTEM\\CurrentControlSet\\Services\\npcap', '/f']);
+  }
 
-  // C. 仅在系统未安装传统 WinPcap 时清理残留 npf 服务
+  // C. 仅在系统未安装传统 WinPcap 时清理残留 npf 服务与注册表项
   if (!hasLegacyWinPcapFn()) {
     const npfCleanup = await cleanupResidualService('npf', { runCmd, sleep });
     if (npfCleanup.cleaned) {
       result.cleanedServices.push('npf');
       if (npfCleanup.needsReboot) result.needsReboot = true;
     }
+    if (!npfCleanup.needsReboot) {
+      await runCmd('reg.exe', ['delete', 'HKLM\\SYSTEM\\CurrentControlSet\\Services\\npf', '/f']);
+    }
   }
 
-  // D. 严格白名单清理残留 npcap.inf 驱动包
+  // D. 严格白名单清理残留 npcap.inf 驱动包，并清除半截残留驱动文件与目录
   const enumRes = await runCmd('pnputil.exe', ['/enum-drivers']);
   const oemDrivers = parsePnputilNpcapDrivers(enumRes.stdout);
   for (const oemInf of oemDrivers) {
@@ -347,6 +420,44 @@ async function prepareNpcapEnvironment({
     result.cleanedDrivers.push(oemInf);
     if (outputMarksDeletion(delDriverRes)) {
       result.needsReboot = true;
+    }
+  }
+
+  const windir = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const residualPaths = [
+    path.join(windir, 'System32', 'drivers', 'npcap.sys'),
+    path.join(programFiles, 'Npcap'),
+    path.join(windir, 'System32', 'Npcap'),
+  ];
+  for (const targetPath of residualPaths) {
+    try {
+      await removePath(targetPath);
+    } catch {}
+  }
+
+  // E. 避免默认 MaxNumFilters=8 触发 NDIS 轻型过滤器上限冲突（0x800700b7）
+  const filterRes = await runCmd('reg.exe', [
+    'query',
+    'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Network',
+    '/v',
+    'MaxNumFilters',
+  ]);
+  const maxNumFilters = filterRes.code === 0 ? parseMaxNumFilters(filterRes.stdout) : null;
+  if (maxNumFilters === null || maxNumFilters < 14) {
+    const addFilterRes = await runCmd('reg.exe', [
+      'add',
+      'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Network',
+      '/v',
+      'MaxNumFilters',
+      '/t',
+      'REG_DWORD',
+      '/d',
+      '14',
+      '/f',
+    ]);
+    if (addFilterRes.code === 0) {
+      result.repairedMaxFilters = true;
     }
   }
 
@@ -358,8 +469,11 @@ function formatNpcapFailureMessage({ prep, logDiag, conflicts = [], exitCode } =
   if (prep?.needsReboot || logDiag?.markedForDelete) {
     return `已自动清理旧版残留，但旧驱动服务被 Windows 内核锁定待重启释放（1072），请重启电脑一次后再点「一键安装 Npcap」即可一次成功；${FALLBACK_CAPTURE_HINT}`;
   }
-  if ((logDiag?.filesInUse || logDiag?.symlinkDisabled || logDiag?.serviceCreateFailed) && conflictList.length > 0) {
+  if ((logDiag?.filesInUse || logDiag?.symlinkDisabled || logDiag?.serviceCreateFailed || logDiag?.alreadyExists) && conflictList.length > 0) {
     return `安装未能完成（检测到可能占用网卡过滤驱动的程序：${conflictList.join('、')}）。已自动清理残留并校准符号链接策略，请先退出这些程序（如仍受锁可重启一次电脑）后再点「一键安装 Npcap」；${FALLBACK_CAPTURE_HINT}`;
+  }
+  if (logDiag?.alreadyExists) {
+    return `Npcap 驱动安装遇到 0x800700b7（同名残留驱动或系统过滤器上限冲突），已自动清理残留驱动与注册表并将 MaxNumFilters 调至 14，请重启电脑一次后再点「一键安装 Npcap」重试；${FALLBACK_CAPTURE_HINT}`;
   }
   if (logDiag?.symlinkDisabled || logDiag?.serviceCreateFailed) {
     const codeTag = logDiag?.symlinkDisabled ? '（如 0x800705b7）' : '';
@@ -405,7 +519,7 @@ async function inspectNpcapFailure({
   const logDiag = parseNpcapInstallLog(combinedLog);
 
   let postPrep = null;
-  if (logDiag.symlinkDisabled || logDiag.serviceCreateFailed || logDiag.filesInUse) {
+  if (logDiag.symlinkDisabled || logDiag.serviceCreateFailed || logDiag.filesInUse || logDiag.alreadyExists) {
     postPrep = await prepareEnvFn({ platform: process.platform, runCommand, hasNpcapFn });
     if (logDiag.symlinkDisabled) {
       const fsutilRes = await safeRunCommand(runCommand, 'fsutil.exe', ['behavior', 'set', 'SymlinkEvaluation', 'L2L:1', 'L2R:1']);
@@ -421,6 +535,7 @@ async function inspectNpcapFailure({
     cleanedServices: [...new Set([...(prep?.cleanedServices || []), ...(postPrep?.cleanedServices || [])])],
     cleanedDrivers: [...new Set([...(prep?.cleanedDrivers || []), ...(postPrep?.cleanedDrivers || [])])],
     repairedSymlink: Boolean(prep?.repairedSymlink || postPrep?.repairedSymlink),
+    repairedMaxFilters: Boolean(prep?.repairedMaxFilters || postPrep?.repairedMaxFilters),
     needsReboot: Boolean(prep?.needsReboot || postPrep?.needsReboot),
   };
   return { prep: mergedPrep, logDiag, conflicts };
@@ -433,12 +548,14 @@ async function runNpcapInstaller({
   hasNpcapFn = hasNpcap,
   fetchFn = fetchHttps,
   spawnFn = spawn,
+  osRelease = os.release(),
+  platform = process.platform,
 } = {}) {
   if (hasNpcapFn()) {
     return { installed: true, version: '', exitCode: 0 };
   }
   onProgress?.('installing', '正在检查并自动清理残留 Npcap 驱动与安装环境…');
-  const prep = await prepareEnvFn({ platform: process.platform, hasNpcapFn, onProgress });
+  const prep = await prepareEnvFn({ platform, hasNpcapFn, onProgress });
   if (prep?.needsReboot) {
     return {
       installed: false,
@@ -451,14 +568,19 @@ async function runNpcapInstaller({
 
   onProgress?.('downloading', '正在从 npcap.com 获取最新官方安装程序…');
   const listing = await fetchFn(NPCAP_DIST_URL, { maxBytes: MAX_HTML_BYTES });
-  const target = pickLatestNpcapInstaller(listing);
+  const target = pickNpcapInstallerForOs(listing, { platform, release: osRelease });
   if (!target) {
     throw new Error('未能从 npcap.com/dist 解析到最新安装包，请打开官网手动下载');
   }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prts-npcap-'));
   const installerPath = path.join(tempDir, target.filename);
   try {
-    onProgress?.('downloading', `正在下载官方 ${target.filename}…`);
+    onProgress?.(
+      'downloading',
+      target.reason === 'win10-compat'
+        ? `检测到 Windows 10，正在下载高兼容官方 ${target.filename}…`
+        : `正在下载官方 ${target.filename}…`,
+    );
     await fetchFn(target.url, { maxBytes: MAX_INSTALLER_BYTES, destPath: installerPath });
     onProgress?.('installing', `已打开 ${target.filename} 官方安装向导，请按提示完成安装（建议勾选 WinPcap 兼容模式）…`);
     const startedAt = Date.now();
@@ -497,9 +619,12 @@ module.exports = {
   NPCAP_DOWNLOAD_PAGE,
   hasNpcap,
   npcapDllPath,
+  isWindows10OrOlder,
   pickLatestNpcapInstaller,
+  pickNpcapInstallerForOs,
   parsePnputilNpcapDrivers,
   parseSymlinkEvaluationDisabled,
+  parseMaxNumFilters,
   parseNpcapInstallLog,
   detectConflictingNetworkApps,
   prepareNpcapEnvironment,

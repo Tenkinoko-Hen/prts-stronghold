@@ -36,6 +36,8 @@ import { NpcapSetupBanner } from './NpcapSetupBanner';
 import { isSoloStageMode } from './combatTelemetry';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
 import {
+  emulatorShortLabel,
+  isEmulatorClientSource,
   reportWithPlayerNames,
   setReportPlayerNames,
   setReportSelfSeat,
@@ -248,6 +250,9 @@ export default function TelemetryApp({
   const bossNumber = bossFilter?.key === key ? bossFilter.round : defaultBossRound(report);
   const liveRound = report?.current || report?.rounds.at(-1)?.number || null;
 
+  const isEmulator = isEmulatorClientSource(clientSource);
+  const emulatorLabel = emulatorShortLabel(clientSource);
+
   const statusTone = replay
     ? 'replay'
     : npcapInstalled === false || restarting
@@ -265,9 +270,9 @@ export default function TelemetryApp({
       : restarting
         ? '自动重连中…'
         : liveView
-          ? `${clientSource === 'mumu' ? 'MuMu · ' : ''}${liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中'}`
-          : clientSource === 'mumu'
-            ? (['waiting', 'connecting', 'listening'].includes(status) ? 'MuMu · 待进局' : `MuMu · ${SHORT_STATUS[status]}`)
+          ? `${isEmulator ? `${emulatorLabel} · ` : ''}${liveRound !== null ? `记录中 R${String(liveRound).padStart(2, '0')}` : '记录中'}`
+          : isEmulator
+            ? (['waiting', 'connecting', 'listening'].includes(status) ? `${emulatorLabel} · 待进局` : `${emulatorLabel} · ${SHORT_STATUS[status]}`)
             : SHORT_STATUS[status];
 
   const openRecord = (recordKey: string | null) => {
@@ -341,12 +346,12 @@ export default function TelemetryApp({
             <span>导出</span>
           </button>
 
-          {clientSource === 'mumu' && desktopAPI?.windowLayout?.snapToMumu && (
+          {isEmulator && desktopAPI?.windowLayout?.snapToMumu && (
             <button
               type="button"
               className={`lite-tool-btn${mumuPlacement ? ' is-active' : ''}`}
               disabled={layoutPending}
-              title={mumuPlacement === 'inside-right' ? '重新吸附 MuMu 窗口（右侧空间不足，内侧叠放）' : '吸附定位到 MuMu 窗口右侧'}
+              title={mumuPlacement === 'inside-right' ? `重新吸附 ${emulatorLabel} 窗口（右侧空间不足，内侧叠放）` : `吸附定位到 ${emulatorLabel} 窗口右侧`}
               onClick={() => void snapToMumu()}
             >
               <Crosshair size={13} />
@@ -363,8 +368,8 @@ export default function TelemetryApp({
               title={
                 windowMode === 'rail'
                   ? '切回宽屏视图（1180×740）'
-                  : clientSource === 'mumu'
-                    ? '切到侧边栏并吸附 MuMu 窗口右侧'
+                  : isEmulator
+                    ? `切到侧边栏并吸附 ${emulatorLabel} 窗口右侧`
                     : '切到 460px 侧边栏贴在游戏旁边'
               }
               onClick={() => void toggleWindowMode()}
@@ -374,7 +379,7 @@ export default function TelemetryApp({
             </button>
           )}
 
-          {desktopAPI?.windowLayout?.collapseToHud && (clientSource === 'mumu' || windowMode === 'rail') && (
+          {desktopAPI?.windowLayout?.collapseToHud && (isEmulator || windowMode === 'rail') && (
             <button
               type="button"
               className="lite-tool-btn is-active"
@@ -476,7 +481,7 @@ export default function TelemetryApp({
         <div className="lite-inside-alert" role="status">
           <span>
             <AlertTriangle size={12} />
-            当前内侧叠放于 MuMu 右侧（桌面空间不足）
+            当前内侧叠放于 {emulatorLabel} 右侧（桌面空间不足）
           </span>
           {desktopAPI?.windowLayout?.collapseToHud && (
             <button type="button" onClick={collapseToHud}>

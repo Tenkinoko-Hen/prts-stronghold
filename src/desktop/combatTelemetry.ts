@@ -126,7 +126,7 @@ export interface SeatLineup {
   equips: EquipUnit[];
   shopGoods: ShopGood[];
   squad: SquadSlot[];
-  activeBonds?: Array<{ bondId: string; stacks: number; active: boolean }>;
+  activeBonds?: Array<{ bondId: string; stacks: number; opCount?: number; active: boolean }>;
 }
 
 export interface TimelinePoint {
@@ -455,15 +455,19 @@ export function readSeatLineups(raw: unknown): Record<number, SeatLineup> {
             : typeof row.count === 'number' && Number.isFinite(row.count)
               ? row.count
               : 0;
+          const rawOpCount = typeof row.count === 'number' && Number.isFinite(row.count)
+            ? Math.min(999, Math.max(0, Math.trunc(row.count)))
+            : undefined;
           const stacks = Math.min(999, Math.max(0, Math.trunc(rawStacks)));
           const mappedName = mapBondIdToCovenant(bondId);
           const threshold = mappedName ? covenantThreshold(mappedName) : 2;
+          const effectiveCount = stacks > 0 ? stacks : (rawOpCount ?? 0);
           const active = typeof row.active === 'boolean'
             ? row.active
             : mappedName === '独行'
-              ? stacks === 1
-              : stacks >= threshold;
-          return [{ bondId, stacks, active }];
+              ? effectiveCount === 1
+              : effectiveCount >= threshold;
+          return [{ bondId, stacks, ...(rawOpCount !== undefined ? { opCount: rawOpCount } : {}), active }];
         })
       : undefined;
     const roundNo = asNum(entry.round);

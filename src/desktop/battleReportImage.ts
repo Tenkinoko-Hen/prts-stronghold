@@ -1,12 +1,22 @@
 // 青逝痕 Tenkinoko 制作
 const reportWidth = 1160;
 const FALLBACK_SCALES = [1.25, 1, 0.75, 0.5];
-const MAX_DATA_URL_FALLBACK_XML_LENGTH = 400_000;
 const INVALID_XML_10_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
 
 /** Remove characters forbidden in XML 1.0 (e.g. control chars in player nicknames) so SVG image decoding succeeds. */
 export function sanitizeSvgXml(xml: string): string {
   return xml.replace(INVALID_XML_10_CHARS, '');
+}
+
+/** Encode arbitrary UTF-8 string to base64 safely in chunks without call-stack overflow. */
+export function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  const chunks: string[] = [];
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    chunks.push(String.fromCharCode(...bytes.subarray(i, i + step)));
+  }
+  return btoa(chunks.join(''));
 }
 
 /** Compute descending export scale candidates capped by canvas pixel limits, with downscale fallbacks. */
@@ -75,22 +85,24 @@ async function renderSvgAtScale(svg: SVGSVGElement, widthPx: number, heightPx: n
   svg.setAttribute('width', String(widthPx));
   svg.setAttribute('height', String(heightPx));
   const svgXml = sanitizeSvgXml(new XMLSerializer().serializeToString(svg));
-  let blobUrl: string | undefined;
+  // Chromium treats blob: SVG with <foreignObject> as cross-origin and taints the canvas on toBlob().
+  // A base64 data: URL keeps the canvas untainted and is far more compact than encodeURIComponent for UTF-8 + sprites.
   try {
-    // Same-origin Blob URL bypasses Chromium's ~2 MiB data: URL limit for long multi-round reports with embedded sprites.
-    blobUrl = URL.createObjectURL(new Blob([svgXml], { type: 'image/svg+xml;charset=utf-8' }));
-    return await decodeSvgToPngBlob(blobUrl, widthPx, heightPx);
-  } catch (blobErr) {
-    if (svgXml.length < MAX_DATA_URL_FALLBACK_XML_LENGTH) {
+    return await decodeSvgToPngBlob(
+      `data:image/svg+xml;base64,${utf8ToBase64(svgXml)}`,
+      widthPx,
+      heightPx,
+    );
+  } catch (base64Err) {
+    try {
       return await decodeSvgToPngBlob(
         `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgXml)}`,
         widthPx,
         heightPx,
       );
+    } catch {
+      throw base64Err;
     }
-    throw blobErr;
-  } finally {
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
   }
 }
 

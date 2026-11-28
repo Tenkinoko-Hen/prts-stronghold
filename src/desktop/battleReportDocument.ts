@@ -75,7 +75,7 @@ function roundPressureChartSvg(rounds: Round[]) {
 
   const grids = scale.ticks.map(t => {
     const y = padT + plotH - (t / scale.top) * plotH;
-    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="${t === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine}" stroke-width="1"${t === 0 ? '' : ' stroke-dasharray="2 3"'} /><text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${PRTS_CHART.labelMuted}" font-size="9.5" font-family="${PRTS_FONT_NUM}">${formatAxisNumber(t)}</text>`;
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="${t === 0 ? PRTS_CHART.axisLine : PRTS_CHART.gridLine}" stroke-width="1"${t === 0 ? '' : ' stroke-dasharray="2 3"'} /><text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${PRTS_CHART.labelMuted}" font-size="9.5" font-family="${html(PRTS_FONT_NUM)}">${formatAxisNumber(t)}</text>`;
   }).join('');
 
   const cols = points.map((p, i) => {
@@ -88,12 +88,12 @@ function roundPressureChartSvg(rounds: Round[]) {
       ? `<rect x="${(cx - slotW * 0.42).toFixed(1)}" y="${padT}" width="${(slotW * 0.84).toFixed(1)}" height="${plotH}" fill="rgba(214,72,64,0.08)" />`
       : '';
     const lBar = lh > 0
-      ? `<rect x="${(cx - barW - 1).toFixed(1)}" y="${ly.toFixed(1)}" width="${barW.toFixed(1)}" height="${lh.toFixed(1)}" fill="${PRTS_CHART.crimson}" rx="1" /><text x="${(cx - barW / 2 - 1).toFixed(1)}" y="${(ly - 3).toFixed(1)}" text-anchor="middle" fill="#f08680" font-size="9" font-weight="700" font-family="${PRTS_FONT_NUM}">${p.leak}</text>`
+      ? `<rect x="${(cx - barW - 1).toFixed(1)}" y="${ly.toFixed(1)}" width="${barW.toFixed(1)}" height="${lh.toFixed(1)}" fill="${PRTS_CHART.crimson}" rx="1" /><text x="${(cx - barW / 2 - 1).toFixed(1)}" y="${(ly - 3).toFixed(1)}" text-anchor="middle" fill="#f08680" font-size="9" font-weight="700" font-family="${html(PRTS_FONT_NUM)}">${p.leak}</text>`
       : '';
     const hBar = hh > 0
-      ? `<rect x="${(cx + 1).toFixed(1)}" y="${hy.toFixed(1)}" width="${barW.toFixed(1)}" height="${hh.toFixed(1)}" fill="${PRTS_CHART.blue}" rx="1" /><text x="${(cx + barW / 2 + 1).toFixed(1)}" y="${(hy - 3).toFixed(1)}" text-anchor="middle" fill="#6eb7df" font-size="9" font-weight="700" font-family="${PRTS_FONT_NUM}">${p.help}</text>`
+      ? `<rect x="${(cx + 1).toFixed(1)}" y="${hy.toFixed(1)}" width="${barW.toFixed(1)}" height="${hh.toFixed(1)}" fill="${PRTS_CHART.blue}" rx="1" /><text x="${(cx + barW / 2 + 1).toFixed(1)}" y="${(hy - 3).toFixed(1)}" text-anchor="middle" fill="#6eb7df" font-size="9" font-weight="700" font-family="${html(PRTS_FONT_NUM)}">${p.help}</text>`
       : '';
-    return `${bg}${lBar}${hBar}<text x="${cx.toFixed(1)}" y="${h - 6}" text-anchor="middle" fill="${PRTS_CHART.labelMuted}" font-size="9.5" font-family="${PRTS_FONT_NUM}">R${p.round}</text>`;
+    return `${bg}${lBar}${hBar}<text x="${cx.toFixed(1)}" y="${h - 6}" text-anchor="middle" fill="${PRTS_CHART.labelMuted}" font-size="9.5" font-family="${html(PRTS_FONT_NUM)}">R${p.round}</text>`;
   }).join('');
 
   return `<div class="chart-card"><div class="chart-head"><span><b class="prts-slash">//</b>各回合漏怪与协防态势</span><div class="chart-legend"><span><i class="swatch-leak"></i>全队漏怪</span><span><i class="swatch-help"></i>全队协防</span></div></div><svg viewBox="0 0 ${w} ${h}" class="prts-svg" role="img" aria-label="各回合漏怪与协防柱状图">${grids}${cols}</svg></div>`;
@@ -133,7 +133,7 @@ function bossDonutSvg(
     offset += ratio * circ;
     return `<circle cx="48" cy="48" r="${r}" fill="none" stroke="${slice.color}" stroke-width="9" stroke-dasharray="${dash.toFixed(2)} ${circ.toFixed(2)}" stroke-dashoffset="${(-cur).toFixed(2)}" transform="rotate(-90 48 48)" />`;
   }).join('') : '';
-  return `<svg viewBox="0 0 96 96" class="boss-donut" role="img" aria-label="${html(centerSub)} ${html(centerVal)}"><circle cx="48" cy="48" r="43" fill="none" stroke="#222a36" stroke-width="1" stroke-dasharray="2 4" /><circle cx="48" cy="48" r="${r}" fill="none" stroke="#181f2a" stroke-width="9" />${arcs}<text x="48" y="46" text-anchor="middle" fill="${PRTS_CHART.labelStrong}" font-size="12.5" font-weight="700" font-family="${PRTS_FONT_NUM}">${html(centerVal)}</text><text x="48" y="58" text-anchor="middle" fill="${PRTS_CHART.labelMuted}" font-size="8.5" font-family="${PRTS_FONT_SANS}">${html(centerSub)}</text></svg>`;
+  return `<svg viewBox="0 0 96 96" class="boss-donut" role="img" aria-label="${html(centerSub)} ${html(centerVal)}"><circle cx="48" cy="48" r="43" fill="none" stroke="#222a36" stroke-width="1" stroke-dasharray="2 4" /><circle cx="48" cy="48" r="${r}" fill="none" stroke="#181f2a" stroke-width="9" />${arcs}<text x="48" y="46" text-anchor="middle" fill="${PRTS_CHART.labelStrong}" font-size="12.5" font-weight="700" font-family="${html(PRTS_FONT_NUM)}">${html(centerVal)}</text><text x="48" y="58" text-anchor="middle" fill="${PRTS_CHART.labelMuted}" font-size="8.5" font-family="${html(PRTS_FONT_SANS)}">${html(centerSub)}</text></svg>`;
 }
 
 function bossSection(

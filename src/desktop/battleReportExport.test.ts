@@ -260,6 +260,8 @@ test('exported document embeds inline operator avatar sprite strip, segmented Bo
   assert.match(html, /首领削血分布/);
   assert.match(html, /各回合漏怪与协防态势/);
   assert.doesNotMatch(html, /<script\b|<link\b|\bsrc=|https?:\/\//i);
+  assert.doesNotMatch(html, /font-family=""/);
+  assert.match(html, /font-family="&quot;Bahnschrift&quot;/);
 });
 
 test('sanitizeSvgXml strips illegal XML 1.0 control characters while keeping valid whitespace and text', () => {

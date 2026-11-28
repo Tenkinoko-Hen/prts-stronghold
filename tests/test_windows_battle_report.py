@@ -1547,6 +1547,33 @@ class MumuCaptureDetectionTests(unittest.TestCase):
         self.assertNotIn('SecretDoctorName', diag_text)
         self.assertNotIn('192.0.2', diag_text)
 
+    def test_decode_raw_bonds_extracts_server_stacks_and_active_state(self):
+        from electron.prts_battle_core.stats import decode_raw_bonds
+
+        seat1_raw = [
+            '0100fc00001403',  # 不屈 active, 252 stacks, 3 ops
+            '01009f00001102',  # 奇迹 active, 159 stacks, 2 ops
+            '01008a00000d02',  # 灵巧 active, 138 stacks, 2 ops
+            '01000000001806',  # 绝技 active, 0 stacks, 6 ops
+            '00000000000b01',  # 精准 inactive, 0 stacks, 1 op
+            '00000000000100',  # 炎 inactive, 0 stacks, 0 ops (omitted)
+        ]
+        decoded = decode_raw_bonds(seat1_raw)
+        by_id = {row['bond_id']: row for row in decoded}
+        self.assertEqual(by_id['indomShip'], {'bond_id': 'indomShip', 'stacks': 252, 'count': 3, 'active': True})
+        self.assertEqual(by_id['miraShip'], {'bond_id': 'miraShip', 'stacks': 159, 'count': 2, 'active': True})
+        self.assertEqual(by_id['skillfulShip'], {'bond_id': 'skillfulShip', 'stacks': 138, 'count': 2, 'active': True})
+        self.assertEqual(by_id['suntShip'], {'bond_id': 'suntShip', 'stacks': 0, 'count': 6, 'active': True})
+        self.assertEqual(by_id['preciShip'], {'bond_id': 'preciShip', 'stacks': 0, 'count': 1, 'active': False})
+        self.assertNotIn('yanShip', by_id)
+
+        seat3_raw = ['01008a00000806', '01000e00001a02', '01000a00001102', '01000000001804']
+        by_id3 = {row['bond_id']: row for row in decode_raw_bonds(seat3_raw)}
+        self.assertEqual(by_id3['ursusShip'], {'bond_id': 'ursusShip', 'stacks': 138, 'count': 6, 'active': True})
+        self.assertEqual(by_id3['arcaneShip'], {'bond_id': 'arcaneShip', 'stacks': 14, 'count': 2, 'active': True})
+        self.assertEqual(by_id3['miraShip'], {'bond_id': 'miraShip', 'stacks': 10, 'count': 2, 'active': True})
+        self.assertEqual(by_id3['suntShip'], {'bond_id': 'suntShip', 'stacks': 0, 'count': 4, 'active': True})
+
 
 if __name__ == '__main__':
     unittest.main()

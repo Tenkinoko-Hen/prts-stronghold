@@ -106,6 +106,28 @@ final class StrongholdWireDecoder {
         }
     }
 
+    private static final String[] BOND_IDENT_TO_ID = {
+        "",
+        "yanShip", "sargonShip", "victoriaShip", "kjeragShip", "egirShip",
+        "siracusaShip", "kazimierzShip", "ursusShip", "iberiaShip", "lethaniaShip",
+        "preciShip", "swiftShip", "skillfulShip", "steadShip", "deputShip",
+        "visiShip", "miraShip", "investShip", "raidShip", "indomShip",
+        "maniShip", "emptyShip", "soloShip", "suntShip", "docShip", "arcaneShip"
+    };
+
+    static final class WireBond {
+        final String bondId;
+        final int stacks;
+        final int opCount;
+        final boolean active;
+        WireBond(String bondId, int stacks, int opCount, boolean active) {
+            this.bondId = bondId;
+            this.stacks = stacks;
+            this.opCount = opCount;
+            this.active = active;
+        }
+    }
+
     static final class SeatPiece {
         final int chessIdent;
         final List<Integer> attachedEquipIdents;
@@ -140,6 +162,7 @@ final class StrongholdWireDecoder {
         final Map<Integer, List<Integer>> equipIdentsBySeat = new HashMap<>();
         final Map<Integer, List<SeatPiece>> deployedPiecesBySeat = new HashMap<>();
         final Map<Integer, List<SeatPiece>> benchPiecesBySeat = new HashMap<>();
+        final Map<Integer, List<WireBond>> wireBondsBySeat = new HashMap<>();
         final List<SpawnPreview> spawnPreviews = new ArrayList<>();
         final List<EscapedEnemy> escapedEnemies = new ArrayList<>();
         boolean hasEscapedSection = false;
@@ -655,7 +678,26 @@ final class StrongholdWireDecoder {
             ev.deployedPiecesBySeat.put(seat, deployedPieces);
             ev.benchPiecesBySeat.put(seat, benchPieces);
         }
-        r.skipFixedList(7); // bonds
+        // 7-byte server bond records: b0=active, b1..b2(>H)=stacks, b3..b4=reserved, b5=identifier(1..26), b6=opCount
+        int bondCnt = r.count();
+        List<WireBond> wireBonds = bondCnt > 0 ? new ArrayList<WireBond>(bondCnt) : null;
+        for (int i = 0; i < bondCnt; i++) {
+            boolean active = r.u8() != 0;
+            int stacks = r.u16();
+            r.skip(2);
+            int ident = r.u8();
+            int opCount = r.u8();
+            if (wireBonds != null && ident >= 1 && ident < BOND_IDENT_TO_ID.length) {
+                String bid = BOND_IDENT_TO_ID[ident];
+                if (!bid.isEmpty() && (active || stacks > 0 || opCount > 0)) {
+                    int clamped = Math.min(999, Math.max(0, stacks));
+                    wireBonds.add(new WireBond(bid, clamped, opCount, active));
+                }
+            }
+        }
+        if (seat >= 1 && seat <= 4 && wireBonds != null && !wireBonds.isEmpty()) {
+            ev.wireBondsBySeat.put(seat, wireBonds);
+        }
         // _PREPARATION_BEFORE_ENEMIES[-2:] = (('list', (('list', _SP_PREPARE_SLOT), 'str')), 1)
         int outer = r.count();
         for (int i = 0; i < outer; i++) {

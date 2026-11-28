@@ -47,10 +47,13 @@ final class BattleCaptureState {
         final int threshold;
         final boolean active;
         BondStatus(String name, int count, int threshold) {
+            this(name, count, threshold, "独行".equals(name) ? (count == 1) : (count >= threshold));
+        }
+        BondStatus(String name, int count, int threshold, boolean active) {
             this.name = name;
-            this.count = count;
+            this.count = Math.min(999, Math.max(0, count));
             this.threshold = threshold;
-            this.active = "独行".equals(name) ? (count == 1) : (count >= threshold);
+            this.active = active;
         }
     }
 
@@ -644,7 +647,8 @@ final class BattleCaptureState {
     }
 
     private static boolean updateSeatBonds(StrongholdWireDecoder.Event ev) {
-        if (ev.deployedPiecesBySeat.isEmpty()
+        if (ev.wireBondsBySeat.isEmpty()
+            && ev.deployedPiecesBySeat.isEmpty()
             && ev.benchPiecesBySeat.isEmpty()
             && ev.deployedChessBySeat.isEmpty()
             && ev.equipIdentsBySeat.isEmpty()) {
@@ -652,6 +656,33 @@ final class BattleCaptureState {
         }
         boolean changed = false;
         for (int s = 1; s <= 4; s++) {
+            List<StrongholdWireDecoder.WireBond> wireBonds = ev.wireBondsBySeat.get(s);
+            if (wireBonds != null && !wireBonds.isEmpty()) {
+                Map<String, BondStatus> merged = new LinkedHashMap<>();
+                for (StrongholdWireDecoder.WireBond wb : wireBonds) {
+                    if (wb == null) continue;
+                    String cn = StrongholdEnemyCatalog.covenantName(wb.bondId);
+                    if (cn == null || cn.isEmpty()) continue;
+                    int displayCount = wb.stacks > 0 ? wb.stacks : wb.opCount;
+                    if (displayCount <= 0 && !wb.active) continue;
+                    int th = StrongholdEnemyCatalog.covenantThreshold(cn);
+                    BondStatus prev = merged.get(cn);
+                    if (prev == null) {
+                        merged.put(cn, new BondStatus(cn, displayCount, th, wb.active));
+                    } else {
+                        merged.put(cn, new BondStatus(cn, Math.max(prev.count, displayCount), th, prev.active || wb.active));
+                    }
+                }
+                List<BondStatus> list = new ArrayList<>(merged.values());
+                Collections.sort(list, (a, b) -> {
+                    if (a.active != b.active) return a.active ? -1 : 1;
+                    int cmp = Integer.compare(b.count, a.count);
+                    return cmp != 0 ? cmp : a.name.compareTo(b.name);
+                });
+                List<BondStatus> prevList = activeBondsBySeat.put(s, list);
+                if (!bondListsEqual(prevList, list)) changed = true;
+                continue;
+            }
             boolean hasStructured = ev.deployedPiecesBySeat.containsKey(s) || ev.benchPiecesBySeat.containsKey(s);
             List<StrongholdWireDecoder.SeatPiece> deployedPieces = ev.deployedPiecesBySeat.get(s);
             List<StrongholdWireDecoder.SeatPiece> benchPieces = ev.benchPiecesBySeat.get(s);

@@ -499,6 +499,40 @@ test('readSeatLineups and computeSeatCovenants handle active_bonds up to 999 sta
   assert.equal(hud3.shown.length, 3);
   assert.equal(hud3.hiddenCount, 5);
   assert.equal(hud3.all.length, 8);
+
+  // Verify 7B server-decoded active_bonds with stacks (252/159/138) + 0-stack active covenant (绝技 opCount=6) + inactive (精准)
+  const r13Lineups = readSeatLineups({
+    1: {
+      round: 13,
+      shop_level: 2,
+      active_bonds: [
+        { bond_id: 'indomShip', stacks: 252, count: 3, active: true },
+        { bond_id: 'miraShip', stacks: 159, count: 2, active: true },
+        { bond_id: 'skillfulShip', stacks: 138, count: 2, active: true },
+        { bond_id: 'suntShip', stacks: 0, count: 6, active: true },
+        { bond_id: 'preciShip', stacks: 0, count: 1, active: false },
+      ],
+    },
+  });
+  const r13Vis = visibleSeatCovenants(r13Lineups[1], null, 3);
+  assert.deepEqual(
+    r13Vis.shown.map(b => [b.name, b.count, b.active, b.tierTone]),
+    [
+      ['不屈', 252, true, 'high'],
+      ['奇迹', 159, true, 'high'],
+      ['灵巧', 138, true, 'high'],
+    ],
+  );
+  assert.equal(r13Vis.hiddenCount, 1);
+  assert.deepEqual(
+    r13Vis.all.map(b => [b.name, b.count, b.active]),
+    [
+      ['不屈', 252, true],
+      ['奇迹', 159, true],
+      ['灵巧', 138, true],
+      ['绝技', 6, true],
+    ],
+  );
 });
 
 test('R14 HUD Boss ranking merges bossOfficial/bossPercent alongside partial bossDamage without dropping #3', () => {

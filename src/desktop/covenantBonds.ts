@@ -172,8 +172,10 @@ export function computeSeatCovenants(
     for (const item of lineup.activeBonds) {
       const name = mapBondIdToCovenant(item.bondId);
       if (!name) continue;
-      const count = clampBondStacks(item.stacks);
-      if (count <= 0) continue;
+      const stacks = clampBondStacks(item.stacks);
+      const opCount = item.opCount !== undefined ? clampBondStacks(item.opCount) : 0;
+      const count = stacks > 0 ? stacks : opCount;
+      if (count <= 0 && !item.active) continue;
       const prev = byName.get(name);
       if (!prev) {
         byName.set(name, { count, active: Boolean(item.active) });

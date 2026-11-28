@@ -24,6 +24,65 @@ BOSS_ROUNDS = (14, 15)
 HelpKill = tuple[int, bool, int] | tuple[int, bool, int, int] | tuple[int, bool, int, int, str]
 StepAction = tuple[int, tuple[int, ...]]
 
+# 官方 V3_1 act3autochess bondInfoDict 1..26 枚举号 → bondId 映射
+BOND_IDENTIFIER_TO_ID: dict[int, str] = {
+    1: "yanShip",
+    2: "sargonShip",
+    3: "victoriaShip",
+    4: "kjeragShip",
+    5: "egirShip",
+    6: "siracusaShip",
+    7: "kazimierzShip",
+    8: "ursusShip",
+    9: "iberiaShip",
+    10: "lethaniaShip",
+    11: "preciShip",
+    12: "swiftShip",
+    13: "skillfulShip",
+    14: "steadShip",
+    15: "deputShip",
+    16: "visiShip",
+    17: "miraShip",
+    18: "investShip",
+    19: "raidShip",
+    20: "indomShip",
+    21: "maniShip",
+    22: "emptyShip",
+    23: "soloShip",
+    24: "suntShip",
+    25: "docShip",
+    26: "arcaneShip",
+}
+
+
+def decode_raw_bonds(raw_bonds) -> list[dict]:
+    """解析 7 字节备战盟约帧：b0=激活态，b1..b2(>H)=实时层数，b5=官方1..26枚举号，b6=人数。"""
+    decoded: list[dict] = []
+    for item in raw_bonds or ():
+        if not isinstance(item, str) or len(item) != 14:
+            continue
+        try:
+            raw = bytes.fromhex(item)
+        except ValueError:
+            continue
+        if len(raw) != 7:
+            continue
+        bond_id = BOND_IDENTIFIER_TO_ID.get(raw[5])
+        if not bond_id:
+            continue
+        active = raw[0] != 0
+        stacks = (raw[1] << 8) | raw[2]
+        op_count = raw[6]
+        if not active and stacks <= 0 and op_count <= 0:
+            continue
+        decoded.append({
+            "bond_id": bond_id,
+            "stacks": min(999, max(0, stacks)),
+            "count": op_count,
+            "active": active,
+        })
+    return decoded
+
 def _enemy_outcome(enemy_id: str, count: int) -> dict:
     name, raw, factor = _enemy(enemy_id)
     return {'id': enemy_id, 'name': name, 'count': count,
@@ -930,6 +989,7 @@ class MatchStats:
                         "tier": tinfo["tier"],
                     })
 
+            active_bonds = decode_raw_bonds(loadout.get("raw_bonds"))
             lineups[seat] = {
                 "round": loadout.get("round") or None,
                 "shop_level": loadout.get("shop_level") or None,
@@ -951,6 +1011,7 @@ class MatchStats:
                     }
                     for slot in slots
                 ],
+                **({"active_bonds": active_bonds} if active_bonds else {}),
             }
 
         boss_rounds = sorted(self.expected_boss_rounds())

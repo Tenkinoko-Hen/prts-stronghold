@@ -2,9 +2,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyManualGuideRound,
   decideBanSyncAction,
   normalizeBanSignature,
   readLightBattleSyncMeta,
+  reconcileLiveGuideRound,
   resolvePacketSyncSnapshot,
   type CurrentGuideSyncState,
 } from './battleBanSync';
@@ -42,6 +44,7 @@ test('readLightBattleSyncMeta matches readBattleReport metadata across valid and
     match: 8,
     current: null,
     latestRound: 7,
+    latestRoundSettled: true,
     mode: '',
     bannedCovenants: [],
     hasMatchActivity: true,
@@ -104,7 +107,7 @@ test('resolvePacketSyncSnapshot pauses OCR auto-poll for 0-ban matches and no-Np
   assert.equal(backToLobby.matchKey, '');
   assert.equal(backToLobby.shouldPauseAutoPoll, false);
 
-  // 6. No-Npcap / uplink-only match (no banned_bonds, rounds[3] present) -> pauses auto-poll
+  // 6. No-Npcap / uplink-only match (no banned_bonds, rounds[3] self_leaks settled -> entering R4 prep)
   const noNpcap = resolvePacketSyncSnapshot({
     status: 'listening',
     reportRun: 2,
@@ -114,8 +117,33 @@ test('resolvePacketSyncSnapshot pauses OCR auto-poll for 0-ban matches and no-Np
       rounds: { 3: { self_leaks: 1 } },
     },
   }, false, '');
-  assert.equal(noNpcap.liveRound, 3);
+  assert.equal(noNpcap.liveRound, 4);
+  assert.equal(noNpcap.liveRoundConfirmed, false);
   assert.equal(noNpcap.shouldPauseAutoPoll, true);
+
+  // 6b. No-Npcap R4 settled -> R5 prep (prevents R5 showing R4); capped at mode max (R9 for quick mode, R15 for standard)
+  const noNpcapR4Settled = resolvePacketSyncSnapshot({
+    status: 'listening',
+    reportRun: 2,
+    report: {
+      capture: { match: 3, round: 0 },
+      players: {},
+      rounds: { 4: { self_leaks: 0 } },
+    },
+  }, false, '2:3');
+  assert.equal(noNpcapR4Settled.liveRound, 5);
+
+  const quickFinalSettled = resolvePacketSyncSnapshot({
+    status: 'listening',
+    reportRun: 2,
+    report: {
+      capture: { match: 3, round: 0 },
+      battle_config: { mode_id: 'mode_single_funny', banned_bonds: [] },
+      players: {},
+      rounds: { 9: { self_leaks: 0 } },
+    },
+  }, false, '2:3');
+  assert.equal(quickFinalSettled.liveRound, 9);
 
   // 7. Direct transition to a brand-new match in pure pre-match state resets pause
   const nextMatchPre = resolvePacketSyncSnapshot({
@@ -273,4 +301,29 @@ test('decideBanSyncAction preserves guide stage, comp, and manual bans across in
   );
   assert.equal(packetToOcrAction.isNewMatch, false);
   assert.equal(packetToOcrAction.nextStage, 'detail');
+});
+
+test('guide auto-follow resumes when live round catches up to a look-ahead preview or user clicks back to live round', () => {
+  // 1. Live is R3, user peeks ahead at R4 -> pauses auto-follow at R4
+  const peeked = applyManualGuideRound(4, 3);
+  assert.deepEqual(peeked, { currentRound: 4, autoFollowRound: false });
+
+  // 2. Live advances R3 -> R4 -> catches up to previewed R4 and re-enables auto-follow
+  const caughtUp = reconcileLiveGuideRound(peeked, 3, 4);
+  assert.deepEqual(caughtUp, { currentRound: 4, autoFollowRound: true });
+
+  // 3. Live advances R4 -> R5 -> follows smoothly to R5 instead of getting stuck on R4
+  const advancedR5 = reconcileLiveGuideRound(caughtUp, 4, 5);
+  assert.deepEqual(advancedR5, { currentRound: 5, autoFollowRound: true });
+
+  // 4. Live is R4, user peeks back at R2 then clicks back to R4 -> restores auto-follow
+  const lookedBack = applyManualGuideRound(2, 4);
+  assert.deepEqual(lookedBack, { currentRound: 2, autoFollowRound: false });
+  const clickedBack = applyManualGuideRound(4, 4);
+  assert.deepEqual(clickedBack, { currentRound: 4, autoFollowRound: true });
+
+  // 5. Explicit manual lock on current round (user toggled off pill at R4) stays locked when live advances to R5
+  const explicitLock = { currentRound: 4, autoFollowRound: false };
+  const stayedLocked = reconcileLiveGuideRound(explicitLock, 4, 5);
+  assert.deepEqual(stayedLocked, { currentRound: 4, autoFollowRound: false });
 });

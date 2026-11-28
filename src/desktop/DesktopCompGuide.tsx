@@ -41,6 +41,7 @@ export function DesktopCompGuide({ comp, evaluations, bans, round, liveRound, au
   const phase = comp.phases[phaseIndex] || comp.phases[0];
   const evaluation = evaluateCompUnderBans(comp, bans);
   useEffect(() => { setPhaseOverride(null); setDialog(null); setOperator(null); setTab('打法与出装'); }, [comp.id]);
+  useEffect(() => { setPhaseOverride(null); }, [round]);
   useEffect(() => { if (tab === '全回合轴') activeRound.current?.scrollIntoView({ block: 'center' }); }, [tab, round, comp.id]);
   const selectRound = (value: number) => { setPhaseOverride(null); onRound(Math.max(1, Math.min(15, value))); };
   const close = () => { setDialog(null); setOperator(null); };

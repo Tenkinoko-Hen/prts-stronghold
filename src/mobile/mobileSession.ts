@@ -16,6 +16,7 @@ export interface MobileSession {
   scanId?: string;
   scanComplete?: boolean;
   confirmedCovenants?: string[];
+  captureRound?: number;
 }
 
 export const MOBILE_SESSION_KEY = 'prts_mobile_match_v1';
@@ -155,12 +156,14 @@ export function mobileReducer(state: MobileSession, action: MobileAction): Mobil
       const base = isNewVpnMatch ? emptySession() : state;
       const cleanBans = [...new Set(action.bannedCovenants.filter(name => covenantNames.has(name)))];
       const clampedRound = action.round >= 1 ? Math.max(1, Math.min(15, Math.trunc(action.round))) : 0;
+      const nextCaptureRound = clampedRound > 0 ? clampedRound : base.captureRound;
       const nextRounds = base.compId && clampedRound > 0
         ? { ...base.rounds, [base.compId]: clampedRound }
         : base.rounds;
       return {
         ...base,
         rounds: nextRounds,
+        ...(nextCaptureRound ? { captureRound: nextCaptureRound } : {}),
         ...(action.bansConfirmed
           ? {
               scanId,
@@ -184,7 +187,15 @@ export function mobileReducer(state: MobileSession, action: MobileAction): Mobil
       };
     }
     case 'step': return { ...state, step: action.step === 'guide' && !state.compId ? 'plans' : action.step };
-    case 'choose': return compIds.has(action.id) ? { ...state, step: 'guide', compId: action.id } : state;
+    case 'choose': {
+      if (!compIds.has(action.id)) return state;
+      const liveRound = state.captureRound && state.captureRound >= 1 ? state.captureRound : 0;
+      const existingRound = state.rounds[action.id] || 0;
+      const nextRounds = liveRound > 0 && existingRound < liveRound
+        ? { ...state.rounds, [action.id]: liveRound }
+        : state.rounds;
+      return { ...state, step: 'guide', compId: action.id, rounds: nextRounds };
+    }
     case 'round': return state.compId && Number.isFinite(action.round) ? { ...state, rounds: { ...state.rounds, [state.compId]: Math.max(1, Math.min(15, Math.trunc(action.round))) } } : state;
     case 'toggleOwned': {
       if (!compIds.has(action.compId) || !action.name.trim()) return state;

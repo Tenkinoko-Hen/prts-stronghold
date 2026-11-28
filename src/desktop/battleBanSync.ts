@@ -8,9 +8,54 @@ export interface LightBattleSyncMeta {
   match: number | null;
   current: number | null;
   latestRound: number | null;
+  latestRoundSettled?: boolean;
   mode: string;
   bannedCovenants: string[];
   hasMatchActivity: boolean;
+}
+
+export interface GuideRoundFollowState {
+  currentRound: number;
+  autoFollowRound: boolean;
+}
+
+export function maxRoundForMode(mode: string): number {
+  if (mode === 'mode_training_2') return 4;
+  if (mode === 'mode_single_funny') return 9;
+  return 15;
+}
+
+export function applyManualGuideRound(
+  nextRound: number,
+  liveRound: number | null,
+): GuideRoundFollowState {
+  const clamped = Math.max(1, Math.min(15, Math.trunc(nextRound || 1)));
+  return {
+    currentRound: clamped,
+    autoFollowRound: liveRound === null ? true : clamped === liveRound,
+  };
+}
+
+export function reconcileLiveGuideRound(
+  prev: GuideRoundFollowState,
+  prevLiveRound: number | null,
+  nextLiveRound: number | null,
+): GuideRoundFollowState {
+  if (nextLiveRound === null) return prev;
+  const clampedLive = Math.max(1, Math.min(15, Math.trunc(nextLiveRound)));
+  if (prev.autoFollowRound) {
+    return { currentRound: clampedLive, autoFollowRound: true };
+  }
+  // 用户之前提前预览了后续回合（例如 R3 时点看 R4），当实局回合追上或超过预览回合时自动恢复跟随
+  if (
+    prevLiveRound !== null
+    && clampedLive !== prevLiveRound
+    && prev.currentRound > prevLiveRound
+    && clampedLive >= prev.currentRound
+  ) {
+    return { currentRound: clampedLive, autoFollowRound: true };
+  }
+  return prev;
 }
 
 export interface PacketSyncDecision {
@@ -45,9 +90,16 @@ export function readLightBattleSyncMeta(rawReport: unknown): LightBattleSyncMeta
   const bannedCovenants = mapBannedBondsToCovenants(config?.banned_bonds);
 
   let latestRound: number | null = null;
+  let latestRoundSettled = false;
   for (let r = 15; r >= 1; r--) {
-    if (asObject(rounds[r])) {
+    const row = asObject(rounds[r]);
+    if (row) {
       latestRound = r;
+      const phase = typeof row.phase === 'string' ? row.phase : '';
+      const hasSelfFinish = (typeof row.self_leaks === 'number' && Number.isSafeInteger(row.self_leaks) && row.self_leaks >= 0)
+        || (typeof row.unassigned_self_leaks === 'number' && Number.isSafeInteger(row.unassigned_self_leaks) && row.unassigned_self_leaks >= 0);
+      const hasHelpFinish = row.assists_status === 'reported';
+      latestRoundSettled = phase !== 'end' && (phase === 'settle' || hasSelfFinish || hasHelpFinish);
       break;
     }
   }
@@ -92,6 +144,7 @@ export function readLightBattleSyncMeta(rawReport: unknown): LightBattleSyncMeta
     match,
     current,
     latestRound,
+    ...(latestRoundSettled ? { latestRoundSettled: true } : {}),
     mode,
     bannedCovenants,
     hasMatchActivity,
@@ -121,7 +174,10 @@ export function resolvePacketSyncSnapshot(
         liveRound = meta.current;
         liveRoundConfirmed = true;
       } else if (meta.latestRound !== null && meta.latestRound >= 1 && meta.latestRound <= 15) {
-        liveRound = meta.latestRound;
+        const modeMax = maxRoundForMode(meta.mode);
+        liveRound = meta.latestRoundSettled && meta.latestRound < modeMax
+          ? meta.latestRound + 1
+          : meta.latestRound;
       }
     }
   }

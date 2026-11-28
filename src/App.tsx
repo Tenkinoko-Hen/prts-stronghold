@@ -16,7 +16,9 @@ import { StackingCalculatorView } from './components/StackingCalculatorView';
 import { TransferItemsView } from './components/TransferItemsView';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
 import {
+  applyManualGuideRound,
   decideBanSyncAction,
+  reconcileLiveGuideRound,
   useBattleBanSync,
   type BanSyncSource,
   type CurrentGuideSyncState,
@@ -230,17 +232,27 @@ export default function App() {
     }
   }, desktopAPI?.battleReports || isMumuDemo ? { externalFeed: latestFeed } : undefined);
 
+  const prevLiveRoundRef = useRef<number | null>(null);
+  const roundFollowRef = useRef({ currentRound, autoFollowRound });
+  roundFollowRef.current = { currentRound, autoFollowRound };
+
   useEffect(() => {
-    if (autoFollowRound && banSync.liveRound !== null) {
-      setCurrentRound(banSync.liveRound);
+    const prevLive = prevLiveRoundRef.current;
+    const nextLive = banSync.liveRound;
+    prevLiveRoundRef.current = nextLive;
+    const nextState = reconcileLiveGuideRound(roundFollowRef.current, prevLive, nextLive);
+    if (nextState.currentRound !== roundFollowRef.current.currentRound) {
+      setCurrentRound(nextState.currentRound);
+    }
+    if (nextState.autoFollowRound !== roundFollowRef.current.autoFollowRound) {
+      setAutoFollowRound(nextState.autoFollowRound);
     }
   }, [autoFollowRound, banSync.liveRound]);
 
   const handleManualRound = (nextRound: number) => {
-    setCurrentRound(nextRound);
-    if (banSync.liveRound !== null && nextRound !== banSync.liveRound) {
-      setAutoFollowRound(false);
-    }
+    const nextState = applyManualGuideRound(nextRound, banSync.liveRound);
+    setCurrentRound(nextState.currentRound);
+    setAutoFollowRound(nextState.autoFollowRound);
   };
 
   const toggleAutoFollow = () => {
@@ -253,6 +265,7 @@ export default function App() {
 
   const clearBans = async () => {
     resetBanSync();
+    prevLiveRoundRef.current = null;
     const emptyBanState: BanPickState = { bannedCovenants: [], bannedOperators: [] };
     guideSyncRef.current = {
       matchSyncId: '',

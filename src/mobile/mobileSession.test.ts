@@ -111,6 +111,18 @@ test('本机 VPN 抓包自动同步 26 项 Ban 选、回合推进与新局自动
   assert.equal(6, session.rounds[cid]);
   assert.equal('owned', session.ownedOperators?.[cid]?.['野鬃']);
 
+  // VPN 已在 R5 时再选一套新阵容，自动对齐到 R5 而非停在 R1
+  const midMatchComp = META_COMPS[1].id;
+  let midMatch = mobileReducer(emptySession(), {
+    type: 'applyCaptureSync',
+    matchSerial: 3,
+    bansConfirmed: true,
+    bannedCovenants: ['炎'],
+    round: 5,
+  });
+  midMatch = mobileReducer(midMatch, { type: 'choose', id: midMatchComp });
+  assert.equal(5, midMatch.rounds[midMatchComp]);
+
   // 开新一局（matchSerial=2）自动清空上局打卡与回合，并更新为新局 Ban 列表
   session = mobileReducer(session, {
     type: 'applyCaptureSync',

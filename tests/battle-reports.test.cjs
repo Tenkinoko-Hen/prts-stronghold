@@ -1264,7 +1264,81 @@ test('isWindows10OrOlder and pickNpcapInstallerForOs select Npcap 1.80 on Win10 
     }),
   });
   assert.equal(win10Run.version, '1.80');
+  assert.equal(win10Run.canFallbackCompat180, false);
   assert.ok(progress.some((p) => p.status === 'downloading' && p.message.includes('Windows 10') && p.message.includes('npcap-1.80.exe')));
+
+  // Win11 explicit preferCompat180 picks 1.80 with manual-compat reason
+  assert.deepEqual(
+    pickNpcapInstallerForOs(fullHtml, { platform: 'win32', release: '10.0.22631', preferCompat180: true }),
+    {
+      version: '1.80',
+      filename: 'npcap-1.80.exe',
+      url: 'https://npcap.com/dist/npcap-1.80.exe',
+      reason: 'manual-compat',
+    },
+  );
+
+  // Win11 download failure of latest automatically falls back to 1.80
+  const fetchedUrls = [];
+  const fallbackProgress = [];
+  let win11Installed = false;
+  const win11FallbackRun = await runNpcapInstaller({
+    platform: 'win32',
+    osRelease: '10.0.22631',
+    hasNpcapFn: () => win11Installed,
+    prepareEnvFn: async () => ({ cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false }),
+    onProgress: (status, message) => fallbackProgress.push({ status, message }),
+    fetchFn: async (url, opts) => {
+      fetchedUrls.push(url);
+      if (opts?.destPath) {
+        if (url.includes('npcap-1.100.exe')) {
+          throw new Error('HTTP 503');
+        }
+        fs.writeFileSync(opts.destPath, 'stub', 'utf8');
+        return { bytes: 4 };
+      }
+      return fullHtml;
+    },
+    spawnFn: () => {
+      win11Installed = true;
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('close', 0));
+      return child;
+    },
+  });
+  assert.equal(win11FallbackRun.installed, true);
+  assert.equal(win11FallbackRun.version, '1.80');
+  assert.ok(fetchedUrls.some((u) => u.includes('npcap-1.100.exe')));
+  assert.ok(fetchedUrls.some((u) => u.includes('npcap-1.80.exe')));
+  assert.ok(fallbackProgress.some((p) => p.status === 'downloading' && p.message.includes('自动切换') && p.message.includes('npcap-1.80.exe')));
+
+  // Win11 latest install failure without reboot surfaces canFallbackCompat180=true
+  const win11InstallFail = await runNpcapInstaller({
+    platform: 'win32',
+    osRelease: '10.0.22631',
+    hasNpcapFn: () => false,
+    prepareEnvFn: async () => ({ cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false }),
+    fetchFn: async (_url, opts) => {
+      if (opts?.destPath) {
+        fs.writeFileSync(opts.destPath, 'stub', 'utf8');
+        return { bytes: 4 };
+      }
+      return fullHtml;
+    },
+    spawnFn: () => {
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('close', 1));
+      return child;
+    },
+    inspectFailureFn: async () => ({
+      prep: { cleanedServices: [], cleanedDrivers: [], repairedSymlink: false, repairedMaxFilters: false, needsReboot: false },
+      logDiag: {},
+      conflicts: [],
+    }),
+  });
+  assert.equal(win11InstallFail.installed, false);
+  assert.equal(win11InstallFail.version, '1.100');
+  assert.equal(win11InstallFail.canFallbackCompat180, true);
 });
 
 test('parseMaxNumFilters, 0x800700b7 cleanup in prepareNpcapEnvironment, and failure diagnostics work accurately', async () => {

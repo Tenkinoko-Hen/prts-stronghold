@@ -94,12 +94,12 @@ function pickLatestNpcapInstaller(html) {
   return { version: latestVersion, filename, url: `${NPCAP_DIST_URL}${filename}` };
 }
 
-function pickNpcapInstallerForOs(html, { platform = process.platform, release = os.release() } = {}) {
+function pickNpcapInstallerForOs(html, { platform = process.platform, release = os.release(), preferCompat180 = false } = {}) {
   const seen = collectNpcapInstallers(html);
   if (!seen.size) return null;
   const versions = [...seen.keys()].sort(compareVersion);
   const latestVersion = versions.at(-1);
-  if (isWindows10OrOlder(release, platform)) {
+  if (preferCompat180 || isWindows10OrOlder(release, platform)) {
     let chosenVersion = seen.has('1.80') ? '1.80' : null;
     if (!chosenVersion) {
       const compat = versions.filter((v) => compareVersion(v, '1.80') <= 0);
@@ -110,7 +110,7 @@ function pickNpcapInstallerForOs(html, { platform = process.platform, release = 
       version: chosenVersion,
       filename,
       url: `${NPCAP_DIST_URL}${filename}`,
-      reason: 'win10-compat',
+      reason: preferCompat180 ? 'manual-compat' : 'win10-compat',
     };
   }
   const filename = seen.get(latestVersion);
@@ -550,6 +550,7 @@ async function runNpcapInstaller({
   spawnFn = spawn,
   osRelease = os.release(),
   platform = process.platform,
+  preferCompat180 = false,
 } = {}) {
   if (hasNpcapFn()) {
     return { installed: true, version: '', exitCode: 0 };
@@ -562,26 +563,42 @@ async function runNpcapInstaller({
       version: '',
       exitCode: 1072,
       needsReboot: true,
+      canFallbackCompat180: false,
       failureMessage: formatNpcapFailureMessage({ prep, logDiag: {}, conflicts: [], exitCode: 1072 }),
     };
   }
 
-  onProgress?.('downloading', '正在从 npcap.com 获取最新官方安装程序…');
+  onProgress?.('downloading', '正在从 npcap.com 获取官方安装程序目录…');
   const listing = await fetchFn(NPCAP_DIST_URL, { maxBytes: MAX_HTML_BYTES });
-  const target = pickNpcapInstallerForOs(listing, { platform, release: osRelease });
+  let target = pickNpcapInstallerForOs(listing, { platform, release: osRelease, preferCompat180 });
   if (!target) {
     throw new Error('未能从 npcap.com/dist 解析到最新安装包，请打开官网手动下载');
   }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prts-npcap-'));
-  const installerPath = path.join(tempDir, target.filename);
+  let installerPath = path.join(tempDir, target.filename);
   try {
     onProgress?.(
       'downloading',
       target.reason === 'win10-compat'
         ? `检测到 Windows 10，正在下载高兼容官方 ${target.filename}…`
-        : `正在下载官方 ${target.filename}…`,
+        : target.reason === 'manual-compat'
+          ? `正在下载高兼容官方 ${target.filename}…`
+          : `正在下载官方 ${target.filename}…`,
     );
-    await fetchFn(target.url, { maxBytes: MAX_INSTALLER_BYTES, destPath: installerPath });
+    try {
+      await fetchFn(target.url, { maxBytes: MAX_INSTALLER_BYTES, destPath: installerPath });
+    } catch (downloadErr) {
+      const compatTarget = target.reason === 'latest'
+        ? pickNpcapInstallerForOs(listing, { platform, release: osRelease, preferCompat180: true })
+        : null;
+      if (!compatTarget || compatTarget.filename === target.filename) {
+        throw downloadErr;
+      }
+      target = { ...compatTarget, reason: 'fallback-compat' };
+      installerPath = path.join(tempDir, target.filename);
+      onProgress?.('downloading', `最新版下载失败，正在自动切换高兼容官方 ${target.filename}…`);
+      await fetchFn(target.url, { maxBytes: MAX_INSTALLER_BYTES, destPath: installerPath });
+    }
     onProgress?.('installing', `已打开 ${target.filename} 官方安装向导，请按提示完成安装（建议勾选 WinPcap 兼容模式）…`);
     const startedAt = Date.now();
     const exitCode = await new Promise((resolve, reject) => {
@@ -598,11 +615,13 @@ async function runNpcapInstaller({
     const logDiag = diag.logDiag || {};
     const conflicts = diag.conflicts || [];
     const needsReboot = Boolean(effectivePrep?.needsReboot || logDiag?.markedForDelete);
+    const canFallbackCompat180 = Boolean(!needsReboot && target.reason === 'latest');
     return {
       installed: false,
       version: target.version,
       exitCode,
       needsReboot,
+      canFallbackCompat180,
       failureMessage: diag.failureMessage || formatNpcapFailureMessage({
         prep: effectivePrep,
         logDiag,

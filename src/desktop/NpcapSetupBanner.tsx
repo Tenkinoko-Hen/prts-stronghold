@@ -44,6 +44,17 @@ export function NpcapSetupBanner({ api, npcapInstalled, installState, compact = 
               : installState?.status === 'installing' ? '等待安装完成…'
                 : '一键安装 Npcap'}
           </button>
+          {errored && installState?.canFallbackCompat180 && (
+            <button
+              type="button"
+              className="d-button d-small"
+              disabled={busy}
+              onClick={() => void api.installNpcap?.({ preferCompat180: true })}
+              title="最新版安装或下载失败时，改用高兼容官方 Npcap 1.80 安装"
+            >
+              <Download size={12} />改用 1.80 兼容版
+            </button>
+          )}
           {api.openNpcapPage && (
             <button
               type="button"

@@ -2,7 +2,7 @@
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const { windowsWorkerLaunch } = require('./windows-runtime.cjs');
-const { NPCAP_DOWNLOAD_PAGE, hasNpcap, runNpcapInstaller } = require('./npcap-installer.cjs');
+const { NPCAP_DOWNLOAD_PAGE, hasNpcap, isWindows10OrOlder, runNpcapInstaller } = require('./npcap-installer.cjs');
 
 const WORKER_STATUSES = new Set(['waiting', 'connecting', 'listening', 'permission', 'unavailable', 'incompatible']);
 const CLIENT_SOURCES = new Set(['none', 'pc', 'mumu', 'ldplayer']);
@@ -530,9 +530,10 @@ function installBattleReports({
       return publish({ status: 'paused', restarting: false, failureReason: '' });
     },
     'battle-reports-restart': () => manualRestart(),
-    'battle-reports-install-npcap': async () => {
+    'battle-reports-install-npcap': async (options) => {
       if (installingNpcap) return state;
       if (checkNpcap()) return hotSwitchToNpcap('Npcap 已安装，已切换至驱动采集通道。');
+      const preferCompat180 = Boolean(options && typeof options === 'object' && options.preferCompat180 === true);
       installingNpcap = true;
       const shouldResumeWorker = state.status !== 'paused';
       let installSucceeded = false;
@@ -540,6 +541,7 @@ function installBattleReports({
         await stopAndWait(1500);
         if (disposed) return state;
         const result = await launchNpcapInstaller({
+          preferCompat180,
           onProgress: (installStatus, message) => {
             publish({ npcapInstall: { status: installStatus, message } });
           },
@@ -557,6 +559,7 @@ function installBattleReports({
           npcapInstall: {
             status: 'error',
             message: result?.failureMessage || '安装向导已关闭但未检测到 Npcap，请确认完成安装或重试。',
+            canFallbackCompat180: Boolean(result?.canFallbackCompat180),
           },
         });
       } catch (err) {
@@ -565,6 +568,7 @@ function installBattleReports({
           npcapInstall: {
             status: 'error',
             message: err instanceof Error ? err.message : '拉起 Npcap 官方安装失败，请点击打开官网手动安装。',
+            canFallbackCompat180: !preferCompat180 && !isWindows10OrOlder(),
           },
         });
       } finally {

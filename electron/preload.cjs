@@ -36,7 +36,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       showDiagnostics: () => ipcRenderer.invoke('battle-reports-diagnostics'),
       setEnabled: (enabled) => ipcRenderer.invoke('battle-reports-enable', enabled),
       restart: () => ipcRenderer.invoke('battle-reports-restart'),
-      installNpcap: () => ipcRenderer.invoke('battle-reports-install-npcap'),
+      installNpcap: (options) => ipcRenderer.invoke(
+        'battle-reports-install-npcap',
+        options && typeof options === 'object' ? { preferCompat180: Boolean(options.preferCompat180) } : undefined,
+      ),
       recheckNpcap: () => ipcRenderer.invoke('battle-reports-recheck-npcap'),
       openNpcapPage: () => ipcRenderer.invoke('battle-reports-open-npcap'),
       onState: (callback) => {

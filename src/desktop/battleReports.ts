@@ -22,6 +22,7 @@ export interface MumuWindowBounds {
 export interface NpcapInstallState {
   status: 'idle' | 'downloading' | 'installing' | 'installed' | 'error';
   message?: string;
+  canFallbackCompat180?: boolean;
 }
 export interface ReportFeed {
   status: ReportStatus;
@@ -40,7 +41,7 @@ export interface BattleReportsBridge {
   showDiagnostics(): Promise<void>;
   setEnabled(enabled: boolean): Promise<ReportFeed>;
   restart?(): Promise<ReportFeed>;
-  installNpcap?(): Promise<ReportFeed>;
+  installNpcap?(options?: { preferCompat180?: boolean }): Promise<ReportFeed>;
   recheckNpcap?(): Promise<ReportFeed>;
   openNpcapPage?(): Promise<boolean>;
   onState(callback: (state: ReportFeed) => void): () => void;

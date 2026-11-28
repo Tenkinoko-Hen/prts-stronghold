@@ -877,3 +877,32 @@ test('mergeLoadedHistory deduplicates persisted records and prevents cross-sessi
   const afterRemove = removeHistoryRecord(afterNew, saved.key);
   assert.equal(afterRemove.history.length, 0);
 });
+
+test('Boss view prefers full own uplink sum over single Top-3 operator and labels milestone floor vs 未入前3', () => {
+  const partialBoss = readBattleReport({
+    capture: { match: 1, round: 14, self: 2 },
+    players: { 1: '队友甲', 2: '本机乙', 3: '队友丙', 4: '队友丁' },
+    battle_config: { mode_id: 'mode_multi_abyss' },
+    rounds: {
+      14: {
+        phase: 'boss',
+        boss_hp: 16200000,
+        boss_status: 'unknown',
+        boss_official: [
+          { player: 2, identifier: 101, damage: 2579000, operator_name: '艾雅法拉' },
+          { player: 1, identifier: 102, damage: 2179000, operator_name: '蓝毒' },
+        ],
+        boss_uplink: { 2: 4100000 },
+        boss_percent: { 3: 20 },
+      },
+    },
+  });
+  const html = renderToStaticMarkup(createElement(BossDamage, {
+    report: partialBoss, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.match(html, /410万/, 'Seat 2 should display full uplink total (410万) rather than single Top-3 operator (257.9万)');
+  assert.match(html, /≥324万/, 'Seat 3 with 20% milestone should display floor ≥324万');
+  assert.match(html, /达 20%/);
+  assert.match(html, /未入前3/, 'Seat 4 outside Top-3 with no milestone should display clear 未入前3 label');
+  assert.match(html, /已观测输出/);
+});

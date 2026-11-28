@@ -610,8 +610,9 @@ class MatchStats:
         target.update(clean)
         data.boss_round_basis = "inferred" if inferred and data.boss_round_basis != "confirmed" else "confirmed"
         if not at_settlement:
-            for player in clean:
-                data.boss_ratios.pop(player, None)
+            for player, damage in clean.items():
+                if damage > 0:
+                    data.boss_ratios.pop(player, None)
         self._note_boss_progress(data)
         self.set_players(dict.fromkeys(clean, ""))
 

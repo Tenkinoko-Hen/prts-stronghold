@@ -39,7 +39,7 @@ const {
 } = require('../electron/covenant-ocr.cjs');
 const { installLanSync, isPrivateLanIp, verifyPin } = require('../electron/lan-sync.cjs');
 const { computeMumuDrawerBounds, computeMumuHudBounds } = require('../electron/mumu-layout.cjs');
-const { HUD_SCALES, defaultHudScaleForWorkArea, installHudOverlay } = require('../electron/hud-overlay.cjs');
+const { HUD_SCALES, defaultHudScaleForWorkArea, installHudOverlay, resolveHudDisplayWorkArea } = require('../electron/hud-overlay.cjs');
 
 const loadProduct = (id) =>
   JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'products', id, 'product.json'), 'utf8'));
@@ -504,6 +504,7 @@ test('windows portable launcher patches away CopyFiles double-copy and uses vers
 
   const hudSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'hud-overlay.cjs'), 'utf8');
   assert.ok(hudSource.includes("render-process-gone"), 'HUD overlay recovers or closes cleanly without blocking game');
+  assert.ok(hudSource.includes('readyShowTimer') && hudSource.includes('did-finish-load') && hudSource.includes('revealHudWindow'), 'HUD overlay has fallback reveal guard when ready-to-show is delayed');
 });
 
 test('worker supervisor auto-restarts on startup timeout and crash, then recovers cleanly via 1-click restart', async () => {
@@ -751,6 +752,26 @@ test('HUD overlay exposes sm/md/lg presets, picks md on 2K displays, and persist
     overlay.dispose();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+
+  // Multi-monitor anchoring: HUD defaults to the monitor where mainWindow lives instead of always jumping to primary display
+  const secondaryWorkArea = { x: 2048, y: 0, width: 1280, height: 672 };
+  const primaryWorkArea = { x: 0, y: 0, width: 2048, height: 1104 };
+  const fakeScreen = {
+    getPrimaryDisplay: () => ({ workArea: primaryWorkArea }),
+    getDisplayMatching: (rect) => ({ workArea: rect.x >= 2048 ? secondaryWorkArea : primaryWorkArea }),
+  };
+  const fakeSecondaryMain = {
+    isDestroyed: () => false,
+    getBounds: () => ({ x: 2100, y: 60, width: 1180, height: 600 }),
+  };
+  assert.deepEqual(
+    resolveHudDisplayWorkArea({ screenApi: fakeScreen, mainWindow: fakeSecondaryMain }),
+    secondaryWorkArea,
+  );
+  assert.deepEqual(
+    resolveHudDisplayWorkArea({ screenApi: fakeScreen, mainWindow: null }),
+    primaryWorkArea,
+  );
 });
 
 test('parsePnputilNpcapDrivers handles EN/ZH pnputil output with strict Npcap allowlist and deduplication', () => {

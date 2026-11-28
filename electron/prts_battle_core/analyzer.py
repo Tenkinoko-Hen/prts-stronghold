@@ -561,6 +561,9 @@ class Analyzer:
                         if event.get('escaped_players') is not None:
                             conn.model.set_leaks(number, event['escaped_players'], escaped_enemies=event['escaped_enemies'], escaped_details=event['escaped_details'])
                         if previous_boss is not None and (number != previous_boss or terminal):
+                            if not terminal and number != previous_boss and any(damage > 0 for damage in (event.get('runtime') or {}).values()):
+                                conn.model.set_boss_totals(previous_boss, event['runtime'], at_settlement=True)
+                                self.boss_events['terminal'] += 1
                             conn.model.finish_boss_round(previous_boss)
                             conn.boss_round = None
                         if phase == 'boss':
@@ -584,12 +587,22 @@ class Analyzer:
                         model.set_player_status(model.current_round, event['player_status'], phase=event.get('phase', '') if kind == 'phase' else '')
                 if kind in ('phase', 'runtime') and event.get('runtime'):
                         model.set_players(dict.fromkeys(event['runtime'], ''))
-                        if kind == 'runtime' and any(damage > 0 for damage in event['runtime'].values()):
+                        has_damage = any(damage > 0 for damage in event['runtime'].values())
+                        if kind == 'runtime' and has_damage:
                             self.boss_events['runtime'] += 1
                         boss_round, inferred = (self._boss_data_context(conn) if kind == 'runtime'
                                                 else (self._boss_context(conn), False))
+                        if boss_round is None and kind == 'runtime' and has_damage and conn.last_phase is not None:
+                            last_round, last_phase_name = conn.last_phase
+                            prev_boss_round = last_round - 1
+                            prev_row = model.rounds.get(prev_boss_round)
+                            if (last_phase_name in ('prep', 'special_prep')
+                                    and model.is_boss_round(prev_boss_round)
+                                    and prev_row is not None
+                                    and prev_row.boss_ended
+                                    and not any(prev_row.boss_settlement.values())):
+                                model.set_boss_totals(prev_boss_round, event['runtime'], at_settlement=True)
                         if boss_round is not None:
-                            has_damage = any(damage > 0 for damage in event['runtime'].values())
                             if not inferred or has_damage:
                                 model.set_boss_totals(boss_round, event['runtime'], inferred=inferred)
                             if inferred and has_damage:

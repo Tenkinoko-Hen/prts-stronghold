@@ -58,8 +58,38 @@ function writePersistedHudPrefs(prefsPath, prefs) {
   }
 }
 
+function resolveHudDisplayWorkArea({ screenApi, mainWindow, initialBounds }) {
+  const fallback = { x: 0, y: 0, width: 1920, height: 1080 };
+  if (!screenApi) return fallback;
+  try {
+    if (
+      initialBounds
+      && Number.isFinite(initialBounds.x)
+      && Number.isFinite(initialBounds.y)
+    ) {
+      const target = {
+        x: Math.round(initialBounds.x),
+        y: Math.round(initialBounds.y),
+        width: Math.max(1, Math.round(initialBounds.width || 500)),
+        height: Math.max(1, Math.round(initialBounds.height || 248)),
+      };
+      return screenApi.getDisplayMatching(target)?.workArea || screenApi.getPrimaryDisplay()?.workArea || fallback;
+    }
+    if (mainWindow && typeof mainWindow.isDestroyed === 'function' && !mainWindow.isDestroyed() && typeof mainWindow.getBounds === 'function') {
+      const mainBounds = mainWindow.getBounds();
+      if (mainBounds && Number.isFinite(mainBounds.x) && Number.isFinite(mainBounds.y) && mainBounds.width > 0 && mainBounds.height > 0) {
+        return screenApi.getDisplayMatching(mainBounds)?.workArea || screenApi.getPrimaryDisplay()?.workArea || fallback;
+      }
+    }
+    return screenApi.getPrimaryDisplay()?.workArea || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, onExpandDrawer }) {
   let hudWindow = null;
+  let readyShowTimer = null;
   let disposed = false;
   const prefsPath = app && typeof app.getPath === 'function'
     ? path.join(app.getPath('userData'), 'hud-prefs.json')
@@ -129,33 +159,65 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
     return getHudDimensions(state.scale);
   }
 
+  function clearReadyShowTimer() {
+    if (readyShowTimer) {
+      clearTimeout(readyShowTimer);
+      readyShowTimer = null;
+    }
+  }
+
+  function revealHudWindow() {
+    clearReadyShowTimer();
+    if (disposed || !hudWindow || hudWindow.isDestroyed() || !state.open) return;
+    try {
+      const current = hudWindow.getBounds();
+      const workArea = resolveHudDisplayWorkArea({ screenApi: screen, mainWindow, initialBounds: current });
+      const clamped = clampHudBoundsToWorkArea(current, workArea);
+      if (clamped.x !== current.x || clamped.y !== current.y || clamped.width !== current.width || clamped.height !== current.height) {
+        hudWindow.setBounds(clamped);
+      }
+    } catch {
+      // ignore bounds query errors
+    }
+    if (!hudWindow.isVisible()) {
+      hudWindow.showInactive();
+    }
+    applyLockState(state.locked);
+    try {
+      hudWindow.moveTop();
+    } catch {
+      // ignore z-order errors
+    }
+  }
+
   function ensureHudWindow(initialBounds) {
     if (hudWindow && !hudWindow.isDestroyed()) return hudWindow;
-    const display = screen.getPrimaryDisplay();
-    const workArea = display.workArea;
+    const workArea = resolveHudDisplayWorkArea({ screenApi: screen, mainWindow, initialBounds });
     const preset = getScaleBounds();
     // 严格克制悬浮窗体积，绝不遮挡核心棋盘；超出内容在主体区统一平滑向下滚动
     const width = Number.isFinite(initialBounds?.width) && initialBounds.width > 0 ? Math.round(initialBounds.width) : preset.width;
     const height = Number.isFinite(initialBounds?.height) && initialBounds.height > 0 ? Math.round(initialBounds.height) : preset.height;
-    const x = Number.isFinite(initialBounds?.x)
+    const rawX = Number.isFinite(initialBounds?.x)
       ? Math.round(initialBounds.x)
       : Math.max(workArea.x + 12, workArea.x + Math.round((workArea.width - width) / 2));
-    const y = Number.isFinite(initialBounds?.y)
+    const rawY = Number.isFinite(initialBounds?.y)
       ? Math.round(initialBounds.y)
       : workArea.y + 16;
+    const clampedInitial = clampHudBoundsToWorkArea({ x: rawX, y: rawY, width, height }, workArea);
+    const safeGpu = isSafeGpuMode({ argv: process.argv, commandLine: app?.commandLine });
 
     hudWindow = new BrowserWindow({
       title: `${product.shortName || 'PRTS'} 微缩遥测条`,
-      x,
-      y,
-      width,
-      height,
+      x: clampedInitial.x,
+      y: clampedInitial.y,
+      width: clampedInitial.width,
+      height: clampedInitial.height,
       minWidth: 360,
       minHeight: 112,
       maxWidth: 720,
       maxHeight: 360,
       frame: false,
-      transparent: true,
+      transparent: !safeGpu,
       resizable: false,
       maximizable: false,
       minimizable: false,
@@ -163,17 +225,22 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
       skipTaskbar: true,
       hasShadow: false,
       show: false,
-      backgroundColor: '#00000000',
+      backgroundColor: safeGpu ? '#0b0e14' : '#00000000',
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         additionalArguments: [`--prts-mode=${product.mode}`],
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: !isSafeGpuMode({ argv: process.argv, commandLine: app?.commandLine }),
+        sandbox: !safeGpu,
       },
     });
     hudWindow.setMenu(null);
     hudWindow.setAlwaysOnTop(true, 'screen-saver');
+    try {
+      hudWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch {
+      // ignore unsupported workspace flag
+    }
     hudWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     hudWindow.webContents.on('will-navigate', (event, url) => {
       if (!url.startsWith('prts://app/')) event.preventDefault();
@@ -184,13 +251,18 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
       if (hudCrashRecoveries < 2) {
         hudCrashRecoveries += 1;
         setTimeout(() => {
-          if (hudWindow && !hudWindow.isDestroyed()) hudWindow.loadURL('prts://app/?hud=1');
+          if (hudWindow && !hudWindow.isDestroyed()) {
+            hudWindow.loadURL('prts://app/?hud=1');
+            clearReadyShowTimer();
+            readyShowTimer = setTimeout(revealHudWindow, 900);
+          }
         }, 300);
       } else {
         setOpen(false);
       }
     });
     hudWindow.on('closed', () => {
+      clearReadyShowTimer();
       hudWindow = null;
       if (!disposed) {
         state = { ...state, open: false, locked: false, drawerCollapsed: false };
@@ -198,10 +270,18 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
       }
     });
     hudWindow.once('ready-to-show', () => {
-      if (!hudWindow || hudWindow.isDestroyed()) return;
-      hudWindow.showInactive();
-      applyLockState(state.locked);
+      revealHudWindow();
     });
+    hudWindow.webContents.on('did-finish-load', () => {
+      if (hudWindow && !hudWindow.isDestroyed() && state.open) {
+        hudWindow.webContents.send('hud-overlay-state', state);
+        if (!hudWindow.isVisible()) {
+          revealHudWindow();
+        }
+      }
+    });
+    clearReadyShowTimer();
+    readyShowTimer = setTimeout(revealHudWindow, 900);
     hudWindow.loadURL('prts://app/?hud=1');
     return hudWindow;
   }
@@ -210,10 +290,15 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
     if (disposed) return state;
     const nextOpen = Boolean(flag);
     if (nextOpen) {
+      const existed = Boolean(hudWindow && !hudWindow.isDestroyed());
       state = { ...state, open: true };
       ensureHudWindow();
+      if (existed) {
+        revealHudWindow();
+      }
       return broadcast();
     }
+    clearReadyShowTimer();
     if (hudWindow && !hudWindow.isDestroyed()) {
       hudWindow.close();
       hudWindow = null;
@@ -224,6 +309,7 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
 
   function openAtBounds(bounds, { drawerCollapsed } = {}) {
     if (disposed) return state;
+    const existed = Boolean(hudWindow && !hudWindow.isDestroyed());
     state = {
       ...state,
       open: true,
@@ -240,9 +326,11 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
       const preset = getScaleBounds();
       const width = Number.isFinite(bounds.width) && bounds.width > 0 ? Math.round(bounds.width) : preset.width;
       const height = Number.isFinite(bounds.height) && bounds.height > 0 ? Math.round(bounds.height) : preset.height;
-      win.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width, height });
-      if (win.isVisible()) {
-        win.setAlwaysOnTop(true, 'screen-saver');
+      const workArea = resolveHudDisplayWorkArea({ screenApi: screen, mainWindow, initialBounds: bounds });
+      const clamped = clampHudBoundsToWorkArea({ x: Math.round(bounds.x), y: Math.round(bounds.y), width, height }, workArea);
+      win.setBounds(clamped);
+      if (existed || win.isVisible()) {
+        revealHudWindow();
       }
     }
     return broadcast();
@@ -355,6 +443,7 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
     updateGuideContext,
     dispose() {
       disposed = true;
+      clearReadyShowTimer();
       try { globalShortcut?.unregister(HUD_SHORTCUT); } catch {}
       if (hudWindow && !hudWindow.isDestroyed()) {
         hudWindow.destroy();
@@ -370,5 +459,6 @@ module.exports = {
   defaultHudScaleForWorkArea,
   getHudDimensions,
   clampHudBoundsToWorkArea,
+  resolveHudDisplayWorkArea,
   installHudOverlay,
 };

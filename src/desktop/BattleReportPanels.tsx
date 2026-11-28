@@ -232,16 +232,29 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
   const defeated = Boolean(report?.defeatedBossRounds.includes(number));
   const bossMaxHp = data?.bossHp ?? null;
 
-  // Aggregate per-seat damage (prefer server bossDamage, else official sum, else uplink)
+  const hasServerTotals = Boolean(
+    data && (
+      data.bossStatus === 'settlement'
+      || Object.values(data.bossDamage).some(v => v > 0)
+    ),
+  );
+
+  // Aggregate per-seat damage (prefer server bossDamage, else max(official Top-3 sum, own uplink sum))
   const seatDamages = seats.map(s => {
     const serverDmg = data?.bossDamage[s];
     const officialSum = (data?.bossOfficial ?? []).filter(h => h.seat === s).reduce((acc, h) => acc + h.damage, 0);
     const uplinkSum = data?.bossUplink[s] ?? (data?.bossUplinkRows ?? []).filter(h => h.seat === s).reduce((acc, h) => acc + h.damage, 0);
-    const damage = serverDmg !== undefined ? serverDmg : (officialSum > 0 ? officialSum : (uplinkSum > 0 ? uplinkSum : null));
+    const observedBest = Math.max(officialSum, uplinkSum);
+    const damage = serverDmg !== undefined ? serverDmg : (observedBest > 0 ? observedBest : null);
+    const rawPct = data?.bossPercent[s];
     // Avoid mixing stale boss_ratio (366) with newer official rank sum when server settlement hasn't arrived
-    const hpPct = serverDmg !== undefined && data?.bossPercent[s] !== undefined
-      ? data.bossPercent[s]
-      : (damage !== null && bossMaxHp && bossMaxHp > 0 ? (damage / bossMaxHp) * 100 : data?.bossPercent[s] ?? null);
+    const hpPct = serverDmg !== undefined && rawPct !== undefined
+      ? rawPct
+      : (damage !== null && bossMaxHp && bossMaxHp > 0 ? (damage / bossMaxHp) * 100 : (rawPct ?? null));
+    const milestonePct = serverDmg === undefined && damage === null && rawPct !== undefined && rawPct > 0 ? rawPct : null;
+    const milestoneFloor = milestonePct !== null && bossMaxHp && bossMaxHp > 0
+      ? Math.round((bossMaxHp * milestonePct) / 100)
+      : null;
     const elimRound = report?.eliminated[s];
     const eliminated = elimRound !== undefined && number > elimRound;
     const isSelf = report?.self === s;
@@ -252,6 +265,8 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
       label: seatDisplayText(s, report),
       damage,
       hpPct,
+      milestonePct,
+      milestoneFloor,
       eliminated,
       elimRound,
     };
@@ -362,11 +377,12 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                 : <span className="d-boss-badge"><Flame size={12} />R{number} 首领战</span>}
               <span className="d-muted">
                 {data.bossStatus === 'settlement' ? '已取得服务器伤害结算'
-                  : data.bossEnded ? '首领阶段已结束'
+                  : data.bossEnded
+                    ? (hasServerTotals ? '首领阶段已结束' : '首领已结束（转阶段未下发全员总伤结算，当前为前3干员与本端上报）')
                     : data.bossStatus === 'reported'
                       ? (data.bossOfficial.length ? '已同步实时伤害与官方榜单' : '实时伤害快照')
                       : data.bossOfficial.length
-                        ? (hasLiveBossDamage ? '已同步实时伤害与官方榜单' : '已收到榜单，未取得服务器伤害结算')
+                        ? (hasLiveBossDamage ? '已同步实时伤害与官方榜单' : '已收到榜单，未取得服务器伤害结算（战斗中仅广播单干员 Top 3，4 人总伤在结算后同步）')
                         : hasBreakdown ? '本端上报口径' : '等待伤害入表'}
                 {data.bossRoundInferred ? ' · 回合按最近确认进度关联，等待场景校正' : ''}
               </span>
@@ -374,7 +390,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
 
             <div className="d-boss-kpi-strip">
               <div className="d-boss-kpi is-primary">
-                <small>{solo ? '累计输出' : '全队输出'}</small>
+                <small>{solo ? '累计输出' : (hasServerTotals ? '全队输出' : '已观测输出')}</small>
                 <b>{formatTelemetryTotal(teamTotalDamage)}</b>
               </div>
               {bossMaxHp !== null && (
@@ -487,14 +503,39 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                 ) : (
                   activeSeatRows.map(row => {
                     const teamShare = teamTotalDamage > 0 && row.damage !== null ? (row.damage / teamTotalDamage) * 100 : null;
+                    const missingBecauseTop3Only = row.damage === null && !hasServerTotals && (data.bossOfficial.length > 0 || hasBreakdown);
                     return (
-                      <div key={row.seat} className="d-boss-contrib-item" data-self={row.isSelf}>
+                      <div
+                        key={row.seat}
+                        className="d-boss-contrib-item"
+                        data-self={row.isSelf}
+                        title={
+                          row.milestonePct !== null
+                            ? `已触发服务端 ${row.milestonePct}% 削血达标信号${row.milestoneFloor ? `（下限 ≥ ${formatTelemetryTotal(row.milestoneFloor)}）` : ''}，精确总伤待首领结算同步`
+                            : missingBecauseTop3Only
+                              ? '战斗中服务端仅实时广播单干员 Top 3，该席位暂未进入前 3 且未收到全员总伤结算包'
+                              : undefined
+                        }
+                      >
                         <i style={{ background: row.color }} />
                         <span className="d-boss-contrib-name">{seatName(row.seat, report, perspective)}</span>
-                        <b>{row.damage !== null ? formatTelemetryTotal(row.damage) : '—'}</b>
+                        <b>
+                          {row.damage !== null
+                            ? formatTelemetryTotal(row.damage)
+                            : row.milestoneFloor !== null
+                              ? `≥${formatTelemetryTotal(row.milestoneFloor)}`
+                              : '—'}
+                        </b>
                         <small>
-                          {teamShare !== null ? `队 ${leaderDigits.format(teamShare)}%`
-                            : row.hpPct !== null ? `血 ${leaderDigits.format(row.hpPct)}%` : '—'}
+                          {teamShare !== null
+                            ? `队 ${leaderDigits.format(teamShare)}%`
+                            : row.milestonePct !== null
+                              ? `达 ${row.milestonePct}%`
+                              : row.hpPct !== null
+                                ? `血 ${leaderDigits.format(row.hpPct)}%`
+                                : missingBecauseTop3Only
+                                  ? '未入前3'
+                                  : '—'}
                         </small>
                       </div>
                     );

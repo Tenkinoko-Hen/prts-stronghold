@@ -748,6 +748,39 @@ class BossCaptureTests(unittest.TestCase):
         self.assertEqual(self.analyzer.snapshot()['capture']['round'], 6)
         self.assertEqual(self.analyzer.snapshot()['rounds'][6]['phase'], 'self')
 
+    def test_zero_runtime_heartbeat_does_not_wipe_boss_ratios(self):
+        self.down(boss_scene_frame(14, 6, hp=16200400))
+        self.down(boss_ratio_frame(seat=3, tier=7))
+        # Zero-damage runtime heartbeats during active boss combat must not erase 20%/50%/80% milestone signals.
+        self.down(frame(310, runtime_body({1: 0, 2: 0, 3: 0, 4: 0})))
+        row = self.analyzer.snapshot()['rounds'][14]
+        self.assertEqual(row['boss_percent'].get(3), 20)
+
+    def test_r14_to_r15_prep_transition_captures_r14_settlement_and_late_runtime(self):
+        # Case 1: direct (14, boss) -> (15, prep) carrying R14's non-zero runtime totals
+        self.down(boss_scene_frame(14, 6, hp=16200400))
+        self.down(boss_scene_frame(15, 3, totals={1: 4200000, 2: 4800000, 3: 3300000, 4: 3900400}, records=(14,)))
+        rows = self.analyzer.snapshot()['rounds']
+        self.assertEqual(rows[14]['boss_status'], 'settlement')
+        self.assertEqual(rows[14]['boss_damage'], {1: 4200000, 2: 4800000, 3: 3300000, 4: 3900400})
+        self.assertEqual(rows[15]['boss_damage'], {})
+
+        # Case 2: direct (14, boss) -> (15, prep) with zero totals, followed by a late non-zero 310 before R15 boss starts
+        late_analyzer = Analyzer()
+        late_analyzer.accept(segment(OLD, 1, syn=True), 'up')
+        seq = 100
+        for pkt in (
+            boss_scene_frame(14, 6, hp=16200400),
+            boss_scene_frame(15, 3, totals={1: 0, 2: 0, 3: 0, 4: 0}, records=(14,)),
+            frame(310, runtime_body({1: 4000000, 2: 4500000, 3: 3200000, 4: 4500400})),
+        ):
+            late_analyzer.accept(segment(OLD[::-1], seq, pkt), 'down')
+            seq += len(pkt)
+        late_rows = late_analyzer.snapshot()['rounds']
+        self.assertEqual(late_rows[14]['boss_status'], 'settlement')
+        self.assertEqual(late_rows[14]['boss_damage'][3], 3200000)
+        self.assertEqual(late_rows[15]['boss_damage'], {})
+
 
 class LiveCaptureTests(unittest.TestCase):
     def test_worker_reports_top_unknown_message_ids_without_payload_data(self):

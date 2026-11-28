@@ -2,10 +2,20 @@ Var prtsSplashProcess
 Var prtsSplashUnpacked
 Var prtsSplashDone
 Var prtsCacheRoot
+Var prtsDataRoot
+Var prtsPointerIni
+Var prtsPickReason
 Var prtsStageDir
 Var prtsCleanupInstDir
 Var prtsSawWindow
 Var prtsRetriedSafe
+
+!ifndef PRTS_PRODUCT_KEY
+  !define PRTS_PRODUCT_KEY "stronghold"
+!endif
+!ifndef PRTS_POINTER_INI_NAME
+  !define PRTS_POINTER_INI_NAME "storage-root.ini"
+!endif
 
 ; The portable NSIS stub is 32-bit. $R1 is the quoted command line, $R5 and $R7 are the child handle and PID.
 Function PrtsLaunchProcess
@@ -124,10 +134,97 @@ FunctionEnd
   !endif
 
   StrCpy $prtsCacheRoot ""
+  StrCpy $prtsDataRoot ""
+  StrCpy $prtsPickReason ""
   StrCpy $prtsCleanupInstDir "0"
+  StrCpy $prtsPointerIni "$LOCALAPPDATA\PRTS-Stronghold\${PRTS_POINTER_INI_NAME}"
 
-  ; Prefer %LOCALAPPDATA%\PRTS-Cache\<Product>, fall back to %TEMP%\PRTS-Cache\<Product>, then unique $PLUGINSDIR\app.
-  ${If} $LOCALAPPDATA != ""
+  ; 1. Resolve existing storage root pointer (preserves user path across L1/L2 updates without re-prompting)
+  ReadINIStr $prtsDataRoot "$EXEDIR\prts-portable.ini" "storage" "dataRoot"
+  ${If} $prtsDataRoot == ""
+  ${AndIf} $LOCALAPPDATA != ""
+    ReadINIStr $prtsDataRoot "$prtsPointerIni" "storage" "dataRoot"
+  ${EndIf}
+
+  ${If} $prtsDataRoot != ""
+    StrCpy $0 "$prtsDataRoot"
+    Call PrtsTestWritableDir
+    ${If} $1 != "1"
+      StrCpy $prtsDataRoot ""
+      StrCpy $prtsPickReason "missing"
+    ${EndIf}
+  ${EndIf}
+
+  ; 2. First launch with no valid pointer:
+  ;    - Non-C: writable EXE folder -> silently auto-place in <EXEDIR>\PRTS-Data (zero C: usage!)
+  ;    - EXE on C: drive (or read-only / previous drive missing) -> show native path picker before unpacking
+  ${If} $prtsDataRoot == ""
+    StrCpy $2 "$EXEDIR" 2
+    ${If} $prtsPickReason == ""
+    ${AndIf} $2 != "C:"
+      StrCpy $0 "$EXEDIR\PRTS-Data"
+      Call PrtsTestWritableDir
+      ${If} $1 == "1"
+        StrCpy $prtsDataRoot "$0"
+        WriteINIStr "$EXEDIR\prts-portable.ini" "storage" "dataRoot" "$prtsDataRoot"
+        ${If} $LOCALAPPDATA != ""
+          CreateDirectory "$LOCALAPPDATA\PRTS-Stronghold"
+          WriteINIStr "$prtsPointerIni" "storage" "dataRoot" "$prtsDataRoot"
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+  ${If} $prtsDataRoot == ""
+    Call PrtsCloseSplash
+    File /oname=$PLUGINSDIR\prts-splash.exe "prts-splash.exe"
+    Delete "$PLUGINSDIR\picked-root.txt"
+    ExecWait '"$PLUGINSDIR\prts-splash.exe" --pick-storage "$PLUGINSDIR\picked-root.txt" "${PRODUCT_FILENAME}" "$EXEDIR" "$prtsPickReason"' $0
+    ${If} $0 == 2
+      SetErrorLevel 0
+      Quit
+    ${EndIf}
+    ClearErrors
+    FileOpen $2 "$PLUGINSDIR\picked-root.txt" r
+    ${IfNot} ${Errors}
+      FileRead $2 $prtsDataRoot
+      FileClose $2
+      ; Strip trailing CR/LF if any
+      StrCpy $0 $prtsDataRoot 1 -1
+      ${If} $0 == "$\n"
+        StrCpy $prtsDataRoot $prtsDataRoot -1
+      ${EndIf}
+      StrCpy $0 $prtsDataRoot 1 -1
+      ${If} $0 == "$\r"
+        StrCpy $prtsDataRoot $prtsDataRoot -1
+      ${EndIf}
+    ${EndIf}
+    ${If} $prtsDataRoot != ""
+      ${If} $LOCALAPPDATA != ""
+        CreateDirectory "$LOCALAPPDATA\PRTS-Stronghold"
+        WriteINIStr "$prtsPointerIni" "storage" "dataRoot" "$prtsDataRoot"
+      ${EndIf}
+    ${EndIf}
+    IfSilent prts_picker_resumed
+      Call PrtsShowSplash
+    prts_picker_resumed:
+  ${EndIf}
+
+  ; 3. Export PRTS_DATA_ROOT to Electron and unpack runtime cache directly into <DataRoot>\<product>\runtime-cache
+  ${If} $prtsDataRoot != ""
+    StrCpy $0 "$prtsDataRoot"
+    System::Call 'kernel32::SetEnvironmentVariableW(w "PRTS_DATA_ROOT", w r0)'
+    CreateDirectory "$prtsDataRoot\${PRTS_PRODUCT_KEY}"
+    StrCpy $0 "$prtsDataRoot\${PRTS_PRODUCT_KEY}\runtime-cache"
+    Call PrtsTestWritableDir
+    ${If} $1 == "1"
+      StrCpy $prtsCacheRoot "$0"
+    ${EndIf}
+  ${EndIf}
+
+  ; Legacy fallback only if DataRoot could not be resolved/written
+  ${If} $prtsCacheRoot == ""
+  ${AndIf} $LOCALAPPDATA != ""
     CreateDirectory "$LOCALAPPDATA\PRTS-Cache"
     StrCpy $0 "$LOCALAPPDATA\PRTS-Cache\${PRODUCT_FILENAME}"
     Call PrtsTestWritableDir

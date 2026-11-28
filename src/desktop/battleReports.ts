@@ -214,6 +214,70 @@ export interface HotUpdateBridge {
   onState(callback: (state: HotUpdateState) => void): () => void;
 }
 
+export interface CDriveResidueItem {
+  id: string;
+  label: string;
+  description: string;
+  path: string;
+  category: 'cache' | 'profile' | 'reports' | 'pointer';
+  bytes: number;
+  isActive: boolean;
+  canCleanNow: boolean;
+}
+
+export interface StorageOverview {
+  productKey: 'stronghold' | 'telemetry';
+  dataRoot: string | null;
+  effectiveRoot: string;
+  profileDir: string;
+  runtimeCacheDir: string | null;
+  reportDir: string;
+  portableDir: string;
+  source: 'env' | 'portable-ini' | 'pointer-ini' | 'auto-exedir' | 'legacy-appdata';
+  isOnSystemDrive: boolean;
+  freeBytesOnDataDrive: number | null;
+  freeBytesOnCDrive: number | null;
+  sizes: {
+    runtimeCacheBytes: number;
+    profileBytes: number;
+    hotUpdateBytes: number;
+    browserCacheBytes: number;
+    reportsBytes: number;
+    totalBytes: number;
+  };
+  cDriveResidues: CDriveResidueItem[];
+  cDriveTotalBytes: number;
+  cDriveCleanableBytes: number;
+}
+
+export interface StorageChooseRootResult {
+  canceled: boolean;
+  targetDir?: string;
+  ok?: boolean;
+  normalizedPath?: string;
+  freeBytes?: number | null;
+  error?: string;
+  warning?: string;
+}
+
+export interface StorageBridge {
+  getOverview(): Promise<StorageOverview | null>;
+  chooseRoot(): Promise<StorageChooseRootResult>;
+  migrateRoot(options: { targetDir: string; includeReports?: boolean }): Promise<{ ok: boolean; newDataRoot?: string; restarting?: boolean; error?: string }>;
+  openDir(targetPath?: string): Promise<boolean>;
+  clearCache(): Promise<{ ok: boolean; freedBytes: number; overview?: StorageOverview }>;
+  cleanCDriveResidues(options?: { ids?: string[]; uninstallAll?: boolean; includeReports?: boolean }): Promise<{
+    ok: boolean;
+    freedBytes?: number;
+    cleanedCount?: number;
+    scheduledCount?: number;
+    failed?: string[];
+    exiting?: boolean;
+    error?: string;
+    overview?: StorageOverview;
+  }>;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -222,6 +286,7 @@ declare global {
       windowLayout?: WindowLayoutBridge;
       battleReports?: BattleReportsBridge;
       reportStore?: ReportStoreBridge;
+      storage?: StorageBridge;
       covenantOcr?: CovenantOcrBridge;
       hud?: HudOverlayBridge;
       lanSync?: LanSyncBridge;

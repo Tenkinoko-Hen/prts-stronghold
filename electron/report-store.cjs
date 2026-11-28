@@ -260,10 +260,10 @@ function createReportStore({ userDataDir, defaultDir, maxReports = MAX_STORED_RE
   };
 }
 
-function installReportStore({ app, ipcMain, dialog, shell, mainWindow, product }) {
+function installReportStore({ app, ipcMain, dialog, shell, mainWindow, product, defaultDirOverride = null }) {
   const store = createReportStore({
     userDataDir: app.getPath('userData'),
-    defaultDir: resolveDefaultReportDir(app, product),
+    defaultDir: defaultDirOverride || resolveDefaultReportDir(app, product),
   });
 
   ipcMain.handle('report-store-load', () => store.loadRecords());

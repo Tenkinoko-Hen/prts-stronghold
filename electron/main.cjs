@@ -2,11 +2,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, screen, shell, Tray, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, net, protocol, screen, session, shell, Tray, Menu } = require('electron');
 const { createHotUpdateManager } = require('./hot-update.cjs');
 const HOT_UPDATE_PUBKEY = require('./hot-update-pubkey.cjs');
 const { installBattleReports } = require('./battle-reports.cjs');
 const { installReportStore } = require('./report-store.cjs');
+const { installStorageManager, resolveBootstrapStorage } = require('./storage-manager.cjs');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
 const { installHudOverlay } = require('./hud-overlay.cjs');
 const { installLanSync } = require('./lan-sync.cjs');
@@ -34,17 +35,14 @@ let mainWindowShown = false;
 let isQuitting = false;
 let hasRelaunchedForGpu = false;
 
-let userDataInitError = null;
-if (desktop.useIsolatedUserData) {
-  try {
-    const profile = path.join(app.getPath('appData'), desktop.appId);
-    fs.mkdirSync(profile, { recursive: true });
-    app.setPath('userData', profile);
-    app.setPath('sessionData', profile);
-  } catch (err) {
-    userDataInitError = err;
-  }
-}
+const storageBootstrap = resolveBootstrapStorage({
+  product,
+  app,
+  env: process.env,
+  portableDir: process.env.PORTABLE_EXECUTABLE_DIR || '',
+  platform: process.platform,
+});
+const userDataInitError = storageBootstrap.initError;
 if (process.platform === 'win32' && desktop.appId) {
   app.setAppUserModelId(desktop.appId);
 }
@@ -743,7 +741,31 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
         setHudTemporarilyHidden: (hidden) => Boolean(hudOverlay?.setTemporarilyHidden?.(hidden)),
       })
     : null;
-  installReportStore({ app, ipcMain, dialog, shell, mainWindow, product });
+  const reportStore = installReportStore({
+    app,
+    ipcMain,
+    dialog,
+    shell,
+    mainWindow,
+    product,
+    defaultDirOverride: storageBootstrap.defaultReportDir,
+  });
+  installStorageManager({
+    app,
+    ipcMain,
+    dialog,
+    shell,
+    session,
+    getMainWindow: () => mainWindow,
+    isTrustedSender: isTrustedMainSender,
+    bootstrap: storageBootstrap,
+    product,
+    reportStore,
+    onBeforeQuitForMigration: () => {
+      isQuitting = true;
+      try { battleReports?.stop?.(); } catch {}
+    },
+  });
 
   if (process.platform === 'win32' && desktop.useTray) {
     try {

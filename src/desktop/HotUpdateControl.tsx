@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  HardDrive,
   Megaphone,
   RefreshCw,
   RotateCcw,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import { PRODUCT_BRAND } from '../brand/productBrand';
 import { DesktopDialog } from './DesktopDialog';
+import { StorageManagerPanel } from './StorageManagerPanel';
 import type { HotUpdatePatchInfo, HotUpdateState } from './battleReports';
 
 export interface HotUpdateControlProps {
@@ -64,6 +66,7 @@ export function HotUpdateControl({ variant = 'desktop' }: HotUpdateControlProps)
   const api = typeof window !== 'undefined' ? window.electronAPI?.hotUpdate : undefined;
   const [state, setState] = useState<HotUpdateState | null>(null);
   const [open, setOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<'check' | 'download' | 'restart' | 'rollback' | 'native' | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const lastPatchRef = useRef<HotUpdatePatchInfo | null>(null);
@@ -348,6 +351,19 @@ export function HotUpdateControl({ variant = 'desktop' }: HotUpdateControlProps)
                 <button
                   type="button"
                   className="d-button"
+                  disabled={busyAction !== null}
+                  onClick={() => {
+                    setOpen(false);
+                    setStorageOpen(true);
+                  }}
+                >
+                  <HardDrive size={13} />
+                  <span>存储路径与 C 盘清理</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="d-button"
                   disabled={isChecking || isDownloading || busyAction !== null}
                   onClick={() => void runAction('check', () => api.check())}
                 >
@@ -369,6 +385,12 @@ export function HotUpdateControl({ variant = 'desktop' }: HotUpdateControlProps)
               </div>
             </div>
           </div>
+        </DesktopDialog>
+      )}
+
+      {storageOpen && (
+        <DesktopDialog title="应用存储路径与 C 盘清理工具" onClose={() => setStorageOpen(false)}>
+          <StorageManagerPanel active={storageOpen} />
         </DesktopDialog>
       )}
     </>

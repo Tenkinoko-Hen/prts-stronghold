@@ -56,6 +56,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       resetDir: () => ipcRenderer.invoke('report-store-reset-dir'),
       openDir: () => ipcRenderer.invoke('report-store-open-dir'),
     },
+    storage: {
+      getOverview: () => ipcRenderer.invoke('storage-get-overview'),
+      chooseRoot: () => ipcRenderer.invoke('storage-choose-root'),
+      migrateRoot: (options) => ipcRenderer.invoke('storage-migrate-root', options),
+      openDir: (targetPath) => ipcRenderer.invoke('storage-open-dir', targetPath),
+      clearCache: () => ipcRenderer.invoke('storage-clear-cache'),
+      cleanCDriveResidues: (options) => ipcRenderer.invoke('storage-clean-c-residues', options),
+    },
     covenantOcr: {
       getState: () => ipcRenderer.invoke('covenant-ocr-get'),
       scanWindow: () => ipcRenderer.invoke('covenant-ocr-window'),

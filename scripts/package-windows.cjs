@@ -157,7 +157,11 @@ async function packageWindows(arg1, arg2) {
   const templates = fs.mkdtempSync(path.join(work, 'nsis-startup-'));
   try {
     fs.cpSync(oldTemplates, templates, { recursive: true });
-    fs.copyFileSync(path.join(__dirname, 'windows-startup.nsh'), path.join(templates, 'prts-startup.nsh'));
+    const productKey = product.id === 'telemetry' ? 'telemetry' : 'stronghold';
+    const pointerIniName = productKey === 'telemetry' ? 'storage-root-telemetry.ini' : 'storage-root.ini';
+    const startupNshHeader = `!define PRTS_PRODUCT_KEY "${productKey}"\r\n!define PRTS_POINTER_INI_NAME "${pointerIniName}"\r\n`;
+    const startupNshBody = fs.readFileSync(path.join(__dirname, 'windows-startup.nsh'), 'utf8');
+    fs.writeFileSync(path.join(templates, 'prts-startup.nsh'), `${startupNshHeader}${startupNshBody}`, 'utf8');
     fs.writeFileSync(path.join(templates, 'portable.nsi'), template);
     compileSplash(root, templates, product);
 
@@ -199,12 +203,25 @@ async function packageWindows(arg1, arg2) {
       },
     }, null, 2));
 
+    const keepLocales = new Set(['zh-CN.pak', 'en-US.pak']);
     nsis.nsisTemplatesDir = templates;
     await build({
       projectDir: root,
       targets: Platform.WINDOWS.createTarget(['portable'], Arch.x64),
       publish: 'never',
-      config: effectiveConfig,
+      config: {
+        ...JSON.parse(fs.readFileSync(effectiveConfig, 'utf8')),
+        afterPack: async (context) => {
+          // 裁剪 Electron 无用 50+ 语言包，每个版本立省 ~46 MB 运行缓存与安装包体积
+          const localesDir = path.join(context.appOutDir, 'locales');
+          if (!fs.existsSync(localesDir)) return;
+          for (const entry of fs.readdirSync(localesDir)) {
+            if (!keepLocales.has(entry)) {
+              fs.rmSync(path.join(localesDir, entry), { force: true });
+            }
+          }
+        },
+      },
     });
 
     const outputPath = path.resolve(root, outputDirectory);

@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Disc3,
+  HardDrive,
   Music2,
   Play,
   Power,
@@ -13,6 +14,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { StorageManagerPanel } from './StorageManagerPanel';
 import {
   RADIO_PRESETS,
   RADIO_SLOTS,
@@ -22,7 +24,7 @@ import {
   type TacticalRadioController,
 } from './tacticalRadio';
 
-type FunToolTab = 'radio';
+type FunToolTab = 'radio' | 'storage';
 
 function fmtTime(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return '00:00';
@@ -128,6 +130,15 @@ export function FunToolsView({ visible, radio }: Props) {
           >
             <Radio size={14} />
             <span>战术电台 · 动态 BGM</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'storage'}
+            onClick={() => setActiveTab('storage')}
+          >
+            <HardDrive size={14} />
+            <span>存储迁移 · C 盘清理</span>
           </button>
         </div>
         <span className="d-fun-future-note">
@@ -364,6 +375,11 @@ export function FunToolsView({ visible, radio }: Props) {
               );
             })}
           </section>
+        </div>
+      )}
+      {activeTab === 'storage' && (
+        <div className="d-ref-body d-fun-scroll">
+          <StorageManagerPanel active={visible && activeTab === 'storage'} />
         </div>
       )}
     </div>

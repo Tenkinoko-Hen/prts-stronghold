@@ -204,6 +204,20 @@ function BossSeatColumnSvg({
   );
 }
 
+export function isBossUplinkOnlyMissingDownlink(
+  report: BattleReport | undefined,
+  data: BattleReport['rounds'][number] | undefined,
+): boolean {
+  if (!report || report.current || !data) return false;
+  const hasUplink = data.bossUplinkRows.length > 0 || Object.keys(data.bossUplink).length > 0;
+  if (!hasUplink) return false;
+  const hasDownlink = data.bossStatus === 'settlement'
+    || data.bossStatus === 'reported'
+    || data.bossOfficial.length > 0
+    || Object.keys(data.bossDamage).length > 0;
+  return !hasDownlink;
+}
+
 export function BossDamage({ report, seat: perspective = report?.self, number, onRound, reference, onPreview }: {
   report?: BattleReport; seat?: number | null; number: number; onRound(round: number): void; reference: ReactNode; onPreview(round: number): void;
 }) {
@@ -214,6 +228,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
   const hasBreakdown = Boolean(data && (data.bossUplinkRows.length > 0 || data.bossOfficial.length > 0
     || Object.keys(data.bossUplink).length > 0));
   const recorded = hasBossDamage(data);
+  const uplinkOnlyNoDownlink = isBossUplinkOnlyMissingDownlink(report, data);
   const defeated = Boolean(report?.defeatedBossRounds.includes(number));
   const bossMaxHp = data?.bossHp ?? null;
 
@@ -387,6 +402,12 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
               )}
             </div>
           </header>
+
+          {uplinkOnlyNoDownlink && (
+            <div className="d-report-npcap-hint" role="note">
+              当前未检测到 Npcap 下行（仅本端上报口径），队友昵称/头像与部分队友首领伤害可能缺失。建议安装 Npcap 后以管理员身份重启应用，将自动切换驱动通道获取完整首领战报。
+            </div>
+          )}
 
           {bossDamagePct !== null && (
             <div className="d-boss-hp-segmented">

@@ -809,3 +809,38 @@ test('R11 WaveDetails applies killer seat colors to peer bars and omits duplicat
   assert.match(html, /本路漏怪/);
   assert.doesNotMatch(html.split('d-assist-visual')[0], /本路被兜住/);
 });
+
+test('BossDamage displays Npcap downlink hint when only uplink boss damage is present without current scene', () => {
+  const uplinkOnlyReport = readBattleReport({
+    capture: { match: 9, self: 1 },
+    players: {},
+    rounds: {
+      14: {
+        phase: 'boss',
+        boss_uplink: { 1: 420000 },
+        boss_uplink_rows: [{ seat: 1, identifier: 10, char_id: 'char_4087_ines', operator_name: '伊内丝', source: 0, damage: 420000 }],
+      },
+    },
+  });
+  const uplinkHtml = renderToStaticMarkup(createElement(BossDamage, {
+    report: uplinkOnlyReport, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.match(uplinkHtml, /d-report-npcap-hint/);
+  assert.match(uplinkHtml, /当前未检测到 Npcap 下行（仅本端上报口径）/);
+
+  const normalReport = readBattleReport({
+    capture: { match: 9, round: 14, self: 1 },
+    players: { 1: '我方', 2: '二号' },
+    rounds: {
+      14: {
+        phase: 'boss',
+        boss_status: 'settlement',
+        boss_damage: { 1: 420000, 2: 380000 },
+      },
+    },
+  });
+  const normalHtml = renderToStaticMarkup(createElement(BossDamage, {
+    report: normalReport, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.doesNotMatch(normalHtml, /当前未检测到 Npcap 下行（仅本端上报口径）/);
+});

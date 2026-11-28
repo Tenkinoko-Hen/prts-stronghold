@@ -101,14 +101,17 @@ npm run build
 
 ## 4. 当前状态快照（每次里程碑更新）
 
-- **最后更新**：2026-11-27 19:29（提前落地 **双产品三层分级热更新系统 + Cloudflare 零绑卡后端工程** 并通过真实 Electron 45 签名热更新全链路 E2E：① 主进程 [electron/hot-update.cjs](../electron/hot-update.cjs) 实现 Ed25519 + SHA-256 + CRC32 验签、纯 Node 安全 ZIP 解压、A/B 槽位 15 秒健康看门狗与崩溃自动回滚、外壳升级自动清旧槽；② [electron/main.cjs](../electron/main.cjs) `prts://` 协议升级为「热更目录优先 + 缺失静态图回退内置 ASAR」增量覆盖模式，Full 热更包仅 **1.73 MiB**（对比全量 `dist/` 125.91 MiB）；③ [src/desktop/HotUpdateControl.tsx](../src/desktop/HotUpdateControl.tsx) 接入 PC Full / Lite / 抽屉三壳并上报 `confirmHealthy()`；④ [cloudflare/](../cloudflare/) 含 Wrangler 配置、D1 `prts-stronghold-db` 建表 SQL、清单 API 与 GitHub Release 白名单边缘缓存反代；⑤ 已落盘 [docs/CLOUD_HOTUPDATE_AND_COMPS_PLAN.md](CLOUD_HOTUPDATE_AND_COMPS_PLAN.md) 锁定社区阵容库 `04 阵容工坊` 4 项定案；**256/256 全栈单测 + 真实 Electron 45 热更新 E2E 全绿**）
+- **最后更新**：2026-11-28 15:14（完成 **Cloudflare 零绑卡热更新云端正式上线 + 双自定义域名验通 + 本机重签生产级 Ed25519 公私钥 + 缺 Npcap 下行 Boss 提示修复 + `v2.2.0` 热更新外壳 PC 双包构建**：① 远端 D1 `prts-stronghold-db`（APAC/NRT）已执行 `schema.sql` 建成 4 表；② `prts-stronghold-api` 已部署并自动绑定 `https://api.arknightsprts.ggff.net` 与 `https://cdn.arknightsprts.ggff.net`，`/health`、`PUT /v1/admin/manifest`（401 未鉴权拦截 + Bearer 鉴权写 D1）、`GET /v1/manifest.json` 与 `/releases/v2.1.0/...` 边缘缓存反代均实测 `200 OK`；③ 因 `v2.1.0` 尚无热更新外壳，已在本机生成全新生产密钥对（`keyId = prts-hot-2026-v2`，私钥仅存本机仓外 `work/secrets/hot-update-ed25519.pem`，同步保存 `work/secrets/cloudflare-admin-token.txt`）并更新 [electron/hot-update-pubkey.cjs](../electron/hot-update-pubkey.cjs)；④ 修复 [src/desktop/BattleReportPanels.tsx](../src/desktop/BattleReportPanels.tsx) 仅上行 Boss 伤害时的缺 Npcap 下行提示并补单测；⑤ 重编含雷电适配的双 Python Worker 并本地打出 `v2.2.0` PC 双便携包，自验签发 `1.73 MiB` 增量补丁验签通过）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **256/256 全绿**（`tsc --noEmit` 通过 + TS 132/132 + Node 58/58 [含热更新与 Cloudflare Worker 17 项新测] + Python 66/66）
-  - 真实 Electron 45 签名热更新全链路 E2E 通过（`build-hot-patch.cjs` 生成 1.73 MiB 增量包 + Ed25519 签名 → HTTP 拉取验签解压 → 真 Electron 45 启动 `prts://` 加载热更槽 → React 挂载上报 `confirmHealthy()` → 晋升 `activeUi.status = "stable"`）
+  - `npm test` **257/257 全绿**（`tsc --noEmit` 通过 + TS 133/133 + Node 58/58 + Python 66/66）+ Cloudflare Worker **7/7 全绿**
+  - Cloudflare 线上全链路实测通过（`api.arknightsprts.ggff.net` 健康/鉴权/D1 读写 + `cdn.arknightsprts.ggff.net` 反代 GitHub Release + `build-hot-patch.cjs` Ed25519 增量包签发自验 `1.73 MiB`）
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
-  - **换机密钥提醒**：热更新签名私钥仅存本机仓外 `work/secrets/hot-update-ed25519.pem`（未入 Git），若需在家里电脑直接签发 L1/L2 热更补丁，请私下拷贝该 `.pem` 文件到家里仓库同路径（或重新生成并同步更新 `electron/hot-update-pubkey.cjs`）
-  - **下次接续第一步**：见 [docs/CLOUD_HOTUPDATE_AND_COMPS_PLAN.md](CLOUD_HOTUPDATE_AND_COMPS_PLAN.md) —— ① 在家里电脑执行 `cloudflare/` 远端 D1 建表、Worker 部署与 `api/cdn.arknightsprts.ggff.net` 域名绑定并验通；② 视需要出含热更新外壳的新版 EXE；③ 先起 Vite 模拟 UI 确认 `04 阵容工坊` 样式后再实现社区阵容库（Phase 2）
+  - **换机密钥提醒**：当前生效的生产签名私钥与管理员密钥均只存本机仓外（未入 Git）：`work/secrets/hot-update-ed25519.pem`（匹配 `prts-hot-2026-v2`）与 `work/secrets/cloudflare-admin-token.txt`；若需在公司电脑签发 L1/L2 热更补丁或调 `/v1/admin/manifest`，请私下拷贝上述两个文件到公司仓库 `work/secrets/` 同路径
+  - **本地最新 `v2.2.0` 热更新外壳测试包（位于本机 `release/v2.2.0/`，未入 Git、未发 Release）**：
+    - **PC 完整版**：`release/v2.2.0/PRTS-Stronghold-Full-2.2.0-Win64.exe`（229.42 MiB / 240,565,475 字节，SHA-256: `804a1d46473bb4669f13c81c2efa59a9b86ac74c21196f49d985264bb5e0184f`）
+    - **PC 纯净版（Lite）**：`release/v2.2.0/PRTS-Stronghold-Lite-2.2.0-Win64.exe`（126.57 MiB / 132,718,276 字节，SHA-256: `90bc8f8fd352afc2ed86247fbe53aef6470866cf7dd76d689d9505f8cf2fa3b2`）
+  - **下次接续第一步**：见 [docs/CLOUD_HOTUPDATE_AND_COMPS_PLAN.md](CLOUD_HOTUPDATE_AND_COMPS_PLAN.md) —— ① 若验收 `v2.2.0` PC 双包无误，可发正式 GitHub Release（`v2.2.0`），之后所有前端修复均可 1.7 MB 热更秒推；② 进入 **Phase 2（`04 阵容工坊` 社区阵容库）**：先在本地起 Vite 模拟 UI（广场页 + 精简编辑器 + 与 `01 战术跟打` 联动）供验收样式后再接入 D1 API
 - **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 15:01 同步刷新 PC 双包至 GitHub Release）**：
   - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `ea4439a` 替换更新）
   - **PC 完整版**：`PRTS-Stronghold-Full-2.1.0-Win64.exe`（229.48 MiB / 240,628,926 字节，SHA-256: `ab7286d246cc52e865edcefcfb7bf9d13714bd15fec4fdc9cdfe56934cc2f73d`）

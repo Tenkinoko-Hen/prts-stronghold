@@ -31,10 +31,10 @@
 - [scripts/build-hot-patch.cjs](../scripts/build-hot-patch.cjs)：本地一键把当前 `dist/` 打成增量覆盖 ZIP 并做 Ed25519 签名自验，输出 `.zip` 与 `.manifest.json`。
 - [cloudflare/](../cloudflare/)：已包含 `wrangler.toml`、`schema.sql`（含 `releases` 与 Phase 2 `comps`/`comp_votes`/`rate_limits` 建表）、`src/worker.mjs` 与 `worker.test.mjs`。
 
-### 2.2 待在家里电脑完成的一次性云端上线步骤
-1. 在 `cloudflare/` 执行 Wrangler 登录认证、远端 D1 建表（`schema.sql`）、配置 Worker Secret `ADMIN_TOKEN` 并部署 `prts-stronghold-api`。
-2. 在 Cloudflare 控制台或 `wrangler.toml` 确认 `arknightsprts.ggff.net` 状态变为 **Active** 后，为 `prts-stronghold-api` 绑定两个 Custom Domains：`api.arknightsprts.ggff.net` 与 `cdn.arknightsprts.ggff.net`。
-3. 用实测 `curl https://api.arknightsprts.ggff.net/health` 与 `/v1/manifest.json` 验通，并打一版含热更新壳的新 PC EXE（如 `v2.2.0`）发布，之后所有前端修复即可秒推 1.7 MB 热更包。
+### 2.2 云端上线状态（2026-11-28 已完成上线与全链路验通 ✅）
+1. 已在远端 D1 `prts-stronghold-db` 执行 `schema.sql` 建表（`releases` / `comps` / `comp_votes` / `rate_limits`），写入 Worker Secret `ADMIN_TOKEN` 并完成 `prts-stronghold-api` 线上部署。
+2. 已通过 `cloudflare/wrangler.toml` 的 `custom_domain = true` 自动绑定并验通 `https://api.arknightsprts.ggff.net`（`/health`、`/v1/manifest.json`、Bearer 鉴权 `PUT /v1/admin/manifest`）与 `https://cdn.arknightsprts.ggff.net`（GitHub Release 白名单边缘缓存反代）。
+3. 已启用生产签名密钥对 `prts-hot-2026-v2`（公钥已同步写入 [electron/hot-update-pubkey.cjs](../electron/hot-update-pubkey.cjs)，私钥存放在家里电脑仓外 `work/secrets/hot-update-ed25519.pem`），并已完成本地 `v2.2.0` PC 双便携包打包与 `1.73 MiB` 签名增量补丁自验。
 
 ---
 
@@ -59,4 +59,4 @@
 
 ## 4. 顺手待补的小优化项（来自群友实机反馈复核）
 
-- [src/desktop/BattleReportPanels.tsx](../src/desktop/BattleReportPanels.tsx#L581)：当未装 Npcap 导致 `下行 0` 但仍有部分上行 Boss 伤害（`本端上报口径`）时，目前「缺少 Npcap 下行」提示会被隐藏。后续可在 `!report.current && hasUplinkOnly` 场景下也显式提示「当前未检测到 Npcap 下行，队友昵称/头像与部分队友伤害可能缺失」。
+- ✅ [src/desktop/BattleReportPanels.tsx](../src/desktop/BattleReportPanels.tsx)（已于 2026-11-28 完成并补单测）：当未装 Npcap 导致 `下行 0` 但仍有部分上行 Boss 伤害（`本端上报口径`）时，在首领总览卡片内显式展示 `.d-report-npcap-hint` 提示「当前未检测到 Npcap 下行（仅本端上报口径），队友昵称/头像与部分队友首领伤害可能缺失」。

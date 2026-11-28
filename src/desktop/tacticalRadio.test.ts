@@ -66,10 +66,14 @@ test('restoreRadioConfig sanitizes corrupt JSON and preserves valid custom slot 
 test('resolveRadioPhase maps OCR Ban screen, 300 loading, prep, combat, Boss, and defeated Boss accurately', () => {
   assert.equal(resolveRadioPhase({ report: null, banSync: idleBan }), 'idle');
 
-  // 1. Pre-match OCR scanning / ready triggers BP slot
+  // 1. Empty lobby OCR probe stays idle; active Ban recognition triggers BP slot
   assert.equal(resolveRadioPhase({
     report: null,
     banSync: { ocrStatus: 'scanning', syncSource: null, ocrSeenCount: 0, liveRound: null },
+  }), 'idle');
+  assert.equal(resolveRadioPhase({
+    report: null,
+    banSync: { ocrStatus: 'scanning', syncSource: null, ocrSeenCount: 6, liveRound: null },
   }), 'bp');
   assert.equal(resolveRadioPhase({
     report: null,

@@ -1,5 +1,5 @@
 // 青逝痕 Tenkinoko 制作
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Disc3,
   Music2,
@@ -36,6 +36,61 @@ function fmtBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function RadioNowPlaying({
+  visible,
+  isPlaying,
+  enabled,
+  activeTrackLabel,
+  getPlaybackClock,
+}: {
+  visible: boolean;
+  isPlaying: boolean;
+  enabled: boolean;
+  activeTrackLabel: string;
+  getPlaybackClock: () => { currentTime: number; duration: number };
+}) {
+  const [clock, setClock] = useState({ currentTime: 0, duration: 0 });
+
+  useEffect(() => {
+    if (!visible || !isPlaying) {
+      setClock({ currentTime: 0, duration: 0 });
+      return;
+    }
+    const sync = () => setClock(getPlaybackClock());
+    sync();
+    const id = window.setInterval(sync, 1000);
+    return () => window.clearInterval(id);
+  }, [getPlaybackClock, isPlaying, visible]);
+
+  const pct = isPlaying && clock.duration > 0
+    ? Math.min(100, Math.round((clock.currentTime / clock.duration) * 100))
+    : 0;
+
+  return (
+    <>
+      <div className="d-radio-now">
+        <Disc3 size={14} className={isPlaying && visible ? 'd-radio-spin' : ''} />
+        <span className="d-radio-now-title">
+          {isPlaying && activeTrackLabel
+            ? `正在播放：${activeTrackLabel}`
+            : enabled
+              ? '监听中 · 进入对应游戏阶段将自动淡入播放（也可点击下方任意槽位试听）'
+              : '电台待机 · 开启后自动按游戏阶段无缝切歌，全程不修改游戏任何文件'}
+        </span>
+        {isPlaying && (
+          <span className="d-radio-time">
+            {fmtTime(clock.currentTime)} / {fmtTime(clock.duration)}
+          </span>
+        )}
+      </div>
+
+      <div className="d-radio-bar" aria-hidden="true">
+        <i style={{ width: `${pct}%` }} />
+      </div>
+    </>
+  );
+}
+
 interface Props {
   visible: boolean;
   radio: TacticalRadioController;
@@ -48,7 +103,6 @@ export function FunToolsView({ visible, radio }: Props) {
   const fileInputsRef = useRef<Partial<Record<RadioSlotId, HTMLInputElement | null>>>({});
 
   const { config } = radio;
-  const pct = radio.duration > 0 ? Math.min(100, Math.round((radio.currentTime / radio.duration) * 100)) : 0;
   const anyCustomized = RADIO_SLOTS.some(s => isSlotCustomized(s.id, config.slots[s.id]));
 
   const handleFilePick = async (slotId: RadioSlotId, file: File | undefined | null) => {
@@ -116,25 +170,13 @@ export function FunToolsView({ visible, radio }: Props) {
                   )}
                 </div>
 
-                <div className="d-radio-now">
-                  <Disc3 size={14} className={radio.isPlaying ? 'd-radio-spin' : ''} />
-                  <span className="d-radio-now-title">
-                    {radio.isPlaying && radio.activeTrackLabel
-                      ? `正在播放：${radio.activeTrackLabel}`
-                      : config.enabled
-                        ? '监听中 · 进入对应游戏阶段将自动淡入播放（也可点击下方任意槽位试听）'
-                        : '电台待机 · 开启后自动按游戏阶段无缝切歌，全程不修改游戏任何文件'}
-                  </span>
-                  {radio.isPlaying && (
-                    <span className="d-radio-time">
-                      {fmtTime(radio.currentTime)} / {fmtTime(radio.duration)}
-                    </span>
-                  )}
-                </div>
-
-                <div className="d-radio-bar" aria-hidden="true">
-                  <i style={{ width: `${radio.isPlaying ? pct : 0}%` }} />
-                </div>
+                <RadioNowPlaying
+                  visible={visible}
+                  isPlaying={radio.isPlaying}
+                  enabled={config.enabled}
+                  activeTrackLabel={radio.activeTrackLabel}
+                  getPlaybackClock={radio.getPlaybackClock}
+                />
               </div>
             </div>
 

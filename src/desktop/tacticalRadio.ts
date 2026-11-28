@@ -215,7 +215,8 @@ export function resolveRadioPhase(input: {
 
   if (
     banSync.liveRound === null
-    && (banSync.ocrStatus === 'scanning' || (banSync.syncSource === 'ocr' && banSync.ocrSeenCount > 0))
+    && banSync.ocrSeenCount > 0
+    && (banSync.ocrStatus === 'scanning' || banSync.syncSource === 'ocr')
   ) {
     return 'bp';
   }
@@ -312,9 +313,8 @@ export interface TacticalRadioController {
   activeSlot: RadioSlotId | null;
   activeTrackLabel: string;
   isPlaying: boolean;
-  currentTime: number;
-  duration: number;
   error: string;
+  getPlaybackClock(): { currentTime: number; duration: number };
   setEnabled(enabled: boolean): void;
   setVolume(volume: number): void;
   setCrossfadeMs(ms: number): void;
@@ -343,8 +343,6 @@ export function useTacticalRadio({
   });
   const [previewSlot, setPreviewSlot] = useState<RadioSlotId | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [error, setError] = useState('');
   const [customRev, setCustomRev] = useState(0);
 
@@ -393,7 +391,7 @@ export function useTacticalRadio({
   const deckBRef = useRef<HTMLAudioElement | null>(null);
   const activeDeckRef = useRef<'A' | 'B'>('A');
   const currentKeyRef = useRef<string>('');
-  const fadeRafRef = useRef<number | null>(null);
+  const fadeTimerRef = useRef<number | null>(null);
   const volumeRef = useRef(config.volume);
   const crossfadeRef = useRef(config.crossfadeMs);
   volumeRef.current = config.volume;
@@ -403,22 +401,22 @@ export function useTacticalRadio({
     if (!deckARef.current) {
       const a = new Audio();
       a.loop = true;
-      a.preload = 'auto';
+      a.preload = 'metadata';
       deckARef.current = a;
     }
     if (!deckBRef.current) {
       const b = new Audio();
       b.loop = true;
-      b.preload = 'auto';
+      b.preload = 'metadata';
       deckBRef.current = b;
     }
     return { a: deckARef.current, b: deckBRef.current };
   }, []);
 
   const cancelFade = useCallback(() => {
-    if (fadeRafRef.current !== null) {
-      window.cancelAnimationFrame(fadeRafRef.current);
-      fadeRafRef.current = null;
+    if (fadeTimerRef.current !== null) {
+      window.clearInterval(fadeTimerRef.current);
+      fadeTimerRef.current = null;
     }
   }, []);
 
@@ -452,7 +450,7 @@ export function useTacticalRadio({
   // Sync live volume slider directly to active deck when not mid-crossfade
   useEffect(() => {
     const activeDeck = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
-    if (activeDeck && !activeDeck.paused && fadeRafRef.current === null) {
+    if (activeDeck && !activeDeck.paused && fadeTimerRef.current === null) {
       activeDeck.volume = Math.max(0, Math.min(1, config.volume));
     }
   }, [config.volume]);
@@ -481,19 +479,18 @@ export function useTacticalRadio({
         return;
       }
 
-      const startAt = performance.now();
-      const step = (now: number) => {
-        const t = Math.min(1, (now - startAt) / ms);
+      // Use 50ms timer instead of requestAnimationFrame so crossfade never freezes when game window is focused
+      const startAt = Date.now();
+      const step = () => {
+        const t = Math.min(1, (Date.now() - startAt) / ms);
         if (outgoing && !outgoing.paused) {
           outgoing.volume = Math.max(0, outStartVol * (1 - t));
         }
         if (incoming) {
           incoming.volume = Math.max(0, Math.min(1, targetVol * t));
         }
-        if (t < 1) {
-          fadeRafRef.current = window.requestAnimationFrame(step);
-        } else {
-          fadeRafRef.current = null;
+        if (t >= 1) {
+          cancelFade();
           if (outgoing) {
             outgoing.pause();
             outgoing.currentTime = 0;
@@ -501,12 +498,11 @@ export function useTacticalRadio({
           }
           if (!incoming) {
             setIsPlaying(false);
-            setCurrentTime(0);
-            setDuration(0);
           }
         }
       };
-      fadeRafRef.current = window.requestAnimationFrame(step);
+      step();
+      fadeTimerRef.current = window.setInterval(step, 50);
     };
 
     if (!activeSlot || !activeTrackKey) {
@@ -560,18 +556,15 @@ export function useTacticalRadio({
     };
   }, [activeSlot, activeTrackKey, cancelFade, config.slots, ensureDecks, resolveTrackBlobUrl]);
 
-  // Poll playback progress while playing
-  useEffect(() => {
-    if (!isPlaying) return;
-    const timer = window.setInterval(() => {
-      const deck = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
-      if (deck && !deck.paused) {
-        setCurrentTime(Number.isFinite(deck.currentTime) ? deck.currentTime : 0);
-        setDuration(Number.isFinite(deck.duration) ? deck.duration : 0);
-      }
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [isPlaying]);
+  // Ref-backed playback clock read on demand by FunToolsView only when visible (zero root App re-renders!)
+  const getPlaybackClock = useCallback(() => {
+    const deck = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
+    if (!deck || deck.paused) return { currentTime: 0, duration: 0 };
+    return {
+      currentTime: Number.isFinite(deck.currentTime) ? deck.currentTime : 0,
+      duration: Number.isFinite(deck.duration) ? deck.duration : 0,
+    };
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -711,16 +704,15 @@ export function useTacticalRadio({
     setPreviewSlot(null);
   }, []);
 
-  return {
+  return useMemo(() => ({
     config,
     livePhase,
     previewSlot,
     activeSlot,
     activeTrackLabel,
     isPlaying,
-    currentTime,
-    duration,
     error,
+    getPlaybackClock,
     setEnabled,
     setVolume,
     setCrossfadeMs,
@@ -731,5 +723,24 @@ export function useTacticalRadio({
     restoreAllDefaults,
     togglePreview,
     stopPreview,
-  };
+  }), [
+    config,
+    livePhase,
+    previewSlot,
+    activeSlot,
+    activeTrackLabel,
+    isPlaying,
+    error,
+    getPlaybackClock,
+    setEnabled,
+    setVolume,
+    setCrossfadeMs,
+    setSlotEnabled,
+    selectPreset,
+    uploadCustomTrack,
+    restoreSlotDefault,
+    restoreAllDefaults,
+    togglePreview,
+    stopPreview,
+  ]);
 }

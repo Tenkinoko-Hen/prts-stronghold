@@ -79,6 +79,8 @@ export interface CovenantOcrState {
   status: 'idle' | 'scanning' | 'ready' | 'incomplete' | 'error';
   source: 'none' | 'auto' | 'manual' | 'clipboard';
   message: string;
+  progress?: number;
+  stageLabel?: string;
   complete: boolean;
   bannedCovenants: string[];
   seenCovenants: string[];

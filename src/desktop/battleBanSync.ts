@@ -160,6 +160,9 @@ export interface BattleBanSyncState {
   liveRoundConfirmed: boolean;
   ocrStatus: CovenantOcrState['status'];
   ocrMessage: string;
+  ocrProgress: number;
+  ocrStageLabel: string;
+  ocrSeenCount: number;
   ocrComplete: boolean;
   npcapInstalled?: boolean;
   npcapInstall?: NpcapInstallState;
@@ -284,6 +287,9 @@ export function useBattleBanSync(
     liveRoundConfirmed: false,
     ocrStatus: 'idle',
     ocrMessage: '',
+    ocrProgress: 0,
+    ocrStageLabel: '',
+    ocrSeenCount: 0,
     ocrComplete: false,
   });
   const onSyncRef = useRef(onSync);
@@ -350,11 +356,19 @@ export function useBattleBanSync(
         && ocr.seenCovenants.length > 0
         && (!packetActiveRef.current || ocr.source === 'manual' || ocr.source === 'clipboard');
 
+      const seenCount = Array.isArray(ocr.seenCovenants) ? ocr.seenCovenants.length : 0;
+      const derivedProgress = typeof ocr.progress === 'number' && Number.isFinite(ocr.progress)
+        ? Math.max(0, Math.min(100, Math.round(ocr.progress)))
+        : (ocr.complete ? 100 : (seenCount > 0 ? Math.min(96, Math.round((seenCount / 26) * 100)) : 0));
+
       setState(prev => ({
         ...prev,
         ocrAvailable: true,
         ocrStatus: ocr.status,
         ocrMessage: ocr.message,
+        ocrProgress: derivedProgress,
+        ocrStageLabel: ocr.stageLabel || (ocr.complete ? '已读全' : (seenCount > 0 ? `已识别 ${seenCount}/26` : '')),
+        ocrSeenCount: seenCount,
         ocrComplete: ocr.complete,
         ...(canApplyOcr ? {
           matchKey: ocr.id || `ocr:${ocr.bannedCovenants.join(',')}`,
@@ -422,6 +436,9 @@ export function useBattleBanSync(
       syncSource: null,
       ocrStatus: 'idle',
       ocrMessage: '',
+      ocrProgress: 0,
+      ocrStageLabel: '',
+      ocrSeenCount: 0,
       ocrComplete: false,
     }));
   }, [ocrApi]);

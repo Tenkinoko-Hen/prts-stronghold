@@ -54,6 +54,14 @@ export function DesktopBanSync({ sync, currentBanned, onResync, onScanWindow, on
       ? (sync.syncSource === 'ocr' && !sync.ocrComplete ? 'd-warning' : 'd-success')
       : sync.status === 'permission' ? 'd-warning' : undefined;
 
+  const showOcrProgress = scanning || (sync.syncSource === 'ocr' && (sync.ocrProgress > 0 || sync.ocrSeenCount > 0));
+  const progressValue = scanning
+    ? Math.max(12, Math.min(96, sync.ocrProgress || 25))
+    : (sync.ocrComplete ? 100 : Math.max(0, Math.min(96, sync.ocrProgress || Math.round((sync.ocrSeenCount / 26) * 100))));
+  const progressTone = scanning ? 'is-scanning' : (sync.ocrComplete ? 'is-complete' : 'is-partial');
+  const progressLabel = sync.ocrStageLabel
+    || (scanning ? '正在隐藏悬浮窗并识别画面…' : sync.ocrComplete ? 'OCR 已读全' : `已识别 ${sync.ocrSeenCount}/26`);
+
   return (
     <section className="d-scan" aria-label="对局盟约自动同步与OCR兜底">
       <div className="d-scan-status" aria-live="polite">
@@ -61,6 +69,17 @@ export function DesktopBanSync({ sync, currentBanned, onResync, onScanWindow, on
           <Radio size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 5 }} />
           {message}
         </p>
+        {showOcrProgress && (
+          <div className={`d-ocr-progress ${progressTone}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressValue} aria-label={progressLabel}>
+            <div className="d-ocr-progress-head">
+              <span>{progressLabel}</span>
+              <b>{progressValue}%</b>
+            </div>
+            <div className="d-ocr-progress-track">
+              <i className="d-ocr-progress-fill" style={{ width: `${progressValue}%` }} />
+            </div>
+          </div>
+        )}
         <div className="d-inline" style={{ flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
           {sync.ocrAvailable && onScanWindow && (
             <button

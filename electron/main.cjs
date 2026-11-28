@@ -734,7 +734,14 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
       })
     : null;
   const covenantOcr = process.platform === 'win32' && product.mode === 'full'
-    ? installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut })
+    ? installCovenantOcr({
+        mainWindow,
+        ipcMain,
+        desktopCapturer,
+        clipboard,
+        globalShortcut,
+        setHudTemporarilyHidden: (hidden) => Boolean(hudOverlay?.setTemporarilyHidden?.(hidden)),
+      })
     : null;
   installReportStore({ app, ipcMain, dialog, shell, mainWindow, product });
 

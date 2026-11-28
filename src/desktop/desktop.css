@@ -46,6 +46,17 @@
 .d-scan-actions button { padding:10px 6px; }
 .d-scan-status { background:#091419; border-radius:6px; padding:8px 10px; color:#aebfc7; font-size:12px; line-height:1.5; }
 .d-scan-status p + p, .d-scan-status button { margin-top:5px; }
+.d-ocr-progress { margin-top:7px; display:flex; flex-direction:column; gap:4px; }
+.d-ocr-progress-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:#cbd5e1; }
+.d-ocr-progress-head b { font-family:var(--font-mono); font-size:11px; font-weight:700; color:#ffe600; font-variant-numeric:tabular-nums; }
+.d-ocr-progress.is-partial .d-ocr-progress-head b { color:#f59e0b; }
+.d-ocr-progress.is-complete .d-ocr-progress-head b { color:#34d399; }
+.d-ocr-progress-track { height:5px; border-radius:2px; background:#0d1520; border:1px solid #243041; overflow:hidden; }
+.d-ocr-progress-fill { display:block; height:100%; border-radius:1px; background:#ffe600; transition:width 220ms ease; }
+.d-ocr-progress.is-scanning .d-ocr-progress-fill { background:linear-gradient(90deg, #eab308 0%, #ffe600 50%, #fef08a 100%); background-size:200% 100%; animation:d-ocr-shimmer 1.1s linear infinite; }
+.d-ocr-progress.is-partial .d-ocr-progress-fill { background:#f59e0b; }
+.d-ocr-progress.is-complete .d-ocr-progress-fill { background:#34d399; }
+@keyframes d-ocr-shimmer { 0% { background-position:100% 0; } 100% { background-position:-100% 0; } }
 .d-npcap-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 14px; padding:10px 12px; border:1px solid #6b541f; border-radius:8px; background:#1a160c; color:#e9eef5; font-size:12px; line-height:1.5; }
 .d-npcap-banner.is-done { border-color:#1f5e4d; background:#0d211c; }
 .d-npcap-banner.is-compact { margin:0; padding:9px 10px; flex-direction:column; align-items:stretch; gap:8px; }

@@ -237,6 +237,8 @@ test('installCovenantOcr accumulates solo two-screen scans, prompts to scroll, a
     assert.equal(res1.status, 'incomplete');
     assert.equal(res1.complete, false);
     assert.equal(res1.seenCovenants.length, 20);
+    assert.ok(res1.progress > 0 && res1.progress < 100);
+    assert.equal(res1.stageLabel, '已识别 20/26');
     assert.deepEqual(res1.missingCovenants, SUB_COVENANTS.slice(10));
     assert.match(res1.message, /已识别 20\/26.*向下滚动/);
 
@@ -245,6 +247,8 @@ test('installCovenantOcr accumulates solo two-screen scans, prompts to scroll, a
     const res2 = await handlers.get('covenant-ocr-window')(senderEvent);
     assert.equal(res2.status, 'ready');
     assert.equal(res2.complete, true);
+    assert.equal(res2.progress, 100);
+    assert.equal(res2.stageLabel, '已读全 26/26');
     assert.equal(res2.seenCovenants.length, 26);
     assert.deepEqual(res2.bannedCovenants, ['炎', '精准', '奥术', '奇迹']);
 
@@ -274,6 +278,72 @@ test('installCovenantOcr accumulates solo two-screen scans, prompts to scroll, a
     const mergedAlt = mergeCovenantScanResult(acc, altEval);
     assert.equal(mergedAlt.seenCovenants.length, 20);
     assert.deepEqual(mergedAlt.bannedCovenants, ['萨尔贡', '卡西米尔']);
+  } finally {
+    ocr.dispose();
+  }
+});
+
+test('installCovenantOcr temporarily hides HUD during capture, restores even on failure, and emits stepped progress', async () => {
+  const std = buildStandardScreen(new Set(['炎', '精准']));
+  const handlers = new Map();
+  const publishedStates = [];
+  const hudTimeline = [];
+  const mainFrame = { url: 'prts://app/' };
+  const fakeMain = {
+    isDestroyed: () => false,
+    getMediaSourceId: () => 'window:1:0',
+    webContents: {
+      mainFrame,
+      send: (_channel, payload) => publishedStates.push({ ...payload }),
+    },
+  };
+  const senderEvent = { sender: fakeMain.webContents, senderFrame: mainFrame };
+  let shouldThrowCapture = false;
+
+  const ocr = installCovenantOcr({
+    mainWindow: fakeMain,
+    ipcMain: { handle: (ch, fn) => handlers.set(ch, fn), removeHandler: (ch) => handlers.delete(ch) },
+    desktopCapturer: {
+      getSources: async () => {
+        hudTimeline.push('capture');
+        if (shouldThrowCapture) throw new Error('capture boom');
+        return [{
+          id: 'window:2:0',
+          name: '明日方舟',
+          thumbnail: {
+            isEmpty: () => false,
+            getSize: () => ({ width: std.width, height: std.height }),
+            toBitmap: () => std.bgra,
+            toPNG: () => Buffer.from('stub'),
+          },
+        }];
+      },
+    },
+    clipboard: { readImage: () => ({ isEmpty: () => true }) },
+    globalShortcut: null,
+    ocrRunner: { recognizePng: async () => ({ lines: std.lines }), stop: () => {} },
+    setHudTemporarilyHidden: (hidden) => {
+      hudTimeline.push(hidden ? 'hide' : 'restore');
+      return true;
+    },
+    captureSettleMs: 0,
+    autoPollMs: 60_000,
+  });
+
+  try {
+    const res = await handlers.get('covenant-ocr-window')(senderEvent);
+    assert.equal(res.status, 'ready');
+    assert.equal(res.progress, 100);
+    assert.deepEqual(hudTimeline, ['hide', 'capture', 'restore']);
+    const scanningProgresses = publishedStates.filter(s => s.status === 'scanning').map(s => s.progress);
+    assert.ok(scanningProgresses.length >= 2 && scanningProgresses[0] < scanningProgresses[scanningProgresses.length - 1]);
+
+    // Even when capture throws, HUD must still be restored cleanly!
+    hudTimeline.length = 0;
+    shouldThrowCapture = true;
+    const errRes = await handlers.get('covenant-ocr-window')(senderEvent);
+    assert.equal(errRes.status, 'error');
+    assert.deepEqual(hudTimeline, ['hide', 'capture', 'restore']);
   } finally {
     ocr.dispose();
   }

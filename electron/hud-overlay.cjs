@@ -90,6 +90,7 @@ function resolveHudDisplayWorkArea({ screenApi, mainWindow, initialBounds }) {
 function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, onExpandDrawer }) {
   let hudWindow = null;
   let readyShowTimer = null;
+  let tempHidden = false;
   let disposed = false;
   const prefsPath = app && typeof app.getPath === 'function'
     ? path.join(app.getPath('userData'), 'hud-prefs.json')
@@ -168,7 +169,7 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
 
   function revealHudWindow() {
     clearReadyShowTimer();
-    if (disposed || !hudWindow || hudWindow.isDestroyed() || !state.open) return;
+    if (disposed || tempHidden || !hudWindow || hudWindow.isDestroyed() || !state.open) return;
     try {
       const current = hudWindow.getBounds();
       const workArea = resolveHudDisplayWorkArea({ screenApi: screen, mainWindow, initialBounds: current });
@@ -357,6 +358,26 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
     return broadcast();
   }
 
+  function setTemporarilyHidden(flag) {
+    if (disposed) return false;
+    const nextHidden = Boolean(flag);
+    if (nextHidden) {
+      if (hudWindow && !hudWindow.isDestroyed() && hudWindow.isVisible()) {
+        tempHidden = true;
+        hudWindow.hide();
+        return true;
+      }
+      return false;
+    }
+    if (!tempHidden) return false;
+    tempHidden = false;
+    if (state.open && hudWindow && !hudWindow.isDestroyed()) {
+      revealHudWindow();
+      return true;
+    }
+    return false;
+  }
+
   function setDrawerCollapsed(flag) {
     if (disposed) return state;
     state = { ...state, drawerCollapsed: Boolean(flag) };
@@ -439,6 +460,7 @@ function installHudOverlay({ app, mainWindow, ipcMain, globalShortcut, product, 
     setScale,
     openAtBounds,
     setDrawerCollapsed,
+    setTemporarilyHidden,
     updateBattleFeed,
     updateGuideContext,
     dispose() {

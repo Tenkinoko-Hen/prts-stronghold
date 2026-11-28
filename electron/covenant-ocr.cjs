@@ -703,6 +703,8 @@ function installCovenantOcr({
   clipboard,
   globalShortcut,
   ocrRunner,
+  setHudTemporarilyHidden,
+  captureSettleMs = 80,
   autoPollMs = AUTO_POLL_MS,
 }) {
   const runner = ocrRunner || createWinRtOcrRunner();
@@ -719,6 +721,8 @@ function installCovenantOcr({
     status: 'idle',
     source: 'none',
     message: '',
+    progress: 0,
+    stageLabel: '',
     complete: false,
     bannedCovenants: [],
     seenCovenants: [],
@@ -730,6 +734,27 @@ function installCovenantOcr({
     state = { ...state, ...patch };
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('covenant-ocr-state', state);
     return state;
+  }
+
+  async function captureWithHudHidden(allowScreenFallback, thumbnailSize = { width: 1920, height: 1080 }) {
+    let hidHud = false;
+    try {
+      if (typeof setHudTemporarilyHidden === 'function') {
+        hidHud = Boolean(await setHudTemporarilyHidden(true));
+        if (hidHud && captureSettleMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, captureSettleMs));
+        }
+      }
+      return await captureGameOrScreen(allowScreenFallback, thumbnailSize);
+    } finally {
+      if (hidHud && typeof setHudTemporarilyHidden === 'function') {
+        try {
+          await setHudTemporarilyHidden(false);
+        } catch {
+          // ignore HUD restore errors
+        }
+      }
+    }
   }
 
   async function captureGameOrScreen(allowScreenFallback, thumbnailSize = { width: 1920, height: 1080 }) {
@@ -776,8 +801,8 @@ function installCovenantOcr({
       if (!gate.match || gate.fingerprint === lastAutoFingerprint) return;
       lastAutoFingerprint = gate.fingerprint;
 
-      // Stage 2：门控命中且指纹变化后，仅抓一次 1920×1080 高清画面送 WinRT OCR
-      const captured = await captureGameOrScreen(false, { width: 1920, height: 1080 });
+      // Stage 2：门控命中且指纹变化后，暂时隐藏悬浮窗防遮挡，仅抓一次 1920×1080 高清画面送 WinRT OCR
+      const captured = await captureWithHudHidden(false, { width: 1920, height: 1080 });
       if (!captured || disposed || !autoPollEnabled || mainWindow.isDestroyed()) return;
       const size = captured.image.getSize();
       if (Math.min(size.width, size.height) < 200) return;
@@ -810,6 +835,10 @@ function installCovenantOcr({
         id: `ocr-auto-${Date.now()}`,
         status: merged.complete ? 'ready' : 'incomplete',
         source: 'auto',
+        progress: merged.complete ? 100 : Math.min(96, Math.round((merged.seenCovenants.length / 26) * 100)),
+        stageLabel: merged.complete
+          ? (merged.isQuickMode ? '已读全 18/18' : '已读全 26/26')
+          : `已识别 ${merged.seenCovenants.length}/26`,
         complete: merged.complete,
         bannedCovenants: merged.bannedCovenants,
         seenCovenants: merged.seenCovenants,
@@ -836,7 +865,9 @@ function installCovenantOcr({
       id,
       status: 'scanning',
       source: mode === 'clipboard' ? 'clipboard' : 'manual',
-      message: mode === 'clipboard' ? '正在识别剪贴板截图中的盟约…' : '正在截取游戏画面识别本局禁选…',
+      progress: 18,
+      stageLabel: mode === 'clipboard' ? '读取剪贴板截图' : '暂时隐藏悬浮窗并截取画面',
+      message: mode === 'clipboard' ? '正在识别剪贴板截图中的盟约…' : '已暂时隐藏悬浮窗，正在截取游戏画面…',
     });
     try {
       let image;
@@ -846,20 +877,38 @@ function installCovenantOcr({
           throw new Error('剪贴板中没有截图，请先按 Win+Shift+S 截图后再粘贴识别。');
         }
       } else {
-        const captured = await captureGameOrScreen(true, { width: 1920, height: 1080 });
+        const captured = await captureWithHudHidden(true, { width: 1920, height: 1080 });
         if (!captured) throw new Error('未找到明日方舟窗口或可用屏幕画面。');
         image = captured.image;
       }
+      publish({
+        id,
+        status: 'scanning',
+        progress: 56,
+        stageLabel: 'OCR 文字识别与图标采样',
+        message: '正在识别画面中的盟约文字与灰态受限标记…',
+      });
       const result = await recognizeNativeImage(image);
       if (result.seenCovenants.length === 0) {
         throw new Error('未在画面中识别到盟约总览，请确认游戏处于「1/3 确认本局信息」界面且未被遮挡。');
       }
+      publish({
+        id,
+        status: 'scanning',
+        progress: 88,
+        stageLabel: '合并与校验盟约状态',
+        message: `已提取 ${result.seenCovenants.length} 项盟约，正在校验合并结果…`,
+      });
       const merged = mergeCovenantScanResult(accumulatedStates, result, { forceReset: state.complete });
       lastAutoAppliedSignature = `${merged.complete ? 1 : 0}:${merged.seenCovenants.length}:${merged.bannedCovenants.join(',')}`;
       return publish({
         id,
         status: merged.complete ? 'ready' : 'incomplete',
         source: mode === 'clipboard' ? 'clipboard' : 'manual',
+        progress: merged.complete ? 100 : Math.min(96, Math.round((merged.seenCovenants.length / 26) * 100)),
+        stageLabel: merged.complete
+          ? (merged.isQuickMode ? '已读全 18/18' : '已读全 26/26')
+          : `已识别 ${merged.seenCovenants.length}/26`,
         complete: merged.complete,
         bannedCovenants: merged.bannedCovenants,
         seenCovenants: merged.seenCovenants,
@@ -875,6 +924,8 @@ function installCovenantOcr({
         id,
         status: 'error',
         source: mode === 'clipboard' ? 'clipboard' : 'manual',
+        progress: 0,
+        stageLabel: '识别未完成',
         message: err instanceof Error ? err.message : 'OCR 识别失败，请重试或手动点选。',
       });
     } finally {
@@ -899,6 +950,8 @@ function installCovenantOcr({
       status: 'idle',
       source: 'none',
       message: '',
+      progress: 0,
+      stageLabel: '',
       complete: false,
       bannedCovenants: [],
       seenCovenants: [],

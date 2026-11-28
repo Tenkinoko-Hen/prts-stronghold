@@ -697,6 +697,24 @@ export default function MumuDrawerApp({
                 )}
               </div>
 
+              {(banSync.ocrStatus === 'scanning' || (banSync.syncSource === 'ocr' && banSync.ocrSeenCount > 0)) && (
+                <div
+                  className={`d-ocr-progress ${banSync.ocrStatus === 'scanning' ? 'is-scanning' : (banSync.ocrComplete ? 'is-complete' : 'is-partial')}`}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={banSync.ocrStatus === 'scanning' ? Math.max(12, Math.min(96, banSync.ocrProgress || 25)) : (banSync.ocrComplete ? 100 : banSync.ocrProgress)}
+                >
+                  <div className="d-ocr-progress-head">
+                    <span>{banSync.ocrStageLabel || (banSync.ocrStatus === 'scanning' ? '暂时隐藏悬浮窗并识别…' : `已识别 ${banSync.ocrSeenCount}/26`)}</span>
+                    <b>{banSync.ocrStatus === 'scanning' ? Math.max(12, Math.min(96, banSync.ocrProgress || 25)) : (banSync.ocrComplete ? 100 : banSync.ocrProgress)}%</b>
+                  </div>
+                  <div className="d-ocr-progress-track">
+                    <i className="d-ocr-progress-fill" style={{ width: `${banSync.ocrStatus === 'scanning' ? Math.max(12, Math.min(96, banSync.ocrProgress || 25)) : (banSync.ocrComplete ? 100 : banSync.ocrProgress)}%` }} />
+                  </div>
+                </div>
+              )}
+
               {banState.bannedCovenants.length > 0 ? (
                 <div className="mumu-ban-chips" aria-label="已禁盟约">
                   {banState.bannedCovenants.map(name => (

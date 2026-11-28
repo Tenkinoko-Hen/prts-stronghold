@@ -45,6 +45,8 @@ export interface BossTeamRow {
   damage: number;
   dps: number | null;
   sharePct: number;
+  bossHpPct: number | null;
+  sourceKind: 'server' | 'uplink' | 'top3' | 'milestone' | 'none';
 }
 
 function seatLabel(seat: number, report?: BattleReport | null): string {
@@ -92,7 +94,18 @@ export function buildHudBossTeamData({
   selfSeat: number | null;
 }) {
   const seats = soloMode ? ([1] as const) : REPORT_SEATS;
+  const hasServerTotals = Boolean(
+    bossRound && (
+      bossRound.bossStatus === 'settlement'
+      || Object.values(bossRound.bossDamage).some(v => v > 0)
+    ),
+  );
+  const defeated = Boolean(
+    parsed && bossRound && parsed.defeatedBossRounds.includes(bossRound.number),
+  );
   const dmgBySeat: Record<number, number> = {};
+  const sourceBySeat: Record<number, BossTeamRow['sourceKind']> = {};
+  let selfUplinkTotal = 0;
   if (bossRound) {
     const officialSum: Record<number, number> = {};
     for (const h of bossRound.bossOfficial) {
@@ -103,15 +116,27 @@ export function buildHudBossTeamData({
       if (h.damage > 0) uplinkSum[h.seat] = (uplinkSum[h.seat] ?? 0) + h.damage;
     }
     for (const s of seats) {
-      const direct = Math.max(bossRound.bossDamage[s] ?? 0, bossRound.bossUplink[s] ?? 0);
-      const merged = Math.max(direct, officialSum[s] ?? 0, uplinkSum[s] ?? 0);
-      if (merged > 0) {
-        dmgBySeat[s] = merged;
+      const serverDmg = bossRound.bossDamage[s] ?? 0;
+      const up = Math.max(bossRound.bossUplink[s] ?? 0, uplinkSum[s] ?? 0);
+      const off = officialSum[s] ?? 0;
+      if (s === selfSeat && up > 0) selfUplinkTotal = up;
+      if (hasServerTotals && serverDmg > 0) {
+        dmgBySeat[s] = serverDmg;
+        sourceBySeat[s] = 'server';
+      } else if (up > 0 && up >= off) {
+        dmgBySeat[s] = up;
+        sourceBySeat[s] = 'uplink';
+      } else if (off > 0) {
+        dmgBySeat[s] = off;
+        sourceBySeat[s] = 'top3';
+      } else {
+        sourceBySeat[s] = 'none';
       }
     }
     const knownTotal = seats.reduce((sum, s) => sum + (dmgBySeat[s] ?? 0), 0);
-    const bossHpRaw = bossPool?.hp ?? bossRound.bossHp ?? null;
-    let estMaxHp = bossPool?.maxHp && bossPool.maxHp > 0 ? bossPool.maxHp : null;
+    const bossHpRaw = bossRound.bossHp ?? bossPool?.maxHp ?? bossPool?.hp ?? null;
+    let estMaxHp = (bossRound.bossHp && bossRound.bossHp > 0 ? bossRound.bossHp : null)
+      ?? (bossPool?.maxHp && bossPool.maxHp > 0 ? bossPool.maxHp : null);
     if (!estMaxHp) {
       for (const s of seats) {
         const d = dmgBySeat[s] ?? 0;
@@ -131,18 +156,27 @@ export function buildHudBossTeamData({
           const pct = bossRound.bossPercent[s] ?? 0;
           if (pct > 0) {
             const est = Math.round((estMaxHp * pct) / 100);
-            if (est > 0) dmgBySeat[s] = est;
+            if (est > 0) {
+              dmgBySeat[s] = est;
+              sourceBySeat[s] = 'milestone';
+            }
           }
         }
       }
     }
   }
+  const bossMaxHp = (bossRound?.bossHp && bossRound.bossHp > 0 ? bossRound.bossHp : null)
+    ?? (bossPool?.maxHp && bossPool.maxHp > 0 ? bossPool.maxHp : null)
+    ?? (bossPool?.hp !== undefined && bossPool.hp !== null ? Math.max(bossPool.hp, 0) : null);
   const teamTotal = seats.reduce((sum, s) => sum + (dmgBySeat[s] ?? 0), 0);
   const ranked = [...seats].sort((a, b) => (dmgBySeat[b] ?? 0) - (dmgBySeat[a] ?? 0) || a - b);
   const rows: BossTeamRow[] = ranked.map((seat, idx) => {
     const damage = dmgBySeat[seat] ?? 0;
     const pctFallback = bossRound?.bossPercent[seat];
     const sharePct = teamTotal > 0 ? (damage * 100) / teamTotal : (pctFallback ?? 0);
+    const bossHpPct = bossMaxHp && bossMaxHp > 0 && damage > 0
+      ? Math.min(100, (damage * 100) / bossMaxHp)
+      : (pctFallback ?? null);
     const dps = damage > 0 && bossElapsedSec && bossElapsedSec > 0 ? damage / bossElapsedSec : null;
     return {
       rank: idx + 1,
@@ -152,17 +186,39 @@ export function buildHudBossTeamData({
       damage,
       dps,
       sharePct,
+      bossHpPct,
+      sourceKind: sourceBySeat[seat] ?? 'none',
     };
   });
   const teamDps = teamTotal > 0 && bossElapsedSec && bossElapsedSec > 0 ? teamTotal / bossElapsedSec : null;
-  const bossHp = bossPool?.hp ?? bossRound?.bossHp ?? null;
-  const bossMaxHp = bossPool?.maxHp ?? (bossHp !== null ? Math.max(bossHp + teamTotal, bossHp) : null);
-  const hpPct = bossHp !== null && bossMaxHp && bossMaxHp > 0
-    ? Math.max(0, Math.min(100, Math.round((bossHp * 100) / bossMaxHp)))
-    : null;
+  const hasRealBossHp = Boolean(defeated || hasServerTotals || (bossPool && parsed?.telemetry?.coverage && parsed.telemetry.coverage !== 'protocol'));
+  const bossHp = defeated
+    ? 0
+    : hasServerTotals && bossMaxHp !== null
+      ? Math.max(0, bossMaxHp - teamTotal)
+      : hasRealBossHp
+        ? (bossPool?.hp ?? bossMaxHp)
+        : bossMaxHp;
+  const hpPct = defeated
+    ? 0
+    : hasRealBossHp && bossHp !== null && bossMaxHp && bossMaxHp > 0
+      ? Math.max(0, Math.min(100, Math.round((bossHp * 100) / bossMaxHp)))
+      : null;
   const bossEnemyId = bossPool?.enemyId || bossLeader?.id || '';
   const bossName = bossPool?.name || bossLeader?.name || '终局首领';
-  return { rows, teamTotal, teamDps, bossHp, hpPct, bossEnemyId, bossName };
+  return {
+    rows,
+    teamTotal,
+    teamDps,
+    bossHp,
+    bossMaxHp,
+    hpPct,
+    defeated,
+    hasServerTotals,
+    selfUplinkTotal,
+    bossEnemyId,
+    bossName,
+  };
 }
 
 /**

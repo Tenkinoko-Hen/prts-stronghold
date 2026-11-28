@@ -2,7 +2,7 @@
 import { useId, useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, Cpu, Flame, HeartPulse, Shield, Skull, Sparkles, Swords, Users } from 'lucide-react';
 import { resolveOperatorAvatars } from '../data/prtsAvatars';
-import { REPORT_SEATS, type BattleReport } from './battleReportData';
+import { defaultBossRound, REPORT_SEATS, type BattleReport } from './battleReportData';
 import { seatDisplayText, seatName } from './BattleReportPanels';
 import { EquipIcon } from './EquipIcon';
 import {
@@ -539,6 +539,37 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
   const avgDps = durationSec && durationSec > 0 ? totalMetricSum / durationSec : null;
   const peakDps = timeline.length > 0 ? Math.max(...timeline.map(p => p.dps)) : avgDps;
   const currentDps = timeline.length > 0 ? timeline[timeline.length - 1].dps : avgDps;
+  const activeBossRoundNo = selectedRound !== 'live'
+    ? selectedRound
+    : (roundNumbers.length > 0 ? roundNumbers[roundNumbers.length - 1] : defaultBossRound(report));
+  const activeBossRow = activeBossRoundNo !== null
+    ? report.rounds.find(r => r.number === activeBossRoundNo)
+    : undefined;
+  const isBossDefeated = Boolean(
+    activeBossRoundNo !== null && report.defeatedBossRounds.includes(activeBossRoundNo),
+  );
+  const hasServerBossTotals = Boolean(
+    activeBossRow && (
+      activeBossRow.bossStatus === 'settlement'
+      || Object.values(activeBossRow.bossDamage).some(v => v > 0)
+    ),
+  );
+  const serverBossDamageTotal = activeBossRow && hasServerBossTotals
+    ? Object.values(activeBossRow.bossDamage).reduce((sum, v) => sum + v, 0)
+    : null;
+  const isProtocolBossBar = Boolean(pool?.boss && activeSnap?.coverage === 'protocol');
+  const displayBossMaxHp = (activeBossRow?.bossHp && activeBossRow.bossHp > 0 ? activeBossRow.bossHp : null)
+    ?? (pool?.boss ? pool.boss.maxHp : (pool?.liveMaxHp ?? 0));
+  const activeRoundObservedDmg = activeBossRow
+    ? (activeBossRow.bossOfficial.reduce((s, h) => s + h.damage, 0)
+        || Object.values(activeBossRow.bossUplink).reduce((s, v) => s + v, 0))
+    : totalMetricSum;
+  const displayBossRemainHp = isBossDefeated
+    ? 0
+    : isProtocolBossBar && serverBossDamageTotal !== null
+      ? Math.max(0, displayBossMaxHp - serverBossDamageTotal)
+      : (pool?.boss ? pool.boss.hp : (pool?.liveHp ?? 0));
+  const bossBarUnknownRemain = Boolean(isProtocolBossBar && !isBossDefeated && !hasServerBossTotals);
 
   return (
     <div className="d-tele-shell">
@@ -663,9 +694,13 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
               {pool.boss ? `首领 · ${pool.boss.name}` : '战场敌方实时血池'}
             </span>
             <span>
-              剩余生命 <b>{formatTelemetryTotal(pool.boss ? pool.boss.hp : pool.liveHp)}</b>
-              {' / '}
-              {formatTelemetryTotal(pool.boss ? pool.boss.maxHp : pool.liveMaxHp)}
+              {isBossDefeated ? (
+                <>已击破 · 剩余生命 <b>0</b>{' / '}{formatTelemetryTotal(displayBossMaxHp)}</>
+              ) : bossBarUnknownRemain ? (
+                <>首领总血量 <b>{formatTelemetryTotal(displayBossMaxHp)}</b>{' · '}前3单卡已观测 {formatTelemetryTotal(activeRoundObservedDmg || totalMetricSum)}（非实时剩余血量）</>
+              ) : (
+                <>剩余生命 <b>{formatTelemetryTotal(displayBossRemainHp)}</b>{' / '}{formatTelemetryTotal(displayBossMaxHp)}</>
+              )}
             </span>
             {pool.respawnResets > 0 && <span className="d-tele-rebirth">阶段重生 ×{pool.respawnResets}</span>}
           </div>
@@ -673,14 +708,16 @@ export function BattleReportTelemetry({ report }: { report?: BattleReport }) {
             <span
               style={{
                 width: `${
-                  (pool.boss ? pool.boss.maxHp : pool.liveMaxHp) > 0
-                    ? Math.min(
-                        100,
-                        ((pool.boss ? pool.boss.hp : pool.liveHp) /
-                          (pool.boss ? pool.boss.maxHp : pool.liveMaxHp)) *
+                  isBossDefeated
+                    ? 0
+                    : displayBossMaxHp > 0
+                      ? Math.min(
                           100,
-                      )
-                    : 0
+                          bossBarUnknownRemain
+                            ? ((activeRoundObservedDmg || totalMetricSum) / displayBossMaxHp) * 100
+                            : (displayBossRemainHp / displayBossMaxHp) * 100,
+                        )
+                      : 0
                 }%`,
               }}
             />

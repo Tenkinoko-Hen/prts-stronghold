@@ -553,6 +553,10 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
     latest_duration: float | None = None
     latest_timeline: list[dict] = []
     latest_boss_hp: float | None = None
+    latest_boss_round: int | None = None
+    latest_boss_round_dmg: float = 0.0
+    latest_boss_server_total: float = 0.0
+    defeated_rounds = {int(r) for r in (match_snapshot.get("defeated_boss_rounds") or ()) if str(r).isdigit()}
 
     for round_no in sorted(boss_round_candidates):
         row = rounds.get(round_no) or rounds.get(str(round_no))
@@ -565,6 +569,9 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
             latest_duration = dur_sec
         if isinstance(row.get("boss_hp"), (int, float)) and row["boss_hp"] > 0:
             latest_boss_hp = float(row["boss_hp"])
+            latest_boss_round = round_no
+            srv = row.get("boss_damage") or row.get("boss_settlement") or row.get("boss_totals") or {}
+            latest_boss_server_total = float(sum(v for v in srv.values() if isinstance(v, (int, float)) and v > 0)) if isinstance(srv, Mapping) else 0.0
 
         # Build per-round timeline points (t, dps, total)
         round_tl: list[dict] = []
@@ -636,8 +643,31 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
         if round_ops:
             r_list = sorted(round_ops.values(), key=lambda r: (-r["total_damage"], r["char_id"]))
             r_total = round(sum(r["total_damage"] for r in r_list), 1)
+            if round_no == latest_boss_round:
+                latest_boss_round_dmg = r_total
             for r in r_list:
                 r["share_ratio"] = round(r["total_damage"] / r_total, 4) if r_total > 0 else 0.0
+            r_boss_hp = float(row["boss_hp"]) if isinstance(row.get("boss_hp"), (int, float)) and row["boss_hp"] > 0 else None
+            r_pool = None
+            if r_boss_hp:
+                r_defeated = round_no in defeated_rounds
+                r_srv = row.get("boss_damage") or row.get("boss_settlement") or row.get("boss_totals") or {}
+                r_srv_total = float(sum(v for v in r_srv.values() if isinstance(v, (int, float)) and v > 0)) if isinstance(r_srv, Mapping) else 0.0
+                r_eff = max(r_total, r_srv_total)
+                r_remain = 0.0 if r_defeated else max(0.0, r_boss_hp - r_eff)
+                r_pool = {
+                    "active_count": 0 if r_defeated or r_remain <= 0 else 1,
+                    "defeated_count": 1 if r_defeated or (r_remain <= 0 and r_eff > 0) else 0,
+                    "respawn_resets": 0,
+                    "live_hp": round(r_remain, 1),
+                    "live_max_hp": round(r_boss_hp, 1),
+                    "boss": {
+                        "enemy_id": str(config.get("hidden_boss_id" if round_no == 15 else "boss_id") or config.get("boss_id") or ""),
+                        "name": "本局首领",
+                        "hp": round(r_remain, 1),
+                        "max_hp": round(r_boss_hp, 1),
+                    },
+                }
             round_snaps[str(round_no)] = {
                 "scope": scope,
                 "source": "protocol_wire",
@@ -648,7 +678,7 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
                 "team_total_healing": None,
                 "operators": r_list,
                 "stage_devices": [],
-                "enemy_pool": None,
+                "enemy_pool": r_pool,
                 "timeline": round_tl,
                 "rounds": {},
             }
@@ -663,15 +693,17 @@ def build_protocol_telemetry(match_snapshot: Mapping) -> dict | None:
 
     enemy_pool = None
     if latest_boss_hp and latest_boss_hp > 0:
-        remain = max(0.0, latest_boss_hp - total_dmg)
+        boss_defeated = latest_boss_round is not None and latest_boss_round in defeated_rounds
+        effective_dmg = max(latest_boss_round_dmg, latest_boss_server_total)
+        remain = 0.0 if boss_defeated else max(0.0, latest_boss_hp - effective_dmg)
         enemy_pool = {
-            "active_count": 1 if remain > 0 else 0,
-            "defeated_count": 1 if remain <= 0 and total_dmg > 0 else 0,
+            "active_count": 0 if boss_defeated or remain <= 0 else 1,
+            "defeated_count": 1 if boss_defeated or (remain <= 0 and effective_dmg > 0) else 0,
             "respawn_resets": 0,
             "live_hp": round(remain, 1),
             "live_max_hp": round(latest_boss_hp, 1),
             "boss": {
-                "enemy_id": str(config.get("boss_id") or ""),
+                "enemy_id": str(config.get("hidden_boss_id" if latest_boss_round == 15 else "boss_id") or config.get("boss_id") or ""),
                 "name": "本局首领",
                 "hp": round(remain, 1),
                 "max_hp": round(latest_boss_hp, 1),

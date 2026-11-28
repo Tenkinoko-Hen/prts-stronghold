@@ -781,6 +781,39 @@ class BossCaptureTests(unittest.TestCase):
         self.assertEqual(late_rows[14]['boss_damage'][3], 3200000)
         self.assertEqual(late_rows[15]['boss_damage'], {})
 
+    def test_protocol_telemetry_boss_hp_drops_to_zero_when_defeated_and_isolates_r15_from_r14(self):
+        from electron.prts_battle_core.combat_meter import build_protocol_telemetry
+        snap = {
+            'battle_config': {'mode_id': 'mode_multi_abyss', 'boss_id': 'boss_r14', 'hidden_boss_id': 'boss_r15'},
+            'boss_rounds': [14, 15],
+            'defeated_boss_rounds': [14],
+            'rounds': {
+                14: {
+                    'phase': 'boss',
+                    'boss_ended': True,
+                    'boss_hp': 15799000,
+                    'boss_official': [
+                        {'player': 2, 'identifier': 101, 'damage': 2704000, 'char_id': 'char_eyja', 'operator_name': '艾雅法拉'},
+                        {'player': 4, 'identifier': 102, 'damage': 3309000, 'char_id': 'char_ho', 'operator_name': '霍尔海雅'},
+                    ],
+                },
+                15: {
+                    'phase': 'boss',
+                    'boss_hp': 24000000,
+                    'boss_official': [
+                        {'player': 4, 'identifier': 102, 'damage': 278000, 'char_id': 'char_ho', 'operator_name': '霍尔海雅'},
+                    ],
+                },
+            },
+        }
+        tele = build_protocol_telemetry(snap)
+        self.assertIsNotNone(tele)
+        # R14 defeated -> per-round pool hp must be 0
+        self.assertEqual(tele['rounds']['14']['enemy_pool']['boss']['hp'], 0.0)
+        # R15 just started with 278k dmg -> root enemy_pool must NOT subtract R14's 6.01M from R15's 24M!
+        self.assertEqual(tele['enemy_pool']['boss']['max_hp'], 24000000.0)
+        self.assertEqual(tele['enemy_pool']['boss']['hp'], 24000000.0 - 278000.0)
+
 
 class LiveCaptureTests(unittest.TestCase):
     def test_worker_reports_top_unknown_message_ids_without_payload_data(self):

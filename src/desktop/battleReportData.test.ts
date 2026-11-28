@@ -901,8 +901,121 @@ test('Boss view prefers full own uplink sum over single Top-3 operator and label
     report: partialBoss, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
   }));
   assert.match(html, /410万/, 'Seat 2 should display full uplink total (410万) rather than single Top-3 operator (257.9万)');
+  assert.match(html, /全队 · 血25\.3%/, 'Seat 2 uplink should be labeled 全队 + Boss HP share rather than misleading team share');
+  assert.match(html, /单卡 · 血13\.5%/, 'Seat 1 Top-3 single op should be labeled 单卡 + Boss HP share');
   assert.match(html, /≥324万/, 'Seat 3 with 20% milestone should display floor ≥324万');
   assert.match(html, /达 20%/);
   assert.match(html, /未入前3/, 'Seat 4 outside Top-3 with no milestone should display clear 未入前3 label');
   assert.match(html, /已观测输出/);
+});
+
+test('HUD and Telemetry Boss HP drop to 0 when defeated and avoid bogus remaining HP during Top-3 only combat', async () => {
+  const { buildHudBossTeamData } = await import('./hudTelemetryViewModel');
+  const { BattleReportTelemetry } = await import('./BattleReportTelemetry');
+
+  const defeatedReport = readBattleReport({
+    capture: { match: 1, round: 15, self: 2 },
+    players: { 1: '队友甲', 2: '本机乙', 3: '队友丙', 4: '队友丁' },
+    battle_config: { mode_id: 'mode_multi_abyss', boss_id: 'enemy_boss_1' },
+    defeated_boss_rounds: [14],
+    rounds: {
+      14: {
+        phase: 'boss',
+        boss_ended: true,
+        boss_hp: 15799000,
+        boss_status: 'unknown',
+        boss_official: [
+          { player: 2, identifier: 101, damage: 2704000, operator_name: '艾雅法拉' },
+          { player: 4, identifier: 102, damage: 1778000, operator_name: '霍尔海雅' },
+        ],
+        boss_uplink: { 2: 4694000 },
+      },
+    },
+    telemetry: {
+      scope: 'coop_boss',
+      source: 'protocol_wire',
+      coverage: 'protocol',
+      logic_seconds: 74.2,
+      team_total_damage: 4482000,
+      operators: [
+        { char_id: 'char_1', name: '艾雅法拉', seat: 2, total_damage: 2704000, share_ratio: 0.6 },
+        { char_id: 'char_2', name: '霍尔海雅', seat: 4, total_damage: 1778000, share_ratio: 0.4 },
+      ],
+      enemy_pool: {
+        active_count: 1,
+        defeated_count: 0,
+        respawn_resets: 0,
+        live_hp: 11317000,
+        live_max_hp: 15799000,
+        boss: { enemy_id: 'enemy_boss_1', name: '本局首领', hp: 11317000, max_hp: 15799000 },
+      },
+      rounds: {
+        '14': {
+          scope: 'coop_boss',
+          source: 'protocol_wire',
+          coverage: 'protocol',
+          logic_seconds: 74.2,
+          team_total_damage: 4482000,
+          operators: [],
+        },
+      },
+    },
+  });
+
+  const hudDefeated = buildHudBossTeamData({
+    parsed: defeatedReport,
+    bossRound: defeatedReport.rounds[0],
+    bossPool: defeatedReport.telemetry?.enemyPool?.boss ?? null,
+    bossLeader: null,
+    bossElapsedSec: 74.2,
+    soloMode: false,
+    selfSeat: 2,
+  });
+  assert.equal(hudDefeated.defeated, true);
+  assert.equal(hudDefeated.bossHp, 0);
+  assert.equal(hudDefeated.hpPct, 0);
+  assert.equal(hudDefeated.hasServerTotals, false);
+  assert.equal(hudDefeated.rows.find(r => r.seat === 2)?.sourceKind, 'uplink');
+  assert.equal(hudDefeated.rows.find(r => r.seat === 4)?.sourceKind, 'top3');
+
+  const teleDefeatedHtml = renderToStaticMarkup(createElement(BattleReportTelemetry, { report: defeatedReport }));
+  assert.match(teleDefeatedHtml, /已击破 · 剩余生命 <b>0<\/b>/);
+
+  // Mid-combat before defeat: must NOT claim maxHp - top3Sum is real remaining HP
+  const midCombatReport = readBattleReport({
+    ...({
+      capture: { match: 1, round: 14, self: 2 },
+      players: { 2: '本机乙', 4: '队友丁' },
+      battle_config: { mode_id: 'mode_multi_abyss', boss_id: 'enemy_boss_1' },
+      defeated_boss_rounds: [],
+      rounds: {
+        14: {
+          phase: 'boss',
+          boss_hp: 15799000,
+          boss_status: 'unknown',
+          boss_official: [{ player: 2, identifier: 101, damage: 2704000, operator_name: '艾雅法拉' }],
+        },
+      },
+      telemetry: {
+        scope: 'coop_boss',
+        source: 'protocol_wire',
+        coverage: 'protocol',
+        logic_seconds: 40,
+        team_total_damage: 2704000,
+        operators: [{ char_id: 'char_1', name: '艾雅法拉', seat: 2, total_damage: 2704000, share_ratio: 1 }],
+        enemy_pool: {
+          active_count: 1,
+          defeated_count: 0,
+          respawn_resets: 0,
+          live_hp: 13095000,
+          live_max_hp: 15799000,
+          boss: { enemy_id: 'enemy_boss_1', name: '本局首领', hp: 13095000, max_hp: 15799000 },
+        },
+        rounds: {},
+      },
+    }),
+  });
+  const teleMidHtml = renderToStaticMarkup(createElement(BattleReportTelemetry, { report: midCombatReport }));
+  assert.match(teleMidHtml, /前3单卡已观测/);
+  assert.match(teleMidHtml, /非实时剩余血量/);
 });

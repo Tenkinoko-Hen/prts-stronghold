@@ -267,6 +267,8 @@ export default function HudStripApp({
   );
 
   // Auto-switch to DPS once per Boss round (never overrides user's subsequent clicks!)
+  // During combat before 4-seat settlement, default to fair apples-to-apples `ops` (Top-3 single operators)
+  // so own all-operator uplink is not misread against teammates' single Top-3 operator.
   useEffect(() => {
     if (previewState) return;
     const activeBossActive = Boolean(
@@ -276,11 +278,11 @@ export default function HudStripApp({
     if (activeBossActive && autoSwitchedBossRoundRef.current !== roundNo) {
       autoSwitchedBossRoundRef.current = roundNo;
       setActiveTab('dps');
-      setDpsSub(!soloMode && bossTeamData.teamTotal > 0 ? 'team' : 'ops');
+      setDpsSub(!soloMode && bossTeamData.hasServerTotals && bossTeamData.teamTotal > 0 ? 'team' : (opRows.length > 0 ? 'ops' : 'team'));
     } else if (!activeBossActive && autoSwitchedBossRoundRef.current !== 0 && roundNo < 14) {
       autoSwitchedBossRoundRef.current = 0;
     }
-  }, [activeRound, bossPool, bossTeamData.teamTotal, parsed, previewState, roundNo, soloMode]);
+  }, [activeRound, bossPool, bossTeamData.hasServerTotals, bossTeamData.teamTotal, opRows.length, parsed, previewState, roundNo, soloMode]);
 
   // Keep leakSelectedRound synced to latest round when viewing cumulative
   useEffect(() => {
@@ -737,19 +739,23 @@ export default function HudStripApp({
                       }}
                     />
                   )}
-                  <span style={{ position: 'relative', color: '#ffffff', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {bossTeamData.hpPct !== null
-                      ? `BOSS HP ${bossTeamData.hpPct}% · 余 ${formatTelemetryTotal(bossTeamData.bossHp ?? 0)}`
-                      : bossTeamData.bossHp !== null
-                        ? `BOSS 余 ${formatTelemetryTotal(bossTeamData.bossHp)}`
-                        : 'BOSS 伤害统计'}
+                  <span style={{ position: 'relative', color: bossTeamData.defeated ? '#4ade80' : '#ffffff', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    {bossTeamData.defeated
+                      ? 'BOSS 已击破 · 0%'
+                      : bossTeamData.hpPct !== null
+                        ? `BOSS HP ${bossTeamData.hpPct}% · 余 ${formatTelemetryTotal(bossTeamData.bossHp ?? 0)}`
+                        : bossTeamData.bossMaxHp !== null
+                          ? `BOSS 总血 ${formatTelemetryTotal(bossTeamData.bossMaxHp)}`
+                          : 'BOSS 伤害统计'}
                   </span>
                   <span style={{ position: 'relative', color: '#fef08a', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {bossTeamData.teamTotal > 0
+                    {bossTeamData.hasServerTotals && bossTeamData.teamTotal > 0
                       ? `全队 ${formatTelemetryTotal(bossTeamData.teamTotal)}${bossTeamData.teamDps ? ` · ${formatTelemetryRate(bossTeamData.teamDps)}` : ''}${fmtMmSs(bossElapsedSec) ? ` · ${fmtMmSs(bossElapsedSec)}` : ''}`
-                      : opRows.length > 0
-                        ? `参战 ${opRows.length} 干员`
-                        : '等待伤害'}
+                      : bossTeamData.selfUplinkTotal > 0
+                        ? `我方全队 ${formatTelemetryTotal(bossTeamData.selfUplinkTotal)}${fmtMmSs(bossElapsedSec) ? ` · ${fmtMmSs(bossElapsedSec)}` : ''}`
+                        : opRows.length > 0
+                          ? `前${opRows.length}单卡 ${formatTelemetryTotal(opRows.reduce((s, o) => s + o.damage, 0))}`
+                          : '等待伤害'}
                   </span>
                 </div>
 
@@ -766,8 +772,8 @@ export default function HudStripApp({
                     }}
                   >
                     {([
-                      ['team', '4人榜'],
-                      ['ops', '干员DPS'],
+                      ['team', bossTeamData.hasServerTotals ? '4人榜' : '4人参考'],
+                      ['ops', bossTeamData.hasServerTotals ? '干员DPS' : '前3单卡'],
                     ] as const).map(([id, label]) => (
                       <button
                         key={id}
@@ -837,16 +843,25 @@ export default function HudStripApp({
                           <strong style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-sans)', fontSize: fs(12.5), fontWeight: row.isSelf ? 700 : 600, color: '#ffffff' }}>
                             {row.label}
                           </strong>
+                          {!bossTeamData.hasServerTotals && row.sourceKind !== 'none' && (
+                            <span style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(10.5), color: row.sourceKind === 'uplink' ? '#fef08a' : '#94a3b8', padding: '0 4px', borderRadius: '2px', border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.55)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {row.sourceKind === 'uplink' ? '全队' : row.sourceKind === 'top3' ? '单卡' : '达标'}
+                            </span>
+                          )}
                           <b style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(12.5), fontWeight: 800, color: '#ffffff', minWidth: '54px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            {row.damage > 0 ? formatTelemetryTotal(row.damage) : '—'}
+                            {row.damage > 0 ? `${row.sourceKind === 'milestone' ? '≥' : ''}${formatTelemetryTotal(row.damage)}` : '—'}
                           </b>
                           {row.dps !== null && (
                             <span style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(11.5), color: row.isSelf ? '#fef08a' : '#bae6fd', minWidth: '58px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                               {formatTelemetryRate(row.dps)}
                             </span>
                           )}
-                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: fs(12), fontWeight: 700, color: '#e2e8f0', minWidth: '44px', textAlign: 'right' }}>
-                            {row.sharePct.toFixed(1)}%
+                          <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: fs(12), fontWeight: 700, color: '#e2e8f0', minWidth: '48px', textAlign: 'right' }}>
+                            {bossTeamData.hasServerTotals
+                              ? `${row.sharePct.toFixed(1)}%`
+                              : row.bossHpPct !== null
+                                ? `血${row.bossHpPct.toFixed(0)}%`
+                                : '—'}
                           </span>
                         </div>
                       );

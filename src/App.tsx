@@ -45,11 +45,13 @@ import { HotUpdateControl } from './desktop/HotUpdateControl';
 import { useReportPersistence } from './desktop/useReportPersistence';
 import { LanSyncDialog } from './desktop/LanSyncDialog';
 import MumuDrawerApp from './desktop/MumuDrawerApp';
+import { FunToolsView } from './desktop/FunToolsView';
+import { useTacticalRadio } from './desktop/tacticalRadio';
 import { BanPickState, getRecommendedPaceForRound } from './utils/tacticalLogic';
 import './desktop/desktop.css';
 import './desktop/mumuDrawer.css';
 
-type PrimaryDomain = 'guide' | 'reports' | 'reference';
+type PrimaryDomain = 'guide' | 'reports' | 'reference' | 'fun';
 type ReferenceTab = 'tactical' | 'transfers' | 'covenants' | 'calculator';
 
 const FAV_STORAGE_KEY = 'stronghold_fav_covenants_v1';
@@ -231,6 +233,11 @@ export default function App() {
       setGuideStage(action.nextStage);
     }
   }, desktopAPI?.battleReports || isMumuDemo ? { externalFeed: latestFeed } : undefined);
+
+  const tacticalRadio = useTacticalRadio({
+    report: records.live?.report ?? null,
+    banSync,
+  });
 
   const prevLiveRoundRef = useRef<number | null>(null);
   const roundFollowRef = useRef({ currentRound, autoFollowRound });
@@ -490,6 +497,19 @@ export default function App() {
           >
             <span className="d-nav-code">{desktopAPI?.battleReports || isMumuDemo ? '03' : '02'}</span>战术资料
           </a>
+          <a
+            href="#fun"
+            aria-current={activeDomain === 'fun' ? 'page' : undefined}
+            className={tacticalRadio.isPlaying ? 'is-radio-live' : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveDomain('fun');
+            }}
+            title={tacticalRadio.isPlaying ? `战术电台播放中：${tacticalRadio.activeTrackLabel}` : '趣味工具栏（战术电台 / 动态 BGM 等小工具）'}
+          >
+            <span className="d-nav-code">{desktopAPI?.battleReports || isMumuDemo ? '04' : '03'}</span>趣味工具
+            {tacticalRadio.isPlaying && <span className="d-nav-live-dot" aria-hidden="true" />}
+          </a>
         </nav>
 
         <div className="d-header-tools">
@@ -704,6 +724,12 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 4b. Domain 04: Fun Tools Hub (Tactical Radio & Future Mini-Tools) */}
+      <FunToolsView
+        visible={activeDomain === 'fun'}
+        radio={tacticalRadio}
+      />
 
       {/* 5. High-Resolution Original Image Lightbox Modal */}
       {lightboxImage && (

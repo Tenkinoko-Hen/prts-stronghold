@@ -46,6 +46,34 @@ export interface BattleReportsBridge {
   onState(callback: (state: ReportFeed) => void): () => void;
 }
 
+export interface ReportStoreConfig {
+  dir: string;
+  defaultDir: string;
+  isCustom: boolean;
+  count: number;
+  maxCount: number;
+}
+
+export interface ReportStoreLoadResult {
+  config: ReportStoreConfig;
+  records: ReportRecord[];
+}
+
+export interface ReportStoreChooseResult extends ReportStoreLoadResult {
+  canceled: boolean;
+  migratedCount: number;
+  error?: string;
+}
+
+export interface ReportStoreBridge {
+  load(): Promise<ReportStoreLoadResult>;
+  save(record: ReportRecord): Promise<{ ok: boolean; storageId?: string; config?: ReportStoreConfig; error?: string }>;
+  remove(keyOrId: string): Promise<{ ok: boolean; config?: ReportStoreConfig }>;
+  chooseDir(options?: { migrate?: boolean }): Promise<ReportStoreChooseResult>;
+  resetDir(): Promise<ReportStoreLoadResult>;
+  openDir(): Promise<boolean>;
+}
+
 export interface CovenantOcrState {
   id: string;
   status: 'idle' | 'scanning' | 'ready' | 'incomplete' | 'error';
@@ -190,6 +218,7 @@ declare global {
       hotUpdate?: HotUpdateBridge;
       windowLayout?: WindowLayoutBridge;
       battleReports?: BattleReportsBridge;
+      reportStore?: ReportStoreBridge;
       covenantOcr?: CovenantOcrBridge;
       hud?: HudOverlayBridge;
       lanSync?: LanSyncBridge;
@@ -201,6 +230,7 @@ export type ManualNames = Partial<Record<(typeof REPORT_SEATS)[number], string>>
 export type ReportSeat = (typeof REPORT_SEATS)[number];
 export interface ReportRecord {
   key: string;
+  storageId?: string;
   report: BattleReport;
   label: string;
   seenAt: number;
@@ -208,8 +238,36 @@ export interface ReportRecord {
   manualSelfSeat?: ReportSeat;
 }
 export interface ReportRecords { live?: ReportRecord; history: ReportRecord[] }
-export const MAX_REPORT_HISTORY = 20;
+export const MAX_REPORT_HISTORY = 60;
 export const MAX_MANUAL_NAME_LENGTH = 80;
+
+export function recordStorageId(entry: ReportRecord): string {
+  if (entry.storageId) return entry.storageId;
+  if (entry.key.startsWith('saved:')) return entry.key.slice('saved:'.length);
+  const matchPart = entry.report.match === null ? 'local' : String(entry.report.match).replace(/[^A-Za-z0-9._-]+/g, '-');
+  return `report-${Math.trunc(entry.seenAt)}-${matchPart || 'local'}`;
+}
+
+export function mergeLoadedHistory(current: ReportRecords, loaded: ReportRecord[]): ReportRecords {
+  if (!loaded.length) return current;
+  const seenIds = new Set<string>();
+  if (current.live) seenIds.add(recordStorageId(current.live));
+  const merged: ReportRecord[] = [];
+  for (const item of [...current.history, ...loaded]) {
+    const id = recordStorageId(item);
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    merged.push(item.storageId ? item : { ...item, storageId: id });
+  }
+  merged.sort((a, b) => b.seenAt - a.seenAt);
+  return { live: current.live, history: merged.slice(0, MAX_REPORT_HISTORY) };
+}
+
+export function removeHistoryRecord(records: ReportRecords, key: string): ReportRecords {
+  const targetId = key.startsWith('saved:') ? key.slice('saved:'.length) : key;
+  const history = records.history.filter(item => item.key !== key && recordStorageId(item) !== targetId);
+  return history.length === records.history.length ? records : { live: records.live, history };
+}
 
 export const canEditPlayerNames = (entry: ReportRecord) => entry.report.match !== null;
 export const canConfirmSelfSeat = (entry: ReportRecord) => canEditPlayerNames(entry) && entry.report.self === null;

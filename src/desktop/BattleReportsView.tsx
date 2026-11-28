@@ -14,6 +14,8 @@ import { BattleReportRoster } from './BattleReportRoster';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
 import { SeatTelemetryStrip } from './SeatTelemetryStrip';
+import { ReportStorageButton } from './ReportStorageDialog';
+import { useReportPersistence, type ReportStorageController } from './useReportPersistence';
 import { isSoloStageMode } from './combatTelemetry';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
 import { reportWithPlayerNames, setReportPlayerNames, setReportSelfSeat, updateLiveReport, type BattleReportsBridge, type NpcapInstallState, type ReportFeed,
@@ -57,6 +59,7 @@ export default function BattleReportsView({
   shared?: {
     records: ReportRecords;
     setRecords: React.Dispatch<React.SetStateAction<ReportRecords>>;
+    storage?: ReportStorageController;
     status: ReportStatus;
     npcapInstalled?: boolean;
     npcapInstall?: NpcapInstallState;
@@ -65,6 +68,8 @@ export default function BattleReportsView({
   };
 }) {
   const [localRecords, setLocalRecords] = useState<ReportRecords>({ history: [] });
+  const localStorageCtrl = useReportPersistence({ records: localRecords, setRecords: setLocalRecords, disabled: Boolean(shared) });
+  const storage = shared?.storage ?? localStorageCtrl;
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('rounds');
   const [previewFilter, setPreviewFilter] = useState<{ key: string; round: PreviewRoundFilter } | null>(null);
@@ -179,6 +184,7 @@ export default function BattleReportsView({
           {records.history.map(item => <option key={item.key} value={item.key}>{item.label} · {dateTime.format(item.seenAt)}
             {item.report.difficulty && ` · ${item.report.difficulty}`}</option>)}
         </select><ChevronDown size={14} /></label>
+        <ReportStorageButton storage={storage} history={records.history} onSelect={k => openRecord(k)} />
         <span className="d-export-trigger" title={canExport ? undefined : exportReason} tabIndex={canExport ? undefined : 0}
           aria-label={canExport ? undefined : exportReason}>
           <button type="button" className="d-button d-export-button" data-history={replay} disabled={!canExport}

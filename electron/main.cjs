@@ -6,6 +6,7 @@ const { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, 
 const { createHotUpdateManager } = require('./hot-update.cjs');
 const HOT_UPDATE_PUBKEY = require('./hot-update-pubkey.cjs');
 const { installBattleReports } = require('./battle-reports.cjs');
+const { installReportStore } = require('./report-store.cjs');
 const { installCovenantOcr } = require('./covenant-ocr.cjs');
 const { installHudOverlay } = require('./hud-overlay.cjs');
 const { installLanSync } = require('./lan-sync.cjs');
@@ -735,6 +736,7 @@ if (gotSingleInstanceLock) app.whenReady().then(() => {
   const covenantOcr = process.platform === 'win32' && product.mode === 'full'
     ? installCovenantOcr({ mainWindow, ipcMain, desktopCapturer, clipboard, globalShortcut })
     : null;
+  installReportStore({ app, ipcMain, dialog, shell, mainWindow, product });
 
   if (process.platform === 'win32' && desktop.useTray) {
     try {

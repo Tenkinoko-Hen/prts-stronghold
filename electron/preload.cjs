@@ -45,6 +45,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('battle-reports-state', listener);
       },
     },
+    reportStore: {
+      load: () => ipcRenderer.invoke('report-store-load'),
+      save: (record) => ipcRenderer.invoke('report-store-save', record),
+      remove: (keyOrId) => ipcRenderer.invoke('report-store-delete', keyOrId),
+      chooseDir: (options) => ipcRenderer.invoke('report-store-choose-dir', options),
+      resetDir: () => ipcRenderer.invoke('report-store-reset-dir'),
+      openDir: () => ipcRenderer.invoke('report-store-open-dir'),
+    },
     covenantOcr: {
       getState: () => ipcRenderer.invoke('covenant-ocr-get'),
       scanWindow: () => ipcRenderer.invoke('covenant-ocr-window'),

@@ -34,6 +34,8 @@ import { BattleReportRoster } from './BattleReportRoster';
 import { BattleReportExportDialog } from './BattleReportExportDialog';
 import { HotUpdateControl } from './HotUpdateControl';
 import { NpcapSetupBanner } from './NpcapSetupBanner';
+import { ReportStorageButton } from './ReportStorageDialog';
+import { useReportPersistence } from './useReportPersistence';
 import { isSoloStageMode } from './combatTelemetry';
 import { isCombatRound, summarizeBattleReport, type ReportSummary } from './battleReportExport';
 import {
@@ -108,6 +110,7 @@ export default function TelemetryApp({
   const [hudState, setHudState] = useState<HudOverlayState | null>(null);
 
   const [records, setRecords] = useState<ReportRecords>({ history: [] });
+  const reportStorage = useReportPersistence({ records, setRecords, disabled: Boolean(previewApi) });
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<LiteTab>('cockpit');
   const [status, setStatus] = useState<ReportStatus>('starting');
@@ -439,6 +442,8 @@ export default function TelemetryApp({
           </select>
           <ChevronDown size={13} />
         </label>
+
+        <ReportStorageButton storage={reportStorage} history={records.history} onSelect={k => openRecord(k)} compact />
 
         {report?.difficulty && <span className="lite-diff-badge">{report.difficulty}</span>}
 

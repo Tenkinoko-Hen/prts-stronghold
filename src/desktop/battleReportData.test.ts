@@ -844,3 +844,36 @@ test('BossDamage displays Npcap downlink hint when only uplink boss damage is pr
   }));
   assert.doesNotMatch(normalHtml, /当前未检测到 Npcap 下行（仅本端上报口径）/);
 });
+
+test('mergeLoadedHistory deduplicates persisted records and prevents cross-session live key collision', async () => {
+  const { mergeLoadedHistory, removeHistoryRecord, updateLiveReport } = await import('./battleReports');
+  const oldReport = readBattleReport({
+    capture: { match: 1, round: 5, self: 1 },
+    players: { 1: '旧局玩家' },
+    rounds: { 5: { phase: 'settle', self_leaks: 0 } },
+  });
+  const saved = {
+    key: 'saved:report-1732700000000-1',
+    storageId: 'report-1732700000000-1',
+    label: '本地对局 1',
+    seenAt: 1732700000000,
+    report: oldReport,
+  };
+  const hydrated = mergeLoadedHistory({ history: [] }, [saved, saved]);
+  assert.equal(hydrated.history.length, 1);
+
+  // New launch starts a brand-new match with run=1, match=1 -> must NOT merge into yesterday's saved match!
+  const newReport = readBattleReport({
+    capture: { match: 1, round: 1, self: 1 },
+    players: { 1: '新局玩家' },
+    rounds: { 1: { phase: 'prep' } },
+  });
+  const afterNew = updateLiveReport(hydrated, newReport, 1, 1732780000000);
+  assert.equal(afterNew.live?.report.names[1], '新局玩家');
+  assert.equal(afterNew.live?.report.rounds.length, 1);
+  assert.equal(afterNew.history.length, 1);
+  assert.equal(afterNew.history[0].report.names[1], '旧局玩家');
+
+  const afterRemove = removeHistoryRecord(afterNew, saved.key);
+  assert.equal(afterRemove.history.length, 0);
+});

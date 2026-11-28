@@ -40,6 +40,7 @@ import {
 } from './desktop/battleReports';
 import { demoReport, type DemoScene } from './desktop/demo/battleReportFixture';
 import { HotUpdateControl } from './desktop/HotUpdateControl';
+import { useReportPersistence } from './desktop/useReportPersistence';
 import { LanSyncDialog } from './desktop/LanSyncDialog';
 import MumuDrawerApp from './desktop/MumuDrawerApp';
 import { BanPickState, getRecommendedPaceForRound } from './utils/tacticalLogic';
@@ -141,6 +142,7 @@ export default function App() {
       return { history: [] };
     }
   });
+  const reportStorage = useReportPersistence({ records, setRecords, disabled: isMumuDemo });
 
   useEffect(() => {
     if (isMumuDemo) return;
@@ -605,6 +607,7 @@ export default function App() {
               shared={{
                 records,
                 setRecords,
+                storage: reportStorage,
                 status: reportStatus,
                 npcapInstalled,
                 npcapInstall,

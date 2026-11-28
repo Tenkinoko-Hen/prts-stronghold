@@ -935,3 +935,179 @@ button.d-unified-seat-card:hover {
     gap: 6px;
   }
 }
+
+/* Local Report Storage & Directory Configuration */
+.d-storage-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.d-storage-count {
+  font: 700 10.5px/1 var(--font-mono);
+  font-style: normal;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: rgba(54, 152, 204, 0.2);
+  color: #67e8f9;
+}
+.d-storage-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(620px, 86vw);
+  max-height: 76vh;
+  overflow: auto;
+}
+.d-storage-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #0d121a;
+  border: 1px solid #243041;
+  border-radius: 2px;
+}
+.d-storage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.d-storage-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #f1f5f9;
+}
+.d-storage-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+.d-storage-badge.is-custom {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+.d-storage-path {
+  padding: 8px 10px;
+  background: #080b10;
+  border: 1px solid #1e2838;
+  border-radius: 2px;
+  font: 500 12px/1.45 var(--font-mono);
+  color: #e2e8f0;
+  word-break: break-all;
+  user-select: text;
+}
+.d-storage-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+.d-storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.d-storage-msg {
+  padding: 7px 10px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+.d-storage-msg.is-ok {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: #6ee7b7;
+}
+.d-storage-msg.is-err {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+.d-storage-list-wrap {
+  display: grid;
+  gap: 8px;
+}
+.d-storage-list-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+.d-storage-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+  background: #0c1016;
+  border: 1px dashed #1f2937;
+  border-radius: 2px;
+}
+.d-storage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+.d-storage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #0e131b;
+  border: 1px solid #1e2838;
+  border-radius: 2px;
+}
+.d-storage-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+}
+.d-storage-open:hover {
+  color: #ffe600;
+}
+.d-storage-open strong {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.d-storage-open span {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.d-storage-del {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 2px;
+  color: #f87171;
+  cursor: pointer;
+}
+.d-storage-del:hover {
+  background: rgba(239, 68, 68, 0.2);
+}

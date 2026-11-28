@@ -505,6 +505,8 @@ class Analyzer:
                         conn.model.set_roster_squads(event.get('squads'), event.get('banned_units'))
                     if event.get('shops'):
                         conn.model.set_shops(event['shops'])
+                    if event.get('scene_bonds'):
+                        conn.model.set_scene_bonds(number, event['scene_bonds'])
                     if event.get('boss_records_raw'):
                         for is_hidden, defeated in event['boss_records_raw']:
                             if defeated:

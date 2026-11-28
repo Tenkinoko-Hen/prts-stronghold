@@ -174,7 +174,8 @@ _EQUIP_OR_TRAP = (6,)
 _POSITION_UNIT = (10,)
 _BOND = (7,)
 _SP_PREPARE_SLOT = ('str', 2)
-_DEPLOYMENT = (1, ('list', _CHAR_CHESS), ('list', _EQUIP_OR_TRAP), ('list', _EQUIP_OR_TRAP), ('list', _POSITION_UNIT), ('list', _BOND))
+_DEPLOYMENT_PRE_BONDS = (('list', _CHAR_CHESS), ('list', _EQUIP_OR_TRAP), ('list', _EQUIP_OR_TRAP), ('list', _POSITION_UNIT))
+_DEPLOYMENT = (1, *_DEPLOYMENT_PRE_BONDS, ('list', _BOND))
 _PREPARATION_BEFORE_ENEMIES = (7, ('list', (5,)), 1, *_DEPLOYMENT[1:], ('list', (('list', _SP_PREPARE_SLOT), 'str')), 1)
 _PREPARATION_AFTER_ENEMIES = (('list', (3,)), 1, ('list', (5, 'str', ('list', (4,)))))
 _SP_PREPARATION = (('list', _SP_PREPARE_SLOT), ('list', (2,)), 'str', 10)
@@ -304,6 +305,13 @@ def _scene_header(reader: _Reader) -> tuple[int, int]:
     return (state, round_number)
 
 
+def _deployment_bonds(reader: _Reader) -> tuple[int, list[str]]:
+    seat, = reader.read('B')
+    _skip(reader, _DEPLOYMENT_PRE_BONDS)
+    bonds = [reader.take(7).hex() for _ in range(reader.count())]
+    return seat, bonds
+
+
 def _scene(reader: _Reader, header: tuple[int, int] | None = None) -> dict:
     state, round_number = header if header is not None else _scene_header(reader)
     runtime, player_status = _runtime(reader)
@@ -314,15 +322,23 @@ def _scene(reader: _Reader, header: tuple[int, int] | None = None) -> dict:
     boss_rounds = tuple((_boss_round(reader) for _ in range(reader.count())))
     spawn_groups = _spawn_groups(reader)
     escaped_enemies = None
+    scene_bonds: dict[int, list[str]] = {}
     for _ in range(reader.count()):
         escaped_enemies = tuple((_escaped_enemy(reader) for _ in range(reader.count())))
-        _skip(reader, (('list', (*_DEPLOYMENT, ('list', _CHAR_BATTLE_STATUS))),))
+        for _ in range(reader.count()):
+            seat, bonds = _deployment_bonds(reader)
+            _skip(reader, (('list', _CHAR_BATTLE_STATUS),))
+            if seat in range(1, 5) and bonds:
+                scene_bonds[seat] = bonds
     boss_hp = None
     boss_spawns = []
     for _ in range(reader.count()):
         _, boss_hp, _ = reader.read('Bih')
         boss_spawns.extend((_spawn_group(reader, reader.read('B')[0]) for _ in range(reader.count())))
-        _skip(reader, (('list', _DEPLOYMENT),))
+        for _ in range(reader.count()):
+            seat, bonds = _deployment_bonds(reader)
+            if seat in range(1, 5) and bonds:
+                scene_bonds[seat] = bonds
     last_hp_cost = dict((reader.read('Bh') for _ in range(reader.count())))
     boss_record_rounds = []
     defeated_boss_rounds = []
@@ -361,6 +377,7 @@ def _scene(reader: _Reader, header: tuple[int, int] | None = None) -> dict:
         'preparations': preparations,
         'global_effects': global_effects,
         'shops': shops,
+        'scene_bonds': scene_bonds,
         'boss_plan': next((plan for plan in boss_rounds if plan['hidden'] == (round_number == 15)), boss_rounds[0] if boss_rounds else None),
         'boss_plans': boss_rounds,
         'spawn_groups': spawn_groups,

@@ -814,6 +814,30 @@ class BossCaptureTests(unittest.TestCase):
         self.assertEqual(tele['enemy_pool']['boss']['max_hp'], 24000000.0)
         self.assertEqual(tele['enemy_pool']['boss']['hp'], 24000000.0 - 278000.0)
 
+    def test_scene_boss_deployment_extracts_7b_bonds_including_b3_b4_temp_stacks(self):
+        # Build a 302 boss scene (state=6, round=14) containing 1 boss entry with 1 _DEPLOYMENT carrying a 7B bond:
+        # b0=0x01 (active), b1..b2=0x00ca (202 base), b3..b4=0x015e (350 temp), b5=0x08 (ursusShip), b6=0x06 (6 ops)
+        bond_7b = bytes.fromhex('0100ca015e0806')
+        dep = struct.pack('!BHHHHH', 1, 0, 0, 0, 0, 1) + bond_7b
+        boss_entry = struct.pack('!BihHH', 0, 16200000, 0, 0, 1) + dep
+        body = (
+            struct.pack('!bBBq', 0, 6, 14, 0)
+            + runtime_body({})
+            + struct.pack('!HHHHHH', 0, 0, 0, 0, 0, 0)  # preview, sp_prep, prep, boss_rounds, spawn_groups, escaped
+            + struct.pack('!H', 1) + boss_entry         # boss_hp + boss_spawns + deployments
+            + struct.pack('!HHH', 0, 0, 0)              # last_hp_cost, boss_records, global_effects
+        )
+        self.down(frame(302, body))
+        self.assertEqual(self.analyzer.parse_errors, 0)
+        snap = self.analyzer.snapshot()
+        bonds = snap['lineups'][1]['active_bonds']
+        self.assertEqual(len(bonds), 1)
+        self.assertEqual(bonds[0]['bond_id'], 'ursusShip')
+        self.assertEqual(bonds[0]['stacks'], 552)
+        self.assertEqual(bonds[0]['temp_stacks'], 350)
+        self.assertEqual(bonds[0]['count'], 6)
+        self.assertTrue(bonds[0]['active'])
+
 
 class LiveCaptureTests(unittest.TestCase):
     def test_worker_reports_top_unknown_message_ids_without_payload_data(self):

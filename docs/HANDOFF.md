@@ -104,14 +104,15 @@ npm run build
 - **最后更新**：2026-11-28 16:09（完成 **本地战报默认落盘持久化 + 自定义保存目录迁移 UI**，并已完成 `2.2.0 → 2.2.0-p1` 云端热更新实机验证：① 新建主进程 [electron/report-store.cjs](../electron/report-store.cjs) 与 Preload `reportStore` IPC，默认保存至 `我的文档\PRTS Stronghold\BattleReports` / `PRTS Stronghold Lite\BattleReports`（单局原子 JSON，上限 100 局，重启/热更/重装均不丢失），支持原生选目录、自动迁移已有战报、一键打开目录与单局删除；② 新建 [useReportPersistence.ts](../src/desktop/useReportPersistence.ts) 与 [ReportStorageDialog.tsx](../src/desktop/ReportStorageDialog.tsx) 接入 PC Full 与 PC Lite（含 `localStorage` 旧壳兜底）；③ 已完成长图 PNG 导出双雷修复与 PC/Android 7B 盟约实时层数解码（`18b93ab`），并在 `hot-2.2.0-p1` 实测验通 Cloudflare 1.7 MB 签名热更）
 - **同步基线提交**：见 `git log -n 5 --oneline`
 - **最新验证结果**：
-  - `npm test` **265/265 全绿**（`tsc --noEmit` 通过 + TS 135/135 + Node 61/61 + Python 69/69）+ Cloudflare Worker **7/7 全绿**
+  - `npm test` **268/268 全绿**（`tsc --noEmit` 通过 + TS 136/136 + Node 61/61 + Python 71/71）+ Cloudflare Worker **7/7 全绿**
   - Cloudflare 线上全链路实测通过（`api.arknightsprts.ggff.net` 健康/鉴权/D1 读写 + `cdn.arknightsprts.ggff.net` 反代 GitHub Release + `hot-2.2.0-p1` 实机 1.73 MiB 增量热更验收通过）
-  - 本轮修复（已合入 `main`，待刷新 `v2.2.1` 本地打包）：
+  - 本轮修复（已合入 `main` 并打包 `v2.2.2` 本地测试大包，未发公开 Release）：
     1. **桌面悬浮窗多屏与显现兜底（`electron/hud-overlay.cjs`）**：改为锚定主窗口所在显示器工作区（不再在双屏时总弹出到主屏游戏背后），新增 `readyShowTimer` + `did-finish-load` 显现兜底、`revealHudWindow()` 置顶拉起与安全 GPU 非透明回退，杜绝「按钮亮黄但看不到悬浮窗」；
-    2. **首领战中/转阶段伤害与达标信号修复（`electron/prts_battle_core/stats.py` / `analyzer.py` / `src/desktop/BattleReportPanels.tsx`）**：修复 0 伤害 `310` 心跳误删 `366` 20%/50%/80% 达标信号、`R14→R15` 直切备战未采集 R14 结算总伤、`BattleReportPanels` 用单干员 Top 3 覆盖本机完整上行合计，并明确标注达标下限 `≥X万 (达 Y%)` 与 `未入前3`。
+    2. **首领战同口径对比、血量归零与跨回合隔离（`stats.py` / `analyzer.py` / `combat_meter.py` / `BattleReportPanels.tsx` / `BattleReportTelemetry.tsx` / `hudTelemetryViewModel.ts` / `HudStripApp.tsx`）**：修复 0 伤害 `310` 心跳误删 `366` 20%/50%/80% 达标信号、`R14→R15` 直切备战补采 R14 结算、击破首领血条归 `0`、R15 血条不再串扣 R14 伤害、战中悬浮窗默认公平「前3单卡」并标注 `全队 / 单卡 / 达标 / 未入前3`；
+    3. **302 协防/Boss 盟约解码与 `b3..b4` 探针 + 四人牌池规则提示（`wire.py` / `stats.py` / `analyzer.py` / `BattleReportDeckPool.tsx`）**：解出 `302` 协防与 Boss 部署帧中的 7B 盟约并支持 `b3..b4` 临时层数累加与诊断采集；核实官服四人共享池 `12/14/18/16/8/5` 不翻倍并补充说明提示。
   - `npm run build:telemetry` → `npm run build` 双产品构建通过（`dist/` 停留在默认 `stronghold`）
   - **换机密钥提醒**：当前生效的生产签名私钥与管理员密钥均只存本机仓外（未入 Git）：`work/secrets/hot-update-ed25519.pem`（匹配 `prts-hot-2026-v2`）与 `work/secrets/cloudflare-admin-token.txt`；若需在公司电脑签发 L1/L2 热更补丁或调 `/v1/admin/manifest`，请私下拷贝上述两个文件到公司仓库 `work/secrets/` 同路径
-  - **本地最新 `v2.2.1` 测试包（位于本机 `release/v2.2.1/`，未入 Git、未发 Release；已含 7B 盟约层数 + 本地磁盘战报目录，待用户结束当前测试后刷新合入本轮 HUD/Boss 修复）**
+  - **本地最新 `v2.2.2` 测试包（位于本机 `release/v2.2.2/`，未入 Git、未发 Release；全量包含 7B 盟约 + 302 协防/Boss 探针 + 本地战报目录 + 悬浮窗多屏修复 + Boss 血量/同口径修复）**
   - **下次接续第一步**：见 [docs/CLOUD_HOTUPDATE_AND_COMPS_PLAN.md](CLOUD_HOTUPDATE_AND_COMPS_PLAN.md) —— ① 若验收 `v2.2.0` PC 双包无误，可发正式 GitHub Release（`v2.2.0`），之后所有前端修复均可 1.7 MB 热更秒推；② 进入 **Phase 2（`04 阵容工坊` 社区阵容库）**：先在本地起 Vite 模拟 UI（广场页 + 精简编辑器 + 与 `01 战术跟打` 联动）供验收样式后再接入 D1 API
 - **已发布最新正式版本（`v2.1.0` · Latest，2026-11-27 15:01 同步刷新 PC 双包至 GitHub Release）**：
   - Release 页面：`https://github.com/Tenkinoko-Hen/prts-stronghold/releases/tag/v2.1.0`（PC 双包已基于 `ea4439a` 替换更新）

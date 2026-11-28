@@ -56,7 +56,7 @@ BOND_IDENTIFIER_TO_ID: dict[int, str] = {
 
 
 def decode_raw_bonds(raw_bonds) -> list[dict]:
-    """解析 7 字节备战盟约帧：b0=激活态，b1..b2(>H)=实时层数，b5=官方1..26枚举号，b6=人数。"""
+    """解析 7 字节盟约帧：b0=激活态，b1..b2(>H)=永久层数，b3..b4(>H)=附加/临时层数，b5=官方1..26枚举号，b6=人数。"""
     decoded: list[dict] = []
     for item in raw_bonds or ():
         if not isinstance(item, str) or len(item) != 14:
@@ -71,16 +71,21 @@ def decode_raw_bonds(raw_bonds) -> list[dict]:
         if not bond_id:
             continue
         active = raw[0] != 0
-        stacks = (raw[1] << 8) | raw[2]
+        base_stacks = (raw[1] << 8) | raw[2]
+        temp_stacks = (raw[3] << 8) | raw[4]
+        total_stacks = base_stacks + temp_stacks
         op_count = raw[6]
-        if not active and stacks <= 0 and op_count <= 0:
+        if not active and total_stacks <= 0 and op_count <= 0:
             continue
-        decoded.append({
+        entry = {
             "bond_id": bond_id,
-            "stacks": min(999, max(0, stacks)),
+            "stacks": min(999, max(0, total_stacks)),
             "count": op_count,
             "active": active,
-        })
+        }
+        if temp_stacks > 0:
+            entry["temp_stacks"] = min(999, temp_stacks)
+        decoded.append(entry)
     return decoded
 
 def _enemy_outcome(enemy_id: str, count: int) -> dict:
@@ -299,6 +304,38 @@ class MatchStats:
                 self.seat_loadouts[seat] = summary
             if isinstance(round_no, int) and 1 <= round_no <= 15:
                 self.rounds.setdefault(round_no, RoundStats()).seat_loadouts[seat] = summary
+
+    def set_scene_bonds(self, round_no: int, scene_bonds: Mapping[int, Iterable[str]] | None) -> None:
+        """从 302 协防/Boss 部署帧补齐并更新各席 7 字节盟约快照（含 b3..b4 临时层数探针）。"""
+        for seat, raw_list in (scene_bonds or {}).items():
+            if seat not in range(1, 5):
+                continue
+            cleaned = [str(b).lower() for b in raw_list if isinstance(b, str) and len(b) == 14]
+            if not cleaned:
+                continue
+            eff_round = round_no if isinstance(round_no, int) and 1 <= round_no <= 15 else self.current_round
+            prev = self.seat_loadouts.get(seat)
+            if prev is None:
+                self.seat_loadouts[seat] = {
+                    "round": eff_round,
+                    "shop_level": 0,
+                    "skill_id": "",
+                    "strategist": "",
+                    "piece_count": 0,
+                    "deployed_count": 0,
+                    "pieces": {},
+                    "piece_equips": {},
+                    "positions": {},
+                    "equips": {},
+                    "traps": {},
+                    "shop": [],
+                    "raw_bonds": cleaned,
+                    "chess_ids": [],
+                }
+            elif eff_round >= prev.get("round", 0) or not prev.get("raw_bonds"):
+                prev["raw_bonds"] = cleaned
+                if eff_round > prev.get("round", 0):
+                    prev["round"] = eff_round
 
     def resolve_boss_attacker(self, player: int, attacker: int, source: int | None = None, *, official: bool = False) -> tuple[str, str]:
         if player not in range(1, 5) or attacker < 0 or (source is not None and source not in (0, 1)):

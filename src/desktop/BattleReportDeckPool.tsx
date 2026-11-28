@@ -242,7 +242,12 @@ export function BattleReportDeckPool({
       {/* 1. Top Control Strip: Live Shop Level + Sandbox Switcher + Import Comp */}
       <header className="d-pool-toolbar">
         <div className="d-pool-level-bar">
-          <span className="d-pool-mode-pill">
+          <span
+            className="d-pool-mode-pill"
+            title={pool.isSingle
+              ? '单人独立牌池 · 1~6阶单卡上限 12/14/18/16/8/5 张'
+              : '官服四人共享牌池 · 1~6阶单卡上限固定为 12/14/18/16/8/5 张（不随人数翻倍，拟态物质/博士投影等特殊途径可突破上限）'}
+          >
             <Layers size={13} />
             {pool.isSingle ? '单人牌池' : '四人共享牌池'}
           </span>

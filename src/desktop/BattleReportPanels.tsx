@@ -239,29 +239,42 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
     ),
   );
 
-  // Aggregate per-seat damage (prefer server bossDamage, else max(official Top-3 sum, own uplink sum))
-  const seatDamages = seats.map(s => {
+  // Aggregate per-seat damage (prefer server bossDamage, else max(official Top-3 sum, uplink sum, 366 milestone floor))
+  const baseSeatDamages = seats.map(s => {
     const serverDmg = data?.bossDamage[s];
     const officialSum = (data?.bossOfficial ?? []).filter(h => h.seat === s).reduce((acc, h) => acc + h.damage, 0);
     const uplinkSum = data?.bossUplink[s] ?? (data?.bossUplinkRows ?? []).filter(h => h.seat === s).reduce((acc, h) => acc + h.damage, 0);
     const observedBest = Math.max(officialSum, uplinkSum);
-    const damage = serverDmg !== undefined ? serverDmg : (observedBest > 0 ? observedBest : null);
-    const sourceKind: 'server' | 'uplink' | 'top3' | 'none' = serverDmg !== undefined
-      ? 'server'
-      : (uplinkSum > 0 && uplinkSum >= officialSum)
-        ? 'uplink'
-        : officialSum > 0
-          ? 'top3'
-          : 'none';
     const rawPct = data?.bossPercent[s];
+    const rawMilestoneFloor = serverDmg === undefined && rawPct !== undefined && rawPct > 0 && bossMaxHp && bossMaxHp > 0
+      ? Math.round((bossMaxHp * rawPct) / 100)
+      : null;
+    const useMilestone = rawMilestoneFloor !== null && rawMilestoneFloor > observedBest;
+    const milestonePct = useMilestone ? rawPct! : null;
+    const milestoneFloor = useMilestone ? rawMilestoneFloor : null;
+    const damage = serverDmg !== undefined
+      ? serverDmg
+      : useMilestone
+        ? null
+        : (observedBest > 0 ? observedBest : null);
+    const effectiveDamage = serverDmg !== undefined
+      ? serverDmg
+      : useMilestone
+        ? rawMilestoneFloor!
+        : observedBest;
+    const sourceKind: 'server' | 'uplink' | 'top3' | 'milestone' | 'none' = serverDmg !== undefined
+      ? 'server'
+      : useMilestone
+        ? 'milestone'
+        : (uplinkSum > 0 && uplinkSum >= officialSum)
+          ? 'uplink'
+          : officialSum > 0
+            ? 'top3'
+            : 'none';
     // Avoid mixing stale boss_ratio (366) with newer official rank sum when server settlement hasn't arrived
     const hpPct = serverDmg !== undefined && rawPct !== undefined
       ? rawPct
-      : (damage !== null && bossMaxHp && bossMaxHp > 0 ? (damage / bossMaxHp) * 100 : (rawPct ?? null));
-    const milestonePct = serverDmg === undefined && damage === null && rawPct !== undefined && rawPct > 0 ? rawPct : null;
-    const milestoneFloor = milestonePct !== null && bossMaxHp && bossMaxHp > 0
-      ? Math.round((bossMaxHp * milestonePct) / 100)
-      : null;
+      : (effectiveDamage > 0 && bossMaxHp && bossMaxHp > 0 ? (effectiveDamage / bossMaxHp) * 100 : (rawPct ?? null));
     const elimRound = report?.eliminated[s];
     const eliminated = elimRound !== undefined && number > elimRound;
     const isSelf = report?.self === s;
@@ -271,35 +284,94 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
       color: bossSeatColor(s, isSelf),
       label: seatDisplayText(s, report),
       damage,
+      effectiveDamage,
       sourceKind,
       hpPct,
       milestonePct,
       milestoneFloor,
+      residualKind: null as 'exact' | 'cap' | null,
+      residualValue: null as number | null,
       eliminated,
       elimRound,
     };
   });
 
-  const teamTotalDamage = seatDamages.reduce((acc, row) => acc + (row.damage ?? 0), 0);
+  // 首领已击破但转阶段未下发全员总伤结算时，检查未归因余血：
+  // 1) 其余参战席位均为全队口径且仅缺 1 席 -> 余血推算 (≈X万)
+  // 2) 其余席位含单卡/达标局部口径且仅缺 1 席 -> 余血上限 (≤X万)，避免把队友非前3干员伤害误算进单人
+  const observedTotalDamage = baseSeatDamages.reduce((acc, row) => acc + row.effectiveDamage, 0);
+  const residualHp = defeated && !hasServerTotals && bossMaxHp && bossMaxHp > 0
+    ? Math.max(0, bossMaxHp - observedTotalDamage)
+    : 0;
+  const missingActiveSeats = baseSeatDamages.filter(r => !r.eliminated && r.effectiveDamage <= 0);
+  const knownActiveSeats = baseSeatDamages.filter(r => r.effectiveDamage > 0);
+  const canExactResidualFill = residualHp > 0
+    && missingActiveSeats.length === 1
+    && knownActiveSeats.length > 0
+    && knownActiveSeats.every(r => r.sourceKind === 'server' || (r.sourceKind === 'uplink' && r.isSelf));
+  const canCapResidualFill = residualHp > 0 && missingActiveSeats.length === 1 && !canExactResidualFill;
+  const residualSeat = (canExactResidualFill || canCapResidualFill) ? missingActiveSeats[0].seat : null;
+
+  const seatDamages = baseSeatDamages.map(row => {
+    if (row.seat !== residualSeat) return row;
+    if (canExactResidualFill) {
+      return {
+        ...row,
+        effectiveDamage: residualHp,
+        hpPct: bossMaxHp && bossMaxHp > 0 ? (residualHp / bossMaxHp) * 100 : null,
+        residualKind: 'exact' as const,
+        residualValue: residualHp,
+      };
+    }
+    return {
+      ...row,
+      residualKind: 'cap' as const,
+      residualValue: residualHp,
+    };
+  });
+
+  const teamTotalDamage = seatDamages.reduce((acc, row) => acc + row.effectiveDamage, 0);
+  const unattributedHp = defeated && !hasServerTotals && bossMaxHp && bossMaxHp > 0 && !canExactResidualFill
+    ? Math.max(0, bossMaxHp - teamTotalDamage)
+    : 0;
   const bossDamagePct = bossMaxHp && bossMaxHp > 0 ? Math.min(100, (teamTotalDamage / bossMaxHp) * 100) : null;
   const bossRemainHp = bossMaxHp !== null ? (defeated ? 0 : Math.max(0, bossMaxHp - teamTotalDamage)) : null;
 
-  // Aggregate operator contributions (prefer official, fallback uplink)
-  const rawHits = data?.bossOfficial.length ? data.bossOfficial : (data?.bossUplinkRows ?? []);
-  const opAggMap = new Map<string, { key: string; seat: number; name: string; identifier: number; damage: number }>();
-  for (const hit of rawHits) {
-    if (hit.damage <= 0) continue;
-    const key = `${hit.seat}:${hit.charId || hit.identifier}`;
-    const prev = opAggMap.get(key);
-    const rawName = hit.operatorName || `干员 #${hit.identifier}`;
-    const name = normalizeOperatorName(rawName) || rawName;
-    if (!prev) {
-      opAggMap.set(key, { key, seat: hit.seat, name, identifier: hit.identifier, damage: hit.damage });
-    } else {
-      prev.damage += hit.damage;
+  // Aggregate operator contributions:
+  // - 官方 Top-3 榜单（bossOfficial）每条对应一张独立干员卡，保留全部3行，不按 charId 合并同名双卡（如双暴躁铁皮）
+  // - 本端上行明细（bossUplinkRows）按席位+干员聚合
+  const opBars = (() => {
+    if (data?.bossOfficial.length) {
+      return data.bossOfficial
+        .filter(hit => hit.damage > 0)
+        .map((hit, idx) => {
+          const rawName = hit.operatorName || `干员 #${hit.identifier}`;
+          const name = normalizeOperatorName(rawName) || rawName;
+          return {
+            key: `official:${idx}:${hit.seat}:${hit.identifier}`,
+            seat: hit.seat,
+            name,
+            identifier: hit.identifier,
+            damage: hit.damage,
+          };
+        })
+        .sort((a, b) => b.damage - a.damage);
     }
-  }
-  const opBars = [...opAggMap.values()].sort((a, b) => b.damage - a.damage);
+    const opAggMap = new Map<string, { key: string; seat: number; name: string; identifier: number; damage: number }>();
+    for (const hit of data?.bossUplinkRows ?? []) {
+      if (hit.damage <= 0) continue;
+      const key = `${hit.seat}:${hit.charId || hit.identifier}`;
+      const prev = opAggMap.get(key);
+      const rawName = hit.operatorName || `干员 #${hit.identifier}`;
+      const name = normalizeOperatorName(rawName) || rawName;
+      if (!prev) {
+        opAggMap.set(key, { key, seat: hit.seat, name, identifier: hit.identifier, damage: hit.damage });
+      } else {
+        prev.damage += hit.damage;
+      }
+    }
+    return [...opAggMap.values()].sort((a, b) => b.damage - a.damage);
+  })();
   const opTotal = opBars.reduce((acc, item) => acc + item.damage, 0);
   const shareDenom = teamTotalDamage > 0 ? Math.max(teamTotalDamage, opTotal) : opTotal;
   const opMax = Math.max(1, ...opBars.map(item => item.damage));
@@ -315,19 +387,21 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
 
   // Segmented Boss HP Bar slices (proportional to Boss Max HP, scaled down cleanly if overkill)
   const rawSegTotalPct = bossMaxHp && bossMaxHp > 0
-    ? seatDamages.reduce((sum, r) => sum + ((r.damage ?? 0) > 0 ? ((r.damage ?? 0) / bossMaxHp) * 100 : 0), 0)
+    ? seatDamages.reduce((sum, r) => sum + (r.effectiveDamage > 0 ? (r.effectiveDamage / bossMaxHp) * 100 : 0), 0)
     : 0;
   const segScale = rawSegTotalPct > 100 ? 100 / rawSegTotalPct : 1;
   const hpSegments = bossMaxHp && bossMaxHp > 0
     ? seatDamages
-        .filter(r => (r.damage ?? 0) > 0)
-        .sort((a, b) => (b.damage ?? 0) - (a.damage ?? 0))
+        .filter(r => r.effectiveDamage > 0)
+        .sort((a, b) => b.effectiveDamage - a.effectiveDamage)
         .map(r => {
-          const truePct = ((r.damage ?? 0) / bossMaxHp) * 100;
+          const truePct = (r.effectiveDamage / bossMaxHp) * 100;
           return { ...r, truePct, widthPct: truePct * segScale };
         })
     : [];
-  const usedWidthPct = defeated ? 100 : Math.min(100, hpSegments.reduce((s, seg) => s + seg.widthPct, 0));
+  const attributedWidthPct = Math.min(100, hpSegments.reduce((s, seg) => s + seg.widthPct, 0));
+  const unattributedWidthPct = unattributedHp > 0 ? Math.max(0, 100 - attributedWidthPct) : 0;
+  const usedWidthPct = defeated ? 100 : attributedWidthPct;
   const remainPct = defeated ? 0 : Math.max(0, 100 - usedWidthPct);
 
   // Donut data: in solo mode with operator data -> operator share donut; in coop -> seat contribution donut
@@ -345,17 +419,17 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
         return top;
       })()
     : seatDamages
-        .filter(r => (r.damage ?? 0) > 0)
-        .sort((a, b) => (b.damage ?? 0) - (a.damage ?? 0))
+        .filter(r => r.effectiveDamage > 0)
+        .sort((a, b) => b.effectiveDamage - a.effectiveDamage)
         .map(r => ({
           key: `seat-${r.seat}`,
           label: r.label,
-          value: r.damage ?? 0,
+          value: r.effectiveDamage,
           color: r.color,
         }));
 
-  const activeSeatRows = seatDamages.filter(r => !r.eliminated || (r.damage ?? 0) > 0);
-  const deadSeatRows = seatDamages.filter(r => r.eliminated && !(r.damage && r.damage > 0));
+  const activeSeatRows = seatDamages.filter(r => !r.eliminated || r.effectiveDamage > 0);
+  const deadSeatRows = seatDamages.filter(r => r.eliminated && r.effectiveDamage <= 0);
   const seatColorBySeat = new Map<number, string>(seatDamages.map(r => [r.seat, r.color]));
 
   return <div className="d-boss-shell">
@@ -449,13 +523,22 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                     key={seg.seat}
                     className="d-boss-seg-fill"
                     style={{ width: `${seg.widthPct}%`, background: seg.color }}
-                    title={`${seg.label}: ${formatTelemetryTotal(seg.damage)}（削血 ${leaderDigits.format(seg.truePct)}%）`}
+                    title={`${seg.label}: ${seg.residualKind === 'exact' ? '≈' : seg.sourceKind === 'milestone' ? '≥' : ''}${formatTelemetryTotal(seg.effectiveDamage)}（削血 ${leaderDigits.format(seg.truePct)}%）`}
                   >
                     {seg.widthPct >= 14 && (
                       <em>{seg.label} {leaderDigits.format(seg.truePct)}%</em>
                     )}
                   </span>
                 ))}
+                {unattributedWidthPct > 0 && (
+                  <span
+                    className="d-boss-seg-remain"
+                    style={{ width: `${unattributedWidthPct}%` }}
+                    title={`首领已击破，未归因余血 ${formatTelemetryTotal(unattributedHp)}（含未入前3席位与其余席位非前3干员伤害）`}
+                  >
+                    {unattributedWidthPct >= 11 && <em>未归因 {leaderDigits.format(unattributedWidthPct)}%</em>}
+                  </span>
+                )}
                 {remainPct > 0 && (
                   <span className="d-boss-seg-remain" style={{ width: `${remainPct}%` }}>
                     {remainPct >= 14 && <em>剩余 {leaderDigits.format(remainPct)}%</em>}
@@ -490,7 +573,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                 }
                 centerSub={
                   !useSoloOpDonut && teamTotalDamage > 0
-                    ? '全队输出'
+                    ? (hasServerTotals || canExactResidualFill ? '全队输出' : '已观测输出')
                     : bossDamagePct !== null ? '削血进度' : '累计输出'
                 }
               />
@@ -513,9 +596,9 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                     const teamShare = hasServerTotals && teamTotalDamage > 0 && row.damage !== null
                       ? (row.damage / teamTotalDamage) * 100
                       : null;
-                    const missingBecauseTop3Only = row.damage === null && !hasServerTotals && (data.bossOfficial.length > 0 || hasBreakdown);
+                    const missingBecauseTop3Only = row.damage === null && row.milestoneFloor === null && !hasServerTotals && (data.bossOfficial.length > 0 || hasBreakdown);
                     const partialTag = !hasServerTotals && row.damage !== null
-                      ? (row.sourceKind === 'uplink' ? '全队' : row.sourceKind === 'top3' ? '单卡' : null)
+                      ? (row.sourceKind === 'uplink' ? (row.isSelf ? '全队' : '上报') : row.sourceKind === 'top3' ? '单卡' : null)
                       : null;
                     return (
                       <div
@@ -523,15 +606,21 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                         className="d-boss-contrib-item"
                         data-self={row.isSelf}
                         title={
-                          row.milestonePct !== null
-                            ? `已触发服务端 ${row.milestonePct}% 削血达标信号${row.milestoneFloor ? `（下限 ≥ ${formatTelemetryTotal(row.milestoneFloor)}）` : ''}，精确总伤待首领结算同步`
-                            : row.sourceKind === 'uplink'
-                              ? '本机全干员上行合计（队友尚未收到全员结算前仅显示前 3 单干员，不可直接按占比横比）'
-                              : row.sourceKind === 'top3'
-                                ? '当前仅为该席位进入官方 Top 3 的单干员伤害，未包含该席位其余干员'
-                                : missingBecauseTop3Only
-                                  ? '战斗中服务端仅实时广播单干员 Top 3，该席位暂未进入前 3 且未收到全员总伤结算包'
-                                  : undefined
+                          row.residualKind === 'exact' && row.residualValue !== null
+                            ? `首领已击破，其余席位均为全队口径，按剩余血量推算约为 ${formatTelemetryTotal(row.residualValue)}`
+                            : row.residualKind === 'cap' && row.residualValue !== null
+                              ? `首领已击破，未归因余血 ${formatTelemetryTotal(row.residualValue)} 同时包含该席位与其他席位未入前3的干员，故其伤害上限为 ≤${formatTelemetryTotal(row.residualValue)}`
+                              : row.milestonePct !== null
+                                ? `已触发服务端 ${row.milestonePct}% 削血达标信号${row.milestoneFloor ? `（下限 ≥ ${formatTelemetryTotal(row.milestoneFloor)}）` : ''}，精确总伤待首领结算同步`
+                                : row.sourceKind === 'uplink'
+                                  ? (row.isSelf
+                                    ? '本机全干员上行合计（队友尚未收到全员结算前仅显示前 3 单干员，不可直接按占比横比）'
+                                    : '本端观测到的该席位上行伤害（可能与服务端结算存在偏差，以结算为准）')
+                                  : row.sourceKind === 'top3'
+                                    ? '当前仅为该席位进入官方 Top 3 的单干员伤害，未包含该席位其余干员'
+                                    : missingBecauseTop3Only
+                                      ? '战斗中服务端仅实时广播单干员 Top 3，该席位暂未进入前 3 且未收到全员总伤结算包'
+                                      : undefined
                         }
                       >
                         <i style={{ background: row.color }} />
@@ -541,22 +630,30 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                             ? formatTelemetryTotal(row.damage)
                             : row.milestoneFloor !== null
                               ? `≥${formatTelemetryTotal(row.milestoneFloor)}`
-                              : '—'}
+                              : row.residualKind === 'exact' && row.residualValue !== null
+                                ? `≈${formatTelemetryTotal(row.residualValue)}`
+                                : row.residualKind === 'cap' && row.residualValue !== null
+                                  ? `≤${formatTelemetryTotal(row.residualValue)}`
+                                  : '—'}
                         </b>
                         <small>
                           {teamShare !== null
                             ? `队 ${leaderDigits.format(teamShare)}%`
-                            : partialTag && row.hpPct !== null
-                              ? `${partialTag} · 血${leaderDigits.format(row.hpPct)}%`
-                              : partialTag
-                                ? partialTag
-                                : row.milestonePct !== null
-                                  ? `达 ${row.milestonePct}%`
-                                  : row.hpPct !== null
-                                    ? `血 ${leaderDigits.format(row.hpPct)}%`
-                                    : missingBecauseTop3Only
-                                      ? '未入前3'
-                                      : '—'}
+                            : row.residualKind === 'exact' && row.hpPct !== null
+                              ? `余血推算 · 血${leaderDigits.format(row.hpPct)}%`
+                              : row.residualKind === 'cap'
+                                ? '未入前3 · 余血上限'
+                                : partialTag && row.hpPct !== null
+                                  ? `${partialTag} · 血${leaderDigits.format(row.hpPct)}%`
+                                  : partialTag
+                                    ? partialTag
+                                    : row.milestonePct !== null
+                                      ? `达 ${row.milestonePct}%`
+                                      : row.hpPct !== null
+                                        ? `血 ${leaderDigits.format(row.hpPct)}%`
+                                        : missingBecauseTop3Only
+                                          ? '未入前3'
+                                          : '—'}
                         </small>
                       </div>
                     );
@@ -649,7 +746,7 @@ export function BossDamage({ report, seat: perspective = report?.self, number, o
                   rows={seatDamages.map(r => ({
                     seat: r.seat,
                     label: r.label,
-                    damage: r.damage ?? 0,
+                    damage: r.effectiveDamage,
                     color: r.color,
                     eliminated: r.eliminated,
                   }))}

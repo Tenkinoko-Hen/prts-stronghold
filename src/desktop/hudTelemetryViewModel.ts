@@ -152,14 +152,13 @@ export function buildHudBossTeamData({
     }
     if (estMaxHp && estMaxHp > 0) {
       for (const s of seats) {
-        if ((dmgBySeat[s] ?? 0) <= 0) {
-          const pct = bossRound.bossPercent[s] ?? 0;
-          if (pct > 0) {
-            const est = Math.round((estMaxHp * pct) / 100);
-            if (est > 0) {
-              dmgBySeat[s] = est;
-              sourceBySeat[s] = 'milestone';
-            }
+        if (sourceBySeat[s] === 'server') continue;
+        const pct = bossRound.bossPercent[s] ?? 0;
+        if (pct > 0) {
+          const est = Math.round((estMaxHp * pct) / 100);
+          if (est > (dmgBySeat[s] ?? 0)) {
+            dmgBySeat[s] = est;
+            sourceBySeat[s] = 'milestone';
           }
         }
       }
@@ -204,6 +203,16 @@ export function buildHudBossTeamData({
     : hasRealBossHp && bossHp !== null && bossMaxHp && bossMaxHp > 0
       ? Math.max(0, Math.min(100, Math.round((bossHp * 100) / bossMaxHp)))
       : null;
+  const observedPct = bossMaxHp && bossMaxHp > 0 && teamTotal > 0
+    ? Math.min(100, Math.round((teamTotal * 100) / bossMaxHp))
+    : 0;
+  const estRemainPct = defeated
+    ? 0
+    : hpPct !== null
+      ? hpPct
+      : bossMaxHp !== null && bossMaxHp > 0
+        ? Math.max(4, 100 - observedPct)
+        : null;
   const bossEnemyId = bossPool?.enemyId || bossLeader?.id || '';
   const bossName = bossPool?.name || bossLeader?.name || '终局首领';
   return {
@@ -213,6 +222,8 @@ export function buildHudBossTeamData({
     bossHp,
     bossMaxHp,
     hpPct,
+    observedPct,
+    estRemainPct,
     defeated,
     hasServerTotals,
     selfUplinkTotal,

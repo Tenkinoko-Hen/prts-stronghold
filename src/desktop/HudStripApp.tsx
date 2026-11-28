@@ -40,9 +40,12 @@ function nextHudScale(current: HudScale): HudScale {
 interface HudOpRow {
   key: string;
   name: string;
+  owner?: string;
+  isSelf?: boolean;
   damage: number;
   dps: number | null;
   share: number;
+  bossHpPct?: number | null;
 }
 
 const hudPctFmt = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
@@ -193,8 +196,40 @@ export default function HudStripApp({
 
   // 1. Per-operator DPS / damage rows (PC exclusive)
   const roundTele = parsed?.telemetry?.rounds[roundNo] ?? parsed?.telemetry ?? null;
+  const bossRoundNo = useMemo(() => (parsed ? defaultBossRound(parsed) : 14), [parsed]);
+  const bossRound = useMemo(
+    () => parsed?.rounds.find(r => r.number === bossRoundNo) ?? (activeRound?.phase === 'boss' ? activeRound : undefined),
+    [activeRound, bossRoundNo, parsed],
+  );
   const opRows = useMemo<HudOpRow[]>(() => {
     const rows: HudOpRow[] = [];
+    // 非内存采样的协议态优先直读官方前3单卡，避免同名同席位双卡（如双暴躁铁皮）被聚合吞并成2行
+    const isProtocolOnly = !roundTele || roundTele.coverage === 'protocol';
+    const officialRound = parsed
+      ? [bossRound, activeRound, ...reportBossRounds(parsed).map(n => parsed.rounds.find(r => r.number === n)).reverse()]
+          .find(r => r && r.bossOfficial.length > 0)
+      : undefined;
+    if (isProtocolOnly && officialRound && parsed) {
+      const sorted = [...officialRound.bossOfficial]
+        .filter(h => h.damage > 0)
+        .sort((a, b) => b.damage - a.damage);
+      const total = sorted.reduce((s, h) => s + h.damage, 0);
+      const refHp = officialRound.bossHp && officialRound.bossHp > 0 ? officialRound.bossHp : null;
+      sorted.forEach((h, idx) => {
+        const name = normalizeOpName(h.operatorName || `干员 #${h.identifier}`) || h.operatorName || `干员 #${h.identifier}`;
+        rows.push({
+          key: `official:${idx}:${h.seat}:${h.identifier}`,
+          name,
+          owner: soloMode ? undefined : seatDisplayText(h.seat, parsed),
+          isSelf: h.seat === selfSeat,
+          damage: h.damage,
+          dps: null,
+          share: total > 0 ? h.damage / total : 0,
+          bossHpPct: refHp ? Math.min(100, (h.damage * 100) / refHp) : null,
+        });
+      });
+      if (rows.length > 0) return rows;
+    }
     if (roundTele && roundTele.operators.length > 0) {
       const valid = roundTele.operators.filter(o => o.totalDamage > 0);
       const total = valid.reduce((s, o) => s + o.totalDamage, 0);
@@ -202,6 +237,8 @@ export default function HudStripApp({
         rows.push({
           key: `${op.seat ?? 0}:${op.charId}`,
           name: op.name,
+          owner: !soloMode && op.seat && parsed ? seatDisplayText(op.seat, parsed) : undefined,
+          isSelf: op.seat !== null && op.seat === selfSeat,
           damage: op.totalDamage,
           dps: op.activeDps ?? op.spanDps,
           share: total > 0 ? op.totalDamage / total : 0,
@@ -210,35 +247,37 @@ export default function HudStripApp({
       return rows;
     }
     if (parsed) {
-      const bossRound = [activeRound, ...reportBossRounds(parsed).map(n => parsed.rounds.find(r => r.number === n)).reverse()]
-        .find(r => r && (r.bossOfficial.length > 0 || r.bossUplinkRows.length > 0));
-      if (bossRound) {
-        const hits = bossRound.bossOfficial.length ? bossRound.bossOfficial : bossRound.bossUplinkRows;
-        const agg = new Map<string, { name: string; damage: number }>();
-        for (const h of hits) {
+      const fallbackRound = [bossRound, activeRound, ...reportBossRounds(parsed).map(n => parsed.rounds.find(r => r.number === n)).reverse()]
+        .find(r => r && r.bossUplinkRows.length > 0);
+      if (fallbackRound) {
+        const agg = new Map<string, { name: string; seat: number; damage: number }>();
+        for (const h of fallbackRound.bossUplinkRows) {
           if (h.damage <= 0) continue;
           const k = `${h.seat}:${h.charId || h.identifier}`;
           const prev = agg.get(k);
-          const name = h.operatorName || `干员 #${h.identifier}`;
-          if (!prev) agg.set(k, { name, damage: h.damage });
+          const name = normalizeOpName(h.operatorName || `干员 #${h.identifier}`) || h.operatorName || `干员 #${h.identifier}`;
+          if (!prev) agg.set(k, { name, seat: h.seat, damage: h.damage });
           else prev.damage += h.damage;
         }
         const list = [...agg.entries()].sort((a, b) => b[1].damage - a[1].damage);
         const total = list.reduce((s, [, v]) => s + v.damage, 0);
         for (const [k, v] of list) {
-          rows.push({ key: k, name: v.name, damage: v.damage, dps: null, share: total > 0 ? v.damage / total : 0 });
+          rows.push({
+            key: k,
+            name: v.name,
+            owner: soloMode ? undefined : seatDisplayText(v.seat, parsed),
+            isSelf: v.seat === selfSeat,
+            damage: v.damage,
+            dps: null,
+            share: total > 0 ? v.damage / total : 0,
+          });
         }
       }
     }
     return rows;
-  }, [activeRound, parsed, roundTele]);
+  }, [activeRound, bossRound, parsed, roundTele, selfSeat, soloMode]);
 
   // 2. Boss 4-player MMO ranking + Boss HP bar
-  const bossRoundNo = useMemo(() => (parsed ? defaultBossRound(parsed) : 14), [parsed]);
-  const bossRound = useMemo(
-    () => parsed?.rounds.find(r => r.number === bossRoundNo) ?? (activeRound?.phase === 'boss' ? activeRound : undefined),
-    [activeRound, bossRoundNo, parsed],
-  );
   const bossPool = parsed?.telemetry?.enemyPool?.boss ?? roundTele?.enemyPool?.boss ?? null;
   const bossLeader = useMemo(() => (parsed ? reportLeader(parsed, bossRound?.number ?? bossRoundNo) : null), [bossRound?.number, bossRoundNo, parsed]);
 
@@ -728,7 +767,7 @@ export default function HudStripApp({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {bossTeamData.hpPct !== null && bossTeamData.hpPct > 0 && (
+                  {bossTeamData.hpPct !== null && bossTeamData.hpPct > 0 ? (
                     <div
                       style={{
                         position: 'absolute',
@@ -738,14 +777,24 @@ export default function HudStripApp({
                         opacity: 0.72,
                       }}
                     />
-                  )}
+                  ) : !bossTeamData.defeated && bossTeamData.estRemainPct !== null && bossTeamData.estRemainPct > 0 ? (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: `${bossTeamData.estRemainPct}%`,
+                        background: 'linear-gradient(90deg, rgba(185, 28, 28, 0.72), rgba(234, 88, 12, 0.48))',
+                        transition: 'width 0.35s ease',
+                      }}
+                    />
+                  ) : null}
                   <span style={{ position: 'relative', color: bossTeamData.defeated ? '#4ade80' : '#ffffff', fontWeight: 700, whiteSpace: 'nowrap' }}>
                     {bossTeamData.defeated
                       ? 'BOSS 已击破 · 0%'
                       : bossTeamData.hpPct !== null
                         ? `BOSS HP ${bossTeamData.hpPct}% · 余 ${formatTelemetryTotal(bossTeamData.bossHp ?? 0)}`
                         : bossTeamData.bossMaxHp !== null
-                          ? `BOSS 总血 ${formatTelemetryTotal(bossTeamData.bossMaxHp)}`
+                          ? `BOSS 总血 ${formatTelemetryTotal(bossTeamData.bossMaxHp)}${bossTeamData.observedPct > 0 ? ` · 观${bossTeamData.observedPct}%` : ''}`
                           : 'BOSS 伤害统计'}
                   </span>
                   <span style={{ position: 'relative', color: '#fef08a', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -844,12 +893,12 @@ export default function HudStripApp({
                             {row.label}
                           </strong>
                           {!bossTeamData.hasServerTotals && row.sourceKind !== 'none' && (
-                            <span style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(10.5), color: row.sourceKind === 'uplink' ? '#fef08a' : '#94a3b8', padding: '0 4px', borderRadius: '2px', border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.55)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                              {row.sourceKind === 'uplink' ? '全队' : row.sourceKind === 'top3' ? '单卡' : '达标'}
+                            <span style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(10.5), color: row.sourceKind === 'uplink' && row.isSelf ? '#fef08a' : row.sourceKind === 'milestone' ? '#7dd3fc' : '#94a3b8', padding: '0 4px', borderRadius: '2px', border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.55)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {row.sourceKind === 'uplink' ? (row.isSelf ? '全队' : '上报') : row.sourceKind === 'top3' ? '单卡' : '达标'}
                             </span>
                           )}
-                          <b style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(12.5), fontWeight: 800, color: '#ffffff', minWidth: '54px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            {row.damage > 0 ? `${row.sourceKind === 'milestone' ? '≥' : ''}${formatTelemetryTotal(row.damage)}` : '—'}
+                          <b style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(12.5), fontWeight: 800, color: row.damage > 0 ? '#ffffff' : '#64748b', minWidth: '54px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {row.damage > 0 ? `${row.sourceKind === 'milestone' ? '≥' : ''}${formatTelemetryTotal(row.damage)}` : (bossTeamData.hasServerTotals ? '0' : '待结算')}
                           </b>
                           {row.dps !== null && (
                             <span style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(11.5), color: row.isSelf ? '#fef08a' : '#bae6fd', minWidth: '58px', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -860,7 +909,7 @@ export default function HudStripApp({
                             {bossTeamData.hasServerTotals
                               ? `${row.sharePct.toFixed(1)}%`
                               : row.bossHpPct !== null
-                                ? `血${row.bossHpPct.toFixed(0)}%`
+                                ? `血${row.sourceKind === 'milestone' ? '≥' : ''}${row.bossHpPct.toFixed(0)}%`
                                 : '—'}
                           </span>
                         </div>
@@ -903,12 +952,21 @@ export default function HudStripApp({
                         </span>
                         <strong style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-sans)', fontSize: fs(12.5), fontWeight: 700, color: '#ffffff' }}>
                           {op.name}
+                          {op.owner && (
+                            <span style={{ marginLeft: '5px', fontSize: fs(10.5), fontWeight: 500, color: op.isSelf ? '#fef08a' : '#94a3b8' }}>
+                              · {op.owner}
+                            </span>
+                          )}
                         </strong>
                         <b style={{ position: 'relative', fontFamily: 'var(--font-sans)', fontSize: fs(12.5), fontWeight: 800, color: '#ffffff', minWidth: '54px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {formatTelemetryTotal(op.damage)}
                         </b>
                         <span style={{ position: 'relative', fontFamily: op.dps !== null ? 'var(--font-sans)' : 'var(--font-mono)', fontSize: fs(11.5), color: i === 0 ? '#fef08a' : '#bae6fd', minWidth: '58px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {op.dps !== null ? formatTelemetryRate(op.dps) : `${(op.share * 100).toFixed(1)}%`}
+                          {op.dps !== null
+                            ? formatTelemetryRate(op.dps)
+                            : op.bossHpPct !== null && op.bossHpPct !== undefined
+                              ? `血${op.bossHpPct.toFixed(0)}%`
+                              : `${(op.share * 100).toFixed(1)}%`}
                         </span>
                         {op.dps !== null && (
                           <span style={{ position: 'relative', fontFamily: 'var(--font-mono)', fontSize: fs(12), fontWeight: 700, color: '#e2e8f0', minWidth: '42px', textAlign: 'right' }}>

@@ -1019,3 +1019,73 @@ test('HUD and Telemetry Boss HP drop to 0 when defeated and avoid bogus remainin
   assert.match(teleMidHtml, /前3单卡已观测/);
   assert.match(teleMidHtml, /非实时剩余血量/);
 });
+
+test('Boss milestone 20% upgrades smaller Top-3 card, keeps duplicate official Top-3 cards separate, and surfaces R14 defeated residual HP cap', async () => {
+  const { buildHudBossTeamData } = await import('./hudTelemetryViewModel');
+
+  // 1. Mid-combat R15: Seat 2 has Top-3 single card 294.5万 (10%) AND 366 milestone 20% (579万) -> must upgrade to milestone!
+  const midR15 = readBattleReport({
+    capture: { match: 1, round: 15, self: 1 },
+    players: { 1: '乌尔比福的安水', 2: '歌蕾蒂精的雅液', 3: '克莱红莎的龙门', 4: '晶梅' },
+    battle_config: { mode_id: 'mode_multi_abyss' },
+    rounds: {
+      15: {
+        phase: 'boss',
+        boss_hp: 28952200,
+        boss_status: 'unknown',
+        boss_official: [
+          { player: 1, identifier: 101, char_id: 'char_iron', operator_name: '暴躁铁皮', damage: 8100000 },
+          { player: 2, identifier: 102, char_id: 'char_mlynar', operator_name: '玛恩纳', damage: 2945000 },
+          { player: 1, identifier: 103, char_id: 'char_iron', operator_name: '暴躁铁皮', damage: 1150000 },
+        ],
+        boss_uplink: { 1: 16368000, 4: 3803000 },
+        boss_percent: { 1: 50, 2: 20 },
+      },
+    },
+  });
+  const hud = buildHudBossTeamData({
+    parsed: midR15,
+    bossRound: midR15.rounds[0],
+    bossPool: null,
+    bossLeader: null,
+    bossElapsedSec: 88,
+    soloMode: false,
+    selfSeat: 1,
+  });
+  const seat2 = hud.rows.find(r => r.seat === 2);
+  assert.equal(seat2?.sourceKind, 'milestone', '20% milestone (579万) must override smaller Top-3 card (294.5万)');
+  assert.equal(seat2?.damage, 5790440);
+  assert.equal(seat2?.rank, 2, 'Upgraded Seat 2 should rank above Seat 4 (380.3万)');
+  assert.equal(hud.hpPct, null, 'hpPct remains null without real server HP');
+  assert.ok(hud.estRemainPct !== null && hud.estRemainPct > 0 && hud.estRemainPct < 100, 'estRemainPct drives live HP bar fill');
+
+  // 2. Defeated R14 without server totals: duplicate Top-3 cards stay as Top 3 + missing Seat 3 shows residual upper bound (≤211.9万)
+  const r14Defeated = readBattleReport({
+    capture: { match: 1, round: 15, self: 1 },
+    players: { 1: '乌尔比福的安水', 2: '歌蕾蒂精的雅液', 3: '克莱红莎的龙门', 4: '晶梅' },
+    battle_config: { mode_id: 'mode_multi_abyss' },
+    defeated_boss_rounds: [14],
+    rounds: {
+      14: {
+        phase: 'boss',
+        boss_ended: true,
+        boss_hp: 16200400,
+        boss_status: 'unknown',
+        boss_official: [
+          { player: 1, identifier: 101, char_id: 'char_iron', operator_name: '暴躁铁皮', damage: 9000000 },
+          { player: 1, identifier: 102, char_id: 'char_iron', operator_name: '暴躁铁皮', damage: 2467000 },
+          { player: 2, identifier: 103, char_id: 'char_mlynar', operator_name: '玛恩纳', damage: 1517000 },
+        ],
+        boss_uplink: { 4: 1097000 },
+      },
+    },
+  });
+  const html = renderToStaticMarkup(createElement(BossDamage, {
+    report: r14Defeated, number: 14, onRound: () => {}, onPreview: () => {}, reference: null,
+  }));
+  assert.match(html, /Top 3/, 'Two duplicate 暴躁铁皮 cards in official Top-3 must not collapse into Top 2');
+  assert.match(html, /≤211\.9万/, 'Missing seat on defeated partial R14 should show residual HP upper bound');
+  assert.match(html, /未入前3 · 余血上限/);
+  assert.match(html, /未归因 13\.1%/, 'Boss HP segmented bar should show unattributed residual segment');
+  assert.match(html, /上报 · 血6\.8%/, 'Teammate uplink should be labeled 上报 instead of misleading 全队');
+});
